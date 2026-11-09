@@ -1,0 +1,46 @@
+{
+  "name": "plaid-importer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Import bank, card and brokerage data from Plaid into Wealthfolio",
+  "type": "module",
+  "main": "dist/addon.js",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/fanyuan1/wealthfolio-plaid-importer.git" },
+  "homepage": "https://github.com/fanyuan1/wealthfolio-plaid-importer#readme",
+  "bugs": "https://github.com/fanyuan1/wealthfolio-plaid-importer/issues",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch",
+    "clean": "rm -rf dist",
+    "package": "mkdir -p dist && find dist -name '*.map' -delete && zip -r dist/$npm_package_name-$npm_package_version.zip manifest.json dist/addon.js README.md -x '*.map'",
+    "bundle": "pnpm clean && pnpm build && pnpm package",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "big.js": "^7.0.1"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "^5.90.0",
+    "@wealthfolio/addon-sdk": "^3.12.0",
+    "@wealthfolio/ui": "^3.12.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@tanstack/react-query": "^5.90.20",
+    "@types/big.js": "^7.0.0",
+    "@types/node": "^20.0.0",
+    "@types/react": "^19.2.13",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.0.2",
+    "@wealthfolio/addon-sdk": "^3.12.0",
+    "@wealthfolio/ui": "^3.12.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.5",
+    "vitest": "^3.2.4"
+  }
+}

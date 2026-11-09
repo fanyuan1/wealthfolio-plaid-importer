@@ -1,0 +1,42 @@
+name: Release
+# Push a tag such as v0.1.0 to build the zip and publish a GitHub release.
+run-name: Release ${{ github.ref_name }}
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Check the tag matches both versions
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          m=$(node -p "require('./manifest.json').version")
+          p=$(node -p "require('./package.json').version")
+          [ "$tag" = "$m" ] && [ "$tag" = "$p" ] || { echo "tag $tag, manifest $m, package $p"; exit 1; }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm type-check
+      - run: pnpm test
+      - run: pnpm bundle
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pre=""; case "$GITHUB_REF_NAME" in *-*) pre="--prerelease";; esac
+          # Notes are this version's CHANGELOG section; without one, GitHub generates them.
+          awk -v v="${GITHUB_REF_NAME#v}" '/^## /{on = index($0, "## " v " ") == 1; next} on' CHANGELOG.md > notes.md
+          if [ -s notes.md ]; then notes="--notes-file notes.md"; else notes="--generate-notes"; fi
+          gh release create "$GITHUB_REF_NAME" dist/plaid-importer-*.zip \
+            --title "Plaid Importer for Wealthfolio ${GITHUB_REF_NAME#v}" $notes $pre
