@@ -3,12 +3,12 @@ import { D, type Dec } from "./dec";
 import type { Row } from "./models";
 
 // Yahoo suffix per exchange MIC. US MICs need no suffix.
-export const MIC_SUFFIX: Record<string, string> = {
+const MIC_SUFFIX: Record<string, string> = {
   XTSE: ".TO", XTSX: ".V", XLON: ".L", XAMS: ".AS", XETR: ".DE",
   XFRA: ".F", XPAR: ".PA", XASX: ".AX", XHKG: ".HK", XSWX: ".SW",
 };
 
-export const INSTRUMENT_TYPE: Record<string, string> = {
+const INSTRUMENT_TYPE: Record<string, string> = {
   equity: "EQUITY", etf: "EQUITY", "mutual fund": "EQUITY",
   "fixed income": "BOND", derivative: "OPTION", cryptocurrency: "CRYPTO",
 };
@@ -25,10 +25,10 @@ const res = (kind: Resolved["kind"], symbol: string | null = null, instrumentTyp
   manual = false, multiplier: Dec = D(1)): Resolved => ({ kind, symbol, instrumentType, manual, multiplier });
 
 const OCC = /^[A-Z][A-Z0-9.]{0,5}\d{6}[CP]\d{8}$/;
-export const OPTION_MULTIPLIER = D(100);
+const OPTION_MULTIPLIER = D(100);
 
 /** Compact OCC symbol (Wealthfolio/Yahoo format), e.g. AAPL240621C00190000. */
-export function occSymbol(security: Row): string | null {
+function occSymbol(security: Row): string | null {
   const ticker = String(security.ticker_symbol ?? "").replace(/ /g, "").toUpperCase();
   if (OCC.test(ticker)) return ticker;
   const c = security.option_contract ?? {};
@@ -43,7 +43,7 @@ export function occSymbol(security: Row): string | null {
   }
 }
 
-const FIAT = new Set(["USD", "EUR", "GBP", "CAD", "JPY", "AUD", "CHF", "CNY", "MXN", "INR", "DKK", "NOK", "SEK", "PLN"]);
+const FIAT = new Set(Intl.supportedValuesOf("currency")); // ISO 4217 codes
 const KNOWN_CRYPTO = new Set(["BTC", "ETH", "SOL", "DOGE", "LTC", "XRP", "ADA", "AVAX", "DOT", "LINK", "SHIB", "BCH", "MATIC", "XLM", "ETC"]);
 
 /** Plaid files some crypto as type cash or other (ticker CUR:BTC), or flags it cash-equivalent. */
@@ -55,6 +55,12 @@ export function isCrypto(sec: Row): boolean {
   return t.startsWith("CUR:") || (["cash", "other", undefined, null].includes(sec.type) && KNOWN_CRYPTO.has(base));
 }
 
+/** Plaid's cash in a currency, e.g. CUR:USD: it is always cash, so it needs no review. */
+export function isCurrency(sec: Row): boolean {
+  const m = /^CUR:([A-Z]{3})$/.exec(String(sec.ticker_symbol ?? "").toUpperCase());
+  return Boolean(m && FIAT.has(m[1]));
+}
+
 /** Yahoo/Wealthfolio crypto pair, e.g. BTC-USD. Plaid sends BTC, CUR:BTC or an already paired BTC-USD. */
 export function cryptoSymbol(ticker: string, currency = "USD"): string {
   const t = ticker.trim().toUpperCase().replace(/^CUR:/, "");
@@ -62,7 +68,7 @@ export function cryptoSymbol(ticker: string, currency = "USD"): string {
 }
 
 /** Stable made-up symbol for a fund with no ticker, e.g. TARGET2050CIT-1A2B. */
-export function manualSymbol(security: Row): string {
+function manualSymbol(security: Row): string {
   const base = String(security.name || "FUND").replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 16) || "FUND";
   return `${base}-${String(security.security_id).slice(0, 4).toUpperCase()}`;
 }
@@ -105,4 +111,4 @@ export function yahooSymbol(sec: Row | null | undefined): string | null {
 }
 
 // Yahoo suffixes for price lookups (a shorter list than MIC_SUFFIX, as in the earlier version).
-export const YAHOO_SUFFIX: Record<string, string> = { XTSE: ".TO", XTSX: ".V", XLON: ".L", XASX: ".AX" };
+const YAHOO_SUFFIX: Record<string, string> = { XTSE: ".TO", XTSX: ".V", XLON: ".L", XASX: ".AX" };

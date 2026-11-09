@@ -5,19 +5,15 @@ import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogH
 import { useEffect, useState } from 'react';
 import { Engine } from '../engine/engine';
 import type { PlaidEnv } from '../importer';
-import { host, type Step, TITLE } from './common';
+import { host, msg, type Step, TITLE } from './common';
 import { Setup } from './setup';
 import { Connections } from './connections';
 import { Accounts, type SpendingOff } from './accounts';
 import { Daily, Sync } from './sync';
 import { Backup } from './backup';
 
-export function PlaidImporter({ ctx }: { ctx: AddonContext }) {
+function PlaidImporter({ ctx }: { ctx: AddonContext }) {
   const [engine] = useState(() => (host.engine ??= new Engine(ctx.api)));
-  useEffect(() => {
-    engine.pageOpen++;
-    return () => { engine.pageOpen--; };
-  }, [engine]);
   const [env, setEnv] = useState<PlaidEnv>();
   const [version, setVersion] = useState(0);
   const [step, setStep] = useState<Step>();
@@ -50,8 +46,12 @@ export function PlaidImporter({ ctx }: { ctx: AddonContext }) {
     else setStep(to);
   };
   const changeEnv = async (e: PlaidEnv) => {
-    await engine.store.saveSettings({ ...(await engine.store.settings()), env: e });
-    setEnv(e);
+    try {
+      await engine.setEnv(e);
+      setEnv(e);
+    } catch (x) {
+      host.ctx?.api.toast.error(msg(x));
+    }
   };
 
   return (
@@ -81,7 +81,7 @@ export function PlaidImporter({ ctx }: { ctx: AddonContext }) {
             <DialogContent>
               <DialogHeader>
                 <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-amber-500/15">
-                  <Icons.AlertTriangle className="h-5 w-5 text-amber-500" />
+                  <Icons.AlertTriangle className="h-5 w-5 text-amber-600" />
                 </div>
                 <DialogTitle>Turn on spending first</DialogTitle>
                 <DialogDescription>
@@ -123,7 +123,7 @@ function Stepper({ step, done, locked, onStep }: { step: Step; done: Partial<Rec
                     className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                       here ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}>
               <span className={`flex h-5 w-5 items-center justify-center rounded-full text-xs ${
-                here ? 'bg-primary-foreground/20' : done[id] && !lock ? 'bg-green-600 text-white' : 'bg-muted text-muted-foreground'}`}>{mark}</span>
+                here ? 'bg-white/20' : done[id] && !lock ? 'bg-success text-white' : 'bg-muted text-muted-foreground'}`}>{mark}</span>
               {label}
             </button>
           );

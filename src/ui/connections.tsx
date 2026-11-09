@@ -3,7 +3,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Engine, LinkCheck } from '../engine/engine';
 import type { ItemMeta } from '../engine/store';
-import type { PlaidEnv } from '../importer';
+import { type PlaidEnv, plural } from '../importer';
 import { ago, CopyLink, FlashLabel, msg, Problem, SaveMark, Spin, type Step, useBusy, useFlash, useSave } from './common';
 
 const POLL_MS = 3000;
@@ -51,7 +51,7 @@ export function Connections({ engine, env, onChange, onStep }: { engine: Engine;
                 <Input id="owner" className="w-28" maxLength={4} value={owner} onChange={(e) => setOwner(e.target.value.toUpperCase())} />
               </div>
               <Button disabled={owner.length < 1 || !!busy} onClick={() => start(() => engine.startHostedLink(owner), owner)}>
-                <Spin on={busy === 'connect'} /><Icons.ExternalLink className="mr-2 h-4 w-4" />Connect
+                <Spin on={busy === 'connect'} /><Icons.ExternalLink className="h-4 w-4" />Connect
               </Button>
               {env === 'sandbox' && (
                 <Button variant="outline" disabled={owner.length < 1 || !!busy}
@@ -69,9 +69,9 @@ export function Connections({ engine, env, onChange, onStep }: { engine: Engine;
           {linked && !link && (
             <Alert>
               <Icons.CheckCircle className="h-4 w-4 text-green-600" />
-              <AlertTitle>{linked.reconnect ? 'Reconnected' : 'Connected'} {linked.institution} · {linked.accounts} account{linked.accounts === 1 ? '' : 's'}</AlertTitle>
+              <AlertTitle>{linked.reconnect ? 'Reconnected' : 'Connected'} {linked.institution} · {plural(linked.accounts, 'account')}</AlertTitle>
               <AlertDescription className="flex flex-wrap gap-2 pt-2">
-                <Button size="sm" variant="outline" onClick={() => setLinked(undefined)}><Icons.Plus className="mr-2 h-3 w-3" />Connect another</Button>
+                <Button size="sm" variant="outline" onClick={() => setLinked(undefined)}><Icons.Plus className="h-3 w-3" />Connect another</Button>
               </AlertDescription>
             </Alert>
           )}
@@ -92,24 +92,24 @@ export function Connections({ engine, env, onChange, onStep }: { engine: Engine;
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="pl-6">Initials</TableHead>
+                  <TableHead className="ps-6">Initials</TableHead>
                   <TableHead>Institution</TableHead>
                   <TableHead>Products</TableHead>
                   <TableHead>Accounts checked</TableHead>
-                  <TableHead className="pr-6 text-right">Actions</TableHead>
+                  <TableHead className="pe-6 text-end">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {Object.entries(items).map(([id, m]) => (
                   <TableRow key={id}>
-                    <TableCell className="pl-6"><OwnerCell engine={engine} itemId={id} value={m.owner} onSaved={done} /></TableCell>
+                    <TableCell className="ps-6"><OwnerCell engine={engine} itemId={id} value={m.owner} onSaved={done} /></TableCell>
                     <TableCell>
                       {m.institution_name}
-                      {m.reconnect && <Badge variant="destructive" className="ml-2">Reconnect needed</Badge>}
+                      {m.reconnect && <Badge variant="destructive" className="ms-2">Reconnect needed</Badge>}
                     </TableCell>
                     <TableCell className="text-muted-foreground text-sm">{(m.products ?? []).join(', ')}</TableCell>
                     <TableCell className="text-muted-foreground text-sm">{ago(m.checked)}</TableCell>
-                    <TableCell className="pr-6 text-right">
+                    <TableCell className="pe-6 text-end">
                       <div className="flex justify-end gap-2">
                         <Button variant={m.reconnect ? 'default' : 'outline'} size="sm" disabled={!!busy || !!link} onClick={() => start(() => engine.startReconnect(id), m.owner, id)}>
                           Reconnect
@@ -132,7 +132,7 @@ export function Connections({ engine, env, onChange, onStep }: { engine: Engine;
           <CardDescription>Paste one access token. Does not use a new Plaid connection.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-end gap-3">
-          <div className="flex min-w-72 flex-1 flex-col gap-2">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-1">
             <Label htmlFor="tok">Access token</Label>
             <Input id="tok" value={token} onChange={(e) => setToken(e.target.value)} spellCheck={false} autoComplete="off"
                    placeholder={`access-${env}-…`} className="font-mono text-xs" />
@@ -218,7 +218,7 @@ function LinkWait({ engine, link, onDone, onCancel }: { engine: Engine; link: Pe
   return (
     <div className="bg-muted/40 flex flex-col gap-3 rounded-lg border p-4">
       <div className="flex items-center gap-2 font-medium">
-        <Icons.Spinner className="h-4 w-4 animate-spin" />
+        <Spin on />
         Waiting for you to finish on Plaid…
       </div>
       <span className="text-muted-foreground text-sm">

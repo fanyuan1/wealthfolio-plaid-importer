@@ -8,14 +8,6 @@
   "sdkVersion": "3.12.0",
   "minWealthfolioVersion": "3.12.0",
   "enabled": true,
-  "contributes": {
-    "routes": [{ "id": "plaid-importer" }],
-    "links": {
-      "sidebar": [
-        { "id": "plaid-importer", "route": "plaid-importer", "label": "Plaid Importer", "icon": "plugs-connected", "order": 100 }
-      ]
-    }
-  },
   "network": {
     "allowedHosts": ["sandbox.plaid.com", "production.plaid.com", "query1.finance.yahoo.com"]
   },
@@ -38,7 +30,7 @@
     { "category": "files", "functions": ["openSaveDialog"],
       "purpose": "Save a backup file where you choose." },
     { "category": "secrets", "functions": ["set", "get", "delete"],
-      "purpose": "Keep your Plaid keys and bank access tokens in the system keychain." },
+      "purpose": "Keep your Plaid keys and bank access tokens in Wealthfolio's secret store." },
     { "category": "network", "functions": ["request"],
       "purpose": "Call Plaid's API, and Yahoo Finance for prices Plaid does not send." }
   ],

@@ -5,11 +5,11 @@ import type { AccountCfg } from "./plan";
 
 export const MAX_LEN = 50; // Wealthfolio's account form limit
 const INST_MIN = 12; // an unabbreviated institution name is trimmed to no less than this
-export const KIND_BY_PLAID_TYPE: Record<string, string> = { investment: "investment", depository: "cash", credit: "credit" };
+const KIND_BY_PLAID_TYPE: Record<string, string> = { investment: "investment", depository: "cash", credit: "credit" };
 export const WF_TYPE: Record<string, string> = { investment: "SECURITIES", cash: "CASH", credit: "CREDIT_CARD" };
 const NON_EUR: Record<string, string> = { US: "USD", CA: "CAD", GB: "GBP", DK: "DKK", NO: "NOK", SE: "SEK", PL: "PLN" };
 
-export const currencyFor = (country?: string | null): string => NON_EUR[(country || "US").toUpperCase()] ?? "EUR";
+const currencyFor = (country?: string | null): string => NON_EUR[(country || "US").toUpperCase()] ?? "EUR";
 // Lower-case institution name -> short name for account names.
 const ABBREV: Record<string, string> = ABBREV_DATA;
 

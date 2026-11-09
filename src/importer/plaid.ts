@@ -1,4 +1,4 @@
-// Plaid REST client over a pluggable transport: the addon SDK's network broker, or fetch() in tests.
+// Plaid REST client over a pluggable transport: the addon SDK's network broker, or a stub in tests.
 // Plain JSON in and out, no Plaid SDK.
 import type { Row } from "./models";
 
@@ -11,19 +11,14 @@ export class PlaidError extends Error {
 /** POST a JSON body; return the status and the response body. */
 export type Transport = (url: string, body: string, headers: Record<string, string>) => Promise<{ status: number; body: string }>;
 
-export const fetchTransport: Transport = async (url, body, headers) => {
-  const r = await fetch(url, { method: "POST", body, headers });
-  return { status: r.status, body: await r.text() };
-};
-
-export const PLAID_HOSTS = { sandbox: "https://sandbox.plaid.com", production: "https://production.plaid.com" } as const;
+const PLAID_HOSTS = { sandbox: "https://sandbox.plaid.com", production: "https://production.plaid.com" } as const;
 export type PlaidEnv = keyof typeof PLAID_HOSTS;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export class Plaid {
-  constructor(private clientId: string, private secret: string, public env: PlaidEnv = "sandbox",
-    private transport: Transport = fetchTransport, private wait: (ms: number) => Promise<unknown> = sleep) {}
+  constructor(private clientId: string, private secret: string, public env: PlaidEnv,
+    private transport: Transport, private wait: (ms: number) => Promise<unknown> = sleep) {}
 
   async call(endpoint: string, req: Row = {}): Promise<Row> {
     const r = await this.transport(`${PLAID_HOSTS[this.env]}${endpoint}`,

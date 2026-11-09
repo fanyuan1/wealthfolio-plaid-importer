@@ -1,9 +1,9 @@
 // 4. Sync: dry run, push (fills in categories), ratio proposals. 5. Daily sync.
 import { Alert, AlertDescription, AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Icons, Input, Label, Progress as Bar, Switch, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@wealthfolio/ui';
 import { useEffect, useState } from 'react';
-import { type AutoRun, DEFAULT_DAILY, type SyncView, type Daily as DailyCfg, type Engine, type Proposal, type RunRecord, summary } from '../engine/engine';
-import { type PlaidEnv, type TodoGroup as Group, todoGroups } from '../importer';
-import { host, Problem, ProgressList, SaveMark, Spin, type Step, useBusy, useEngine, useSave, useTask } from './common';
+import { type AutoRun, DEFAULT_DAILY, nextRun, type SyncView, type Daily as DailyCfg, type Engine, type Proposal, type RunRecord, summary } from '../engine/engine';
+import { accountNames, type PlaidEnv, type TodoGroup as Group, todoGroups } from '../importer';
+import { ACTIONS, host, Problem, ProgressList, SaveMark, Spin, StateIcon, type Step, SWITCH_ROW, useBusy, useEngine, useSave, useTask } from './common';
 import { Matches } from './matches';
 import { Securities } from './securities';
 
@@ -14,17 +14,17 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
   const view = useEngine(engine, (e) => e.view);
   const { task, busy, error, start } = useTask(engine, 'sync');
   const dry = view.dry?.env === env ? view.dry : undefined;
-  const secs = dry ? view.secs : [];
+  const secs = dry?.securities ?? [];
   const { stale, result, failed, refused } = view;
   const set = (p: Partial<SyncView>) => engine.setView(p);
   const [moving, setMoving] = useState<[string, Set<string>]>(); // a moved ticker waiting for the delete confirm
   const [attention, setAttention] = useState(0); // securities still to review
   const [last, setLast] = useState<{ time: string; message: string } | null>(null);
   useEffect(() => { engine.store.lastSync(env).then(setLast); }, [engine, env, result]);
-  const progress = task && task.label === 'dry' ? task.progress : [];
-  const pushing = task && task.label === 'push' ? task.progress : [];
+  const progress = task?.label === 'dry' ? task.progress : [];
+  const pushing = task?.label === 'push' ? task.progress : [];
 
-  const names = Object.fromEntries(Object.entries(dry?.cfg ?? {}).map(([id, c]) => [id, String(c.name)]));
+  const names = accountNames(dry?.cfg ?? {});
   const byType = new Map<string, number>();
   for (const a of dry?.plan.new ?? []) byType.set(a.activityType, (byType.get(a.activityType) ?? 0) + 1);
   const stages = dry ? [dry.plan.new.length, dry.plan.updates.length + dry.plan.voids.length + dry.plan.retype.length, dry.plan.pairs.length, dry.plan.categories.size]
@@ -34,7 +34,7 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
   const dryRun = (fresh = false) => start('dry', async (io) => {
     set({ dry: undefined, result: undefined, failed: [] });
     const d = await engine.dryRun(io.log, io.progress, fresh);
-    set({ dry: d, secs: d.securities, stale: false });
+    set({ dry: d, stale: false });
   });
   const push = () => start('push', async (io) => {
     const d = dry!;
@@ -43,7 +43,7 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
     io.progress({ id: 'push:left', label: 'Plan what is left', state: 'running' });
     const next = await engine.afterPush(d);
     io.progress({ id: 'push:left', label: 'Plan what is left', state: 'done', detail: `${next.plan.new.length} rows left` });
-    set({ dry: next, secs: next.securities, stale: false, failed: s.failures, refused: s.refused,
+    set({ dry: next, stale: false, failed: s.failures, refused: s.refused,
       result: summary(d.plan, d.fetched, s) + (s.categories ? `. ${s.categories}` : '') });
     host.ctx?.api.query.invalidateQueries(['activities']);
   });
@@ -59,12 +59,12 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
               {last ? `Last push ${new Date(last.time).toLocaleString()}.` : 'Nothing pushed yet.'}
             </CardDescription>
           </div>
-          <div className="flex items-center gap-2">
+          <div className={ACTIONS}>
             <Button variant="outline" disabled={!!busy} onClick={() => dryRun()}>
-              <Spin on={busy === 'dry'} /><Icons.RefreshCw className="mr-2 h-4 w-4" />Dry run
+              <Spin on={busy === 'dry'} /><Icons.RefreshCw className="h-4 w-4" />Dry run
             </Button>
             <Button disabled={!dry || stale || attention > 0 || !!busy} onClick={push}>
-              <Spin on={busy === 'push'} /><Icons.Upload className="mr-2 h-4 w-4" />Push to Wealthfolio
+              <Spin on={busy === 'push'} /><Icons.Upload className="h-4 w-4" />Push to Wealthfolio
             </Button>
           </div>
         </CardHeader>
@@ -130,8 +130,8 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
             <span>When you finish, update the preview. Push is off until then.</span>
             <div>
               <Button size="sm" disabled={!dry || !!busy}
-                      onClick={() => start('replan', async () => { const d = await engine.replan(dry!); set({ dry: d, secs: d.securities, stale: false }); })}>
-                <Spin on={busy === 'replan'} /><Icons.RefreshCw className="mr-2 h-3 w-3" />Update preview
+                      onClick={() => start('replan', async () => { const d = await engine.replan(dry!); set({ dry: d, stale: false }); })}>
+                <Spin on={busy === 'replan'} /><Icons.RefreshCw className="h-3 w-3" />Update preview
               </Button>
             </div>
           </AlertDescription>
@@ -141,8 +141,10 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
       {secs.length > 0 && (
         <div id={SECURITIES_ID}>
           <Securities engine={engine} list={secs} refused={refused} onAttention={setAttention}
-                      onSaved={(sid, override, label) => set({ stale: true,
-                        secs: engine.view.secs.map((s) => (s.sid === sid ? { ...s, override, pending: label } : s)) })} />
+                      onSaved={(sid, override, label) => {
+                        const d = engine.view.dry!;
+                        set({ stale: true, dry: { ...d, securities: d.securities.map((s) => (s.sid === sid ? { ...s, override, pending: label } : s)) } });
+                      }} />
         </div>
       )}
       {dry && dry.adoptions.length > 0 && (attention > 0 || stale
@@ -153,8 +155,8 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
       <Dialog open={busy === 'push'} disablePointerDismissal>
         <DialogContent showCloseButton={false} className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Icons.Spinner className="h-4 w-4 animate-spin" />Pushing to Wealthfolio…</DialogTitle>
-            <DialogDescription>Keep this window open until it finishes. Leaving now can stop the push half way.</DialogDescription>
+            <DialogTitle className="flex items-center gap-2"><Spin on />Pushing to Wealthfolio…</DialogTitle>
+            <DialogDescription>Keep Wealthfolio open until it finishes. Closing it now can stop the push half way.</DialogDescription>
           </DialogHeader>
           <Bar value={stages ? Math.min(100, (100 * pushing.filter((p) => p.state !== 'running').length) / stages) : null} />
           <ProgressList list={pushing} />
@@ -163,7 +165,7 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
       <Dialog open={failed.length > 0} onOpenChange={(o) => { if (!o) set({ failed: [] }); }}>
         <DialogContent className="max-h-[85vh] max-w-3xl overflow-auto">
           <DialogHeader>
-            <DialogTitle className="text-destructive">{failed.length} row{failed.length === 1 ? ' was' : 's were'} not saved</DialogTitle>
+            <DialogTitle className="text-destructive">{failed.length === 1 ? '1 row was' : `${failed.length} rows were`} not saved</DialogTitle>
             <DialogDescription>Wealthfolio rejected these rows, so they are missing. They stay in the preview: fix the cause below, then Update preview and push again.</DialogDescription>
           </DialogHeader>
           <FailedRows list={failed} />
@@ -218,10 +220,10 @@ function TodoCard({ g }: { g: Group }) {
   return (
     <div className="flex flex-col gap-2 rounded-lg border p-4">
       <div className="flex flex-wrap items-center gap-2">
-        {g.warning ? <Icons.AlertTriangle className="h-4 w-4 text-amber-500" /> : <Icons.Info className="text-muted-foreground h-4 w-4" />}
+        {g.warning ? <Icons.AlertTriangle className="h-4 w-4 text-amber-600" /> : <Icons.Info className="text-muted-foreground h-4 w-4" />}
         <span className="font-medium">{g.heading}</span>
         {g.count > 0 && <Badge variant="secondary">{g.count}</Badge>}
-        <span className="ml-auto">
+        <span className="ms-auto">
           {inSecurities
             ? <Button size="sm" variant="outline" onClick={() => document.getElementById(SECURITIES_ID)?.scrollIntoView({ behavior: 'smooth' })}>Go to Securities</Button>
             : !g.warning && <span className="text-muted-foreground text-xs">Fix in Wealthfolio</span>}
@@ -261,10 +263,10 @@ function FailedRows({ list }: { list: string[] }) {
               : 'Check these rows against your statements, then run the dry run and push again.'}
           </p>
           <Table>
-            <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Type</TableHead><TableHead>Symbol</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Type</TableHead><TableHead>Symbol</TableHead><TableHead className="text-end">Amount</TableHead></TableRow></TableHeader>
             <TableBody>
               {rows.slice(0, 50).map((r, i) => (
-                <TableRow key={i}><TableCell>{r[0]}</TableCell><TableCell>{r[1]}</TableCell><TableCell>{r[2] || '—'}</TableCell><TableCell className="text-right">{r[3] || '—'}</TableCell></TableRow>
+                <TableRow key={i}><TableCell>{r[0]}</TableCell><TableCell>{r[1]}</TableCell><TableCell>{r[2] || '—'}</TableCell><TableCell className="text-end">{r[3] || '—'}</TableCell></TableRow>
               ))}
             </TableBody>
           </Table>
@@ -286,12 +288,18 @@ export function Daily({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; 
   const [tick, setTick] = useState(0);
   // The task is the engine's: a run started here or by the timer shows its progress after leaving and coming back.
   const { task, busy, error } = useTask(engine, 'daily');
+  const engineBusy = useEngine(engine, (e) => e.busy); // the daily sync waits for any other task
   // The switch and the time each show their own save.
   const onSave = useSave(), timeSave = useSave();
   useEffect(() => {
-    engine.store.daily().then(setDaily);
-    engine.store.autoRun(env).then(setRec);
-    engine.nextDaily().then(setNext);
+    let live = true;
+    Promise.all([engine.store.daily(), engine.store.autoRun(env)]).then(([d, r]) => {
+      if (!live) return;
+      setDaily(d);
+      setRec(r);
+      setNext(nextRun(d, r));
+    });
+    return () => { live = false; };
   }, [engine, env, tick, busy]);
   // The timer may run a sync while this tab is open in another window: refresh now and then.
   useEffect(() => { const t = setInterval(() => setTick((n) => n + 1), 60_000); return () => clearInterval(t); }, []);
@@ -309,13 +317,13 @@ export function Daily({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; 
         <CardHeader>
           <CardTitle className="text-lg">Step 5: Daily sync</CardTitle>
           <CardDescription>
-            Pulls and pushes once a day while Wealthfolio is open, with no questions. It stops if something needs you. The switch is for
-            this computer only, so paired computers do not push the same rows twice.
+            Pulls and pushes once a day while Wealthfolio is open, with no questions. It stops if something needs you. The switch does not
+            sync to paired devices, so they do not push the same rows twice.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-2">
+            <div className={SWITCH_ROW}>
               <SaveMark status={onSave.status}>
                 <Switch id="daily" checked={daily.on} onCheckedChange={(on) => change({ ...daily, on }, onSave)} />
               </SaveMark>
@@ -324,20 +332,20 @@ export function Daily({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; 
             <div className="flex items-center gap-2">
               <Label htmlFor="daily-time" className={daily.on ? '' : 'text-muted-foreground'}>Run after</Label>
               <SaveMark status={timeSave.status}>
-                <Input id="daily-time" type="time" className="h-9 w-32" value={daily.time} disabled={!daily.on}
+                <Input id="daily-time" type="time" className="h-9 w-36" value={daily.time} disabled={!daily.on}
                        onChange={(e) => e.target.value && change({ ...daily, time: e.target.value }, timeSave)} />
               </SaveMark>
             </div>
-            <Button variant="outline" className="ml-auto" disabled={!!busy}
+            <Button variant="outline" className="ms-auto" disabled={engineBusy}
                     onClick={() => engine.runDaily().then(() => host.ctx?.api.query.invalidateQueries(['activities']), () => {})}>
-              <Spin on={!!busy} /><Icons.RefreshCw className="mr-2 h-4 w-4" />Run now
+              <Spin on={!!busy} /><Icons.RefreshCw className="h-4 w-4" />Run now
             </Button>
           </div>
           <div className="text-muted-foreground flex flex-wrap gap-x-6 gap-y-1 text-sm">
             <span>Next run: {next ? next.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : daily.on ? '—' : 'off'}</span>
             <span>Last run: {latest ? new Date(latest.time).toLocaleString() : 'never'}</span>
           </div>
-          {busy && <p className="text-muted-foreground flex items-center gap-2 text-sm"><Icons.Spinner className="h-4 w-4 animate-spin" />Daily sync running… You can leave this screen.</p>}
+          {busy && <p className="text-muted-foreground flex items-center gap-2 text-sm"><Spin on />Daily sync running… You can leave this screen.</p>}
           {busy && <ProgressList list={task?.progress ?? []} />}
           <Problem error={error} />
         </CardContent>
@@ -351,9 +359,9 @@ export function Daily({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; 
               <TableBody>
                 {rec.runs.map((r) => (
                   <TableRow key={r.time}>
-                    <TableCell className="w-44 pl-6 text-sm">{new Date(r.time).toLocaleString()}</TableCell>
+                    <TableCell className="whitespace-nowrap ps-6 text-sm">{new Date(r.time).toLocaleString()}</TableCell>
                     <TableCell className="w-28"><Badge variant={STATUS[r.status][1]}>{STATUS[r.status][0]}</Badge></TableCell>
-                    <TableCell className="text-muted-foreground pr-6 text-sm">{r.message}</TableCell>
+                    <TableCell className="text-muted-foreground min-w-56 pe-6 text-sm">{r.message}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -365,20 +373,21 @@ export function Daily({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; 
   );
 }
 
+const RUN_STATE = { ok: 'done', stopped: 'warn', failed: 'error' } as const;
+
 function LastRun({ r, onStep }: { r: RunRecord; onStep: (s: Step) => void }) {
   const [label, tone] = STATUS[r.status];
   const t = r.totals;
   return (
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center gap-3 space-y-0">
-        {r.status === 'ok' ? <Icons.CheckCircle className="h-5 w-5 text-green-600" />
-          : r.status === 'stopped' ? <Icons.AlertTriangle className="h-5 w-5 text-amber-500" /> : <Icons.XCircle className="text-destructive h-5 w-5" />}
+        <StateIcon state={RUN_STATE[r.status]} size="h-5 w-5" />
         <CardTitle className="text-base">Last run</CardTitle>
         <Badge variant={tone}>{label}</Badge>
         <span className="text-muted-foreground text-sm">{new Date(r.time).toLocaleString()}</span>
         {r.goto && (
-          <Button size="sm" variant="outline" className="ml-auto" onClick={() => onStep(r.goto!)}>
-            Go to {r.goto === 'connections' ? 'Connections' : 'Sync'}<Icons.ArrowRight className="ml-2 h-3 w-3" />
+          <Button size="sm" variant="outline" className="ms-auto" onClick={() => onStep(r.goto!)}>
+            Go to {r.goto === 'connections' ? 'Connections' : 'Sync'}<Icons.ArrowRight className="h-3 w-3" />
           </Button>
         )}
       </CardHeader>
@@ -396,11 +405,11 @@ function LastRun({ r, onStep }: { r: RunRecord; onStep: (s: Step) => void }) {
         {r.accounts && r.accounts.length > 0 && (
           <Table>
             <TableHeader>
-              <TableRow><TableHead>Account</TableHead><TableHead className="text-right">New</TableHead><TableHead className="text-right">Updated</TableHead><TableHead className="text-right">Removed</TableHead></TableRow>
+              <TableRow><TableHead>Account</TableHead><TableHead className="text-end">New</TableHead><TableHead className="text-end">Updated</TableHead><TableHead className="text-end">Removed</TableHead></TableRow>
             </TableHeader>
             <TableBody>
               {r.accounts.map((a) => (
-                <TableRow key={a.name}><TableCell>{a.name}</TableCell><TableCell className="text-right">{a.new}</TableCell><TableCell className="text-right">{a.updated}</TableCell><TableCell className="text-right">{a.removed}</TableCell></TableRow>
+                <TableRow key={a.name}><TableCell>{a.name}</TableCell><TableCell className="text-end">{a.new}</TableCell><TableCell className="text-end">{a.updated}</TableCell><TableCell className="text-end">{a.removed}</TableCell></TableRow>
               ))}
             </TableBody>
           </Table>
@@ -411,7 +420,7 @@ function LastRun({ r, onStep }: { r: RunRecord; onStep: (s: Step) => void }) {
   );
 }
 
-export function RatioProposal({ engine, p, onDone }: { engine: Engine; p: Proposal; onDone: () => void }) {
+function RatioProposal({ engine, p, onDone }: { engine: Engine; p: Proposal; onDone: () => void }) {
   const { busy, error, run } = useBusy();
   const pct = p.change === null ? '' : ` (${p.change >= 0 ? '+' : ''}${(p.change * 100).toFixed(2)}%)`;
   return (

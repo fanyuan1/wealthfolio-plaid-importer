@@ -12,11 +12,11 @@ import { convert } from "./tracking";
 import { MAX_DAYS, matchTransfers } from "./transfers";
 
 export const HISTORY_DAYS = 729; // Plaid investments allow 24 months
-export const ANCHOR_DAYS = 31; // an account rebuilt within this many days of the first pull reuses its history start
+const ANCHOR_DAYS = 31; // an account rebuilt within this many days of the first pull reuses its history start
 export const OVERLAP_DAYS = 14;
 export const BLOCKING_ITEM_ERRORS = new Set(["ITEM_LOGIN_REQUIRED", "ITEM_LOCKED", "ACCESS_NOT_GRANTED",
   "INVALID_CREDENTIALS", "USER_SETUP_REQUIRED", "MFA_NOT_SUPPORTED", "NO_ACCOUNTS"]);
-export const BROKERAGE_WINDOW = /self[- ]?directed|brokerage ?(link|window|account)|sdba|schwab/i;
+const BROKERAGE_WINDOW = /self[- ]?directed|brokerage ?(link|window|account)|sdba|schwab/i;
 
 export const addDays = (day: string, n: number): string =>
   new Date(Date.parse(day + "T00:00:00Z") + n * 86_400_000).toISOString().slice(0, 10);
@@ -35,6 +35,10 @@ export interface AccountCfg {
   item_id: string; kind: string; skip?: boolean; currency?: string; plaid_subtype?: string; name?: string;
   wealthfolio_account_id?: string | null; match?: string; [k: string]: unknown;
 }
+
+/** An account's name as the addon shows it; the Plaid account id when it has none. */
+export const accountLabel = (cfg: Record<string, AccountCfg>, aid: string) => String(cfg[aid]?.name ?? aid);
+export const accountNames = (cfg: Record<string, AccountCfg>) => Object.fromEntries(Object.keys(cfg).map((aid) => [aid, accountLabel(cfg, aid)]));
 
 export function activeAccounts(cfg: Record<string, AccountCfg>, itemId: string): Record<string, AccountCfg> {
   return Object.fromEntries(Object.entries(cfg).filter(([, a]) => a.item_id === itemId && !a.skip));
@@ -239,11 +243,8 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
   }
 
   for (const a of p.new) {
-    const kind = accountsCfg[a.accountId]?.kind;
-    if (a.category && a.pairId === null && (kind === "cash" || kind === "credit")) {
-      const c = mapCategory(a.category, ["DEPOSIT", "CREDIT", "INTEREST"].includes(a.activityType));
-      if (c) p.categories.set(a.plaidId, c);
-    }
+    const c = categoryOf(accountsCfg[a.accountId]?.kind, a.category, a.pairId, a.activityType);
+    if (c) p.categories.set(a.plaidId, c);
   }
 
   if (holdingsAll.size) {
@@ -256,4 +257,22 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
   // balance-only accounts hold hand-entered positions, so "holdings 0" says nothing about them
   p.reviews = p.reviews.filter((r) => !(balanceOnly.has(r.accountId) && r.reason === "negative opening position"));
   return p;
+}
+
+/** The Spending category of a bank or card row: Plaid's category mapped, or null. A transfer leg gets none. */
+function categoryOf(kind: string | undefined, pfc: string | null | undefined, pairId: string | null, activityType: string): [string, string] | null {
+  if (!pfc || pairId || (kind !== "cash" && kind !== "credit")) return null;
+  return mapCategory(pfc, ["DEPOSIT", "CREDIT", "INTEREST"].includes(activityType));
+}
+
+/** Pushed bank and card rows whose Spending category is not set yet, from the Plaid category kept with each row.
+ * Mapping now means a changed mapping also reaches older rows. */
+export function uncategorized(state: { rows: Map<string, LedgerRow> }, cfg: Record<string, AccountCfg>): Map<string, [string, string]> {
+  const out = new Map<string, [string, string]>();
+  for (const r of state.rows.values()) {
+    if (r.voided || !r.wf_activity_id || r.category_set) continue;
+    const c = categoryOf(cfg[r.account_id]?.kind, r.category, r.pair_plaid_id, r.activity_type);
+    if (c) out.set(r.plaid_id, c);
+  }
+  return out;
 }

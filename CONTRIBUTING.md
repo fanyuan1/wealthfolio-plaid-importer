@@ -22,7 +22,7 @@ Plaid rows contain your account ids, masks, names and amounts. Before you open a
 2. Keep the change small. Match the style of the code around it.
 3. Add a test with made-up values for each mapping change.
 4. Add a row to the decision log when you change behavior.
-5. Run the type check and tests (see [docs/GUIDE.md](docs/GUIDE.md)). They must pass.
+5. Run the type check and tests, and the browser tests if you have Docker (see [docs/GUIDE.md](docs/GUIDE.md)). They must pass.
 6. If you changed sync or push, rebuild the zip and run it in a Wealthfolio Sandbox profile.
 7. Leave the version alone in a pull request. The maintainer raises it at release (see below).
 

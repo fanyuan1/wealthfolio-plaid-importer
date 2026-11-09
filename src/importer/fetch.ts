@@ -1,7 +1,7 @@
 // Fetch every linked Item from Plaid. One broken Item never stops the others.
 import type { Ledger } from "./ledger";
 import type { OnProgress, Row } from "./models";
-import { type AccountCfg, activeAccounts, addDays, BLOCKING_ITEM_ERRORS, HISTORY_DAYS, type ItemData, OVERLAP_DAYS } from "./plan";
+import { type AccountCfg, accountLabel, activeAccounts, addDays, BLOCKING_ITEM_ERRORS, HISTORY_DAYS, type ItemData, OVERLAP_DAYS } from "./plan";
 import { type Plaid, PlaidError } from "./plaid";
 
 /** A linked Item with its access token. */
@@ -15,6 +15,7 @@ export interface FetchResult {
 }
 
 type Log = (msg: string) => void;
+export const RECONNECT_DETAIL = "Login expired. Reconnect it in Connections.";
 
 /** tracked: security_ids of funds held by exchange ratio; their accounts get full history each time, so a
  * new ratio updates the quantities already pushed. full: more investment accounts to pull in full. */
@@ -44,7 +45,7 @@ export async function fetchItems(plaid: Plaid, tokens: Record<string, Token>, ac
       log(`  ${label}: needs a reconnect (${err.error_code})`);
       out.skipped.push(label);
       out.blocked.push(itemId);
-      progress({ id: itemId, label, state: "error", detail: "Login expired. Reconnect it in Connections." });
+      progress({ id: itemId, label, state: "error", detail: RECONNECT_DETAIL });
       continue;
     }
     try {
@@ -100,4 +101,4 @@ async function fetchItem(plaid: Plaid, itemId: string, tok: Token, accts: Record
   return d;
 }
 
-const names = (accts: Record<string, AccountCfg>, ids: string[]) => ids.map((a) => String(accts[a].name ?? a)).join(", ");
+const names = (accts: Record<string, AccountCfg>, ids: string[]) => ids.map((a) => accountLabel(accts, a)).join(", ");

@@ -4,7 +4,7 @@ export const INCOME = "income_sources";
 
 // Detailed matches win over primary matches. Keys must exist in Wealthfolio;
 // unknown subcategory keys fall back to their parent at push time.
-export const DETAILED: Record<string, string> = {
+const DETAILED: Record<string, string> = {
   FOOD_AND_DRINK_GROCERIES: "groceries",
   FOOD_AND_DRINK_COFFEE: "food_coffee",
   FOOD_AND_DRINK_RESTAURANT: "food_restaurants",
@@ -28,7 +28,7 @@ export const DETAILED: Record<string, string> = {
   INCOME_INTEREST_EARNED: "income_interest",
   INCOME_TAX_REFUND: "income_tax_refund",
 };
-export const PRIMARY: Record<string, string> = {
+const PRIMARY: Record<string, string> = {
   FOOD_AND_DRINK: "food", GENERAL_MERCHANDISE: "shopping", HOME_IMPROVEMENT: "housing",
   RENT_AND_UTILITIES: "bills", MEDICAL: "health", PERSONAL_CARE: "personal",
   ENTERTAINMENT: "entertainment", TRAVEL: "travel", TRANSPORTATION: "transport",

@@ -3,7 +3,7 @@ import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Inpu
 import { useEffect, useState } from 'react';
 import type { Engine } from '../engine/engine';
 import type { PlaidEnv } from '../importer';
-import { CopyLink, FlashLabel, KEYS_URL, Problem, Spin, useBusy, useFlash } from './common';
+import { CopyLink, FlashLabel, KEYS_URL, Problem, Spin, SWITCH_ROW, useBusy, useFlash } from './common';
 
 export function Setup({ engine, env, onEnv }: { engine: Engine; env: PlaidEnv; onEnv: (e: PlaidEnv) => void }) {
   const [clientId, setClientId] = useState('');
@@ -24,7 +24,7 @@ export function Setup({ engine, env, onEnv }: { engine: Engine; env: PlaidEnv; o
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Step 1: Plaid keys</CardTitle>
-          <div className="flex items-center gap-3 pt-1">
+          <div className={`${SWITCH_ROW} pt-1`}>
             <Switch id="env" checked={env === 'production'} onCheckedChange={(on) => onEnv(on ? 'production' : 'sandbox')} />
             <Label htmlFor="env">{env === 'production' ? 'Production: real accounts' : 'Sandbox: test banks'}</Label>
           </div>
@@ -45,7 +45,7 @@ export function Setup({ engine, env, onEnv }: { engine: Engine; env: PlaidEnv; o
           <div>
             <Button className="min-w-32" disabled={!ok && (!clientId || !secret || !!busy)}
                     onClick={() => !ok && run('save keys', async () => {
-                      await engine.store.saveKeys(env, clientId, secret);
+                      await engine.saveKeys(env, clientId, secret);
                       setSecret('');
                       setHave(true);
                       await engine.checkKeys();
@@ -54,7 +54,6 @@ export function Setup({ engine, env, onEnv }: { engine: Engine; env: PlaidEnv; o
               <Spin on={!!busy} /><FlashLabel on={ok} done="Keys work">Save keys</FlashLabel>
             </Button>
           </div>
-          <p className="text-muted-foreground text-sm">Kept in your system keychain.</p>
         </CardContent>
       </Card>
       <Problem error={error} />

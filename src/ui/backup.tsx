@@ -2,8 +2,8 @@
 import { Alert, AlertDescription, AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Icons } from '@wealthfolio/ui';
 import { type ChangeEvent, useRef, useState } from 'react';
 import type { BackupKind, Engine, Restored } from '../engine/engine';
-import type { PlaidEnv } from '../importer';
-import { FlashLabel, host, msg, Problem, Spin, useBusy, useFlash, useTask } from './common';
+import { type PlaidEnv, plural } from '../importer';
+import { copyText, FlashLabel, host, msg, Problem, Spin, useBusy, useFlash, useTask } from './common';
 
 const KINDS: [BackupKind, string, string][] = [
   ['full', 'Full backup', 'Connections and their access tokens, account selections, sync settings, transaction records already pushed to Wealthfolio, and Discard decisions.'],
@@ -19,6 +19,7 @@ export function Backup({ engine, env, ready, onChange }: { engine: Engine; env: 
   const [overwrite, setOverwrite] = useState<string[]>(); // the second confirmation: connections an overwrite removes
   const source = picked?.text ?? paste;
   const file = useRef<HTMLInputElement>(null);
+  const box = useRef<HTMLTextAreaElement>(null);
   const { busy, error, run } = useBusy();
   // Restore is an engine task: its result is still shown after leaving the screen.
   const { task, busy: restoring, error: restoreError, start } = useTask(engine, 'restore');
@@ -32,15 +33,9 @@ export function Backup({ engine, env, ready, onChange }: { engine: Engine; env: 
     return r;
   });
   const copy = async () => {
-    if (!made) return;
-    try {
-      await navigator.clipboard.writeText(made.text);
-      setMade({ ...made, copied: true });
-    } catch {
-      setMade({ ...made, copied: false });
-    }
+    if (made) setMade({ ...made, copied: await copyText(made.text, box.current) });
   };
-  // Wealthfolio's own save dialog: the webview ignores browser downloads.
+  // Wealthfolio's own file save works on every surface; a plain browser download does not reach the user in the app.
   const saveFile = () => run('save', async () => {
     if (!made) return;
     const name = `plaid-importer-${made.kind}-${env}-${new Date().toISOString().slice(0, 10)}.json`;
@@ -61,7 +56,7 @@ export function Backup({ engine, env, ready, onChange }: { engine: Engine; env: 
             <div key={kind} className={`flex flex-col gap-3 rounded-lg border p-4 ${kind === 'full' ? 'border-primary/50' : ''}`}>
               <div className="flex items-center gap-2 font-medium">
                 <Icons.DatabaseBackup className="h-4 w-4" />{title}
-                {kind === 'full' && <Badge variant="success-subtle" className="ml-auto">Recommended</Badge>}
+                {kind === 'full' && <Badge variant="success-subtle" className="ms-auto">Recommended</Badge>}
               </div>
               <p className="text-muted-foreground flex-1 text-sm">{text}</p>
               <div>
@@ -78,18 +73,18 @@ export function Backup({ engine, env, ready, onChange }: { engine: Engine; env: 
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-medium">{made.kind === 'full' ? 'Full backup' : 'Connections backup'} ready</span>
               <span className="text-muted-foreground text-xs">{(made.text.length / 1024).toFixed(made.text.length < 10240 ? 1 : 0)} KB</span>
-              <div className="ml-auto flex gap-2">
-                <Button size="sm" className="min-w-24" onClick={copy}><Icons.Copy className="mr-2 h-3 w-3" />{made.copied ? 'Copied' : 'Copy'}</Button>
+              <div className="ms-auto flex flex-wrap gap-2">
+                <Button size="sm" className="min-w-24" onClick={copy}><Icons.Copy className="h-3 w-3" />{made.copied ? 'Copied' : 'Copy'}</Button>
                 <Button size="sm" variant="outline" disabled={!!busy} onClick={saveFile}
                         className="min-w-32">
                   <Spin on={busy === 'save'} />
-                  <FlashLabel on={saved} done="Saved" small><Icons.Download className="mr-2 h-3 w-3" />Save as file…</FlashLabel>
+                  <FlashLabel on={saved} done="Saved" small><Icons.Download className="h-3 w-3" />Save as file…</FlashLabel>
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => setMade(undefined)}>Hide</Button>
               </div>
             </div>
             {made.copied === false && <span className="text-destructive text-xs">Copy did not work here. Select the text below and copy it.</span>}
-            <textarea readOnly value={made.text} className="bg-muted h-24 rounded p-2 font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
+            <textarea ref={box} readOnly value={made.text} className="bg-muted h-24 rounded p-2 font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
           </CardContent>
         )}
       </Card>
@@ -105,7 +100,7 @@ export function Backup({ engine, env, ready, onChange }: { engine: Engine; env: 
               <Icons.FileText className="text-muted-foreground h-5 w-5" />
               <span className="font-medium">{picked.name}</span>
               <span className="text-muted-foreground text-xs">{(picked.text.length / 1024).toFixed(1)} KB · loaded</span>
-              <Button size="sm" variant="ghost" className="ml-auto" disabled={!!restoring} onClick={() => setPicked(undefined)}>Remove</Button>
+              <Button size="sm" variant="ghost" className="ms-auto" disabled={!!restoring} onClick={() => setPicked(undefined)}>Remove</Button>
             </div>
           ) : (
             <textarea value={paste} onChange={(e) => setPaste(e.target.value)} spellCheck={false} autoComplete="off" placeholder="{ … }"
@@ -119,14 +114,14 @@ export function Backup({ engine, env, ready, onChange }: { engine: Engine; env: 
                      e.target.value = '';
                      if (f) f.text().then((text) => setPicked({ name: f.name, text }));
                    }} />
-            <Button variant="outline" disabled={!!restoring} onClick={() => file.current?.click()}><Icons.Upload className="mr-2 h-4 w-4" />Choose a file</Button>
+            <Button variant="outline" disabled={!!restoring} onClick={() => file.current?.click()}><Icons.Upload className="h-4 w-4" />Choose a file</Button>
           </div>
           {restored && (
             <Alert>
               <Icons.CheckCircle className="h-4 w-4 text-green-600" />
-              <AlertTitle>Restored {restored.items} connection{restored.items === 1 ? '' : 's'} and {restored.accounts} account{restored.accounts === 1 ? '' : 's'}</AlertTitle>
+              <AlertTitle>Restored {plural(restored.items, 'connection')} and {plural(restored.accounts, 'account')}</AlertTitle>
               <AlertDescription className="flex flex-col gap-2">
-                {restored.removed > 0 && <span>Removed {restored.removed} connection{restored.removed === 1 ? '' : 's'} the backup did not have.</span>}
+                {restored.removed > 0 && <span>Removed {plural(restored.removed, 'connection')} the backup did not have.</span>}
                 {restored.ledger === 'restored' && <span>Also restored the record of {restored.rows} pushed rows.</span>}
                 {restored.ledger === 'other-wealthfolio' && (
                   <span>None of its accounts are in this Wealthfolio, so the transaction records were left out. The first push to each account checks for rows Wealthfolio already has.</span>
@@ -169,7 +164,7 @@ export function Backup({ engine, env, ready, onChange }: { engine: Engine; env: 
               </span>
               {overwrite && overwrite.length > 0 && (
                 <span className="text-destructive">
-                  Removes {overwrite.length} connection{overwrite.length === 1 ? '' : 's'} the backup does not have, with {overwrite.length === 1 ? 'its' : 'their'} access
+                  Removes {plural(overwrite.length, 'connection')} the backup does not have, with {overwrite.length === 1 ? 'its' : 'their'} access
                   token{overwrite.length === 1 ? '' : 's'} and accounts: {overwrite.join(', ')}. Adding them again costs new Plaid connections, unless you have another backup.
                 </span>
               )}
@@ -194,7 +189,7 @@ function describe(text: string): string {
     const n = Object.keys(d.items ?? {}).length;
     const kind = d.kind === 'full' ? 'full backup' : d.kind === 'connections' ? 'connections backup' : 'backup';
     const env = d.env === 'production' ? 'Production' : d.env === 'sandbox' ? 'Sandbox' : null;
-    return `this ${kind}${env ? ` (${env}, ${n} connection${n === 1 ? '' : 's'})` : ''}`;
+    return `this ${kind}${env ? ` (${env}, ${plural(n, 'connection')})` : ''}`;
   } catch {
     return 'this backup';
   }

@@ -7,7 +7,7 @@ const LOOKBACK_DAYS = 7; // a weekend or holiday takes the last close before it
 export type CloseCache = Record<string, Record<string, string>>; // symbol -> day -> close
 /** [start, end] days -> {day: close}. Throws on failure; a NotFound error means Yahoo has no such symbol. */
 export type CloseFetch = (sym: string, start: string, end: string) => Promise<Record<string, string>>;
-export class NotFound extends Error {}
+class NotFound extends Error {}
 
 /** GET a URL; return the status and body. */
 export type HttpGet = (url: string, headers: Record<string, string>) => Promise<{ status: number; body: string }>;

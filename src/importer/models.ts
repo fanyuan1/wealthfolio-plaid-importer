@@ -120,3 +120,6 @@ export interface Progress {
   detail?: string;
 }
 export type OnProgress = (p: Progress) => void;
+
+/** "1 account", "2 accounts". many: an irregular plural. */
+export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;

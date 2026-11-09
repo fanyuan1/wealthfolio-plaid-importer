@@ -3,3 +3,8 @@ node_modules/
 dist/
 # Backups hold access tokens.
 *backup*.json
+# The test Wealthfolio's database key.
+test/docker/.env
+# Browser test output.
+test-results/
+playwright-report/

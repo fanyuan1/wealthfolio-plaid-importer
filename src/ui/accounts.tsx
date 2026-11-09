@@ -2,10 +2,10 @@
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Icons, Switch, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@wealthfolio/ui';
 import { useCallback, useEffect, useState } from 'react';
 import type { Engine } from '../engine/engine';
-import { type AccountCfg, jointByMask, type PlaidEnv, planLinks, WF_TYPE } from '../importer';
-import { FlashLabel, host, Problem, ProgressList, Spin, useFlash, useSave, useTask, WithSave } from './common';
+import { type AccountCfg, jointByMask, type PlaidEnv, planLinks, plural, WF_TYPE } from '../importer';
+import { ACTIONS, FlashLabel, host, Problem, ProgressList, Spin, useFlash, useSave, useTask, WithSave } from './common';
 
-export const KIND: Record<string, string> = { investment: 'Investment', cash: 'Cash', credit: 'Credit card', unsupported: 'Not supported' };
+const KIND: Record<string, string> = { investment: 'Investment', cash: 'Cash', credit: 'Credit card', unsupported: 'Not supported' };
 
 /** names: bank and card accounts to sync without spending; available: whether Wealthfolio's spending is on at all. */
 export type SpendingOff = { names: string[]; available: boolean };
@@ -115,7 +115,7 @@ export function Accounts({ engine, env, version, onChange, onSpendingOff }: { en
               Turn on accounts, link an existing account, or create new. Sync stays locked until every selected account exists.
             </CardDescription>
           </div>
-          <div className="flex items-center gap-2">
+          <div className={ACTIONS}>
           <Button variant="outline" className="min-w-32" disabled={!rows.some(([, c]) => c.kind !== 'unsupported') || !!busy}
                   onClick={() => save(async () => { await engine.setSyncAll(!allOn); await load(); flashAll(); })}>
             <FlashLabel on={allSaved} done="Saved">{allOn ? 'Clear all' : 'Select all'}</FlashLabel>
@@ -124,25 +124,25 @@ export function Accounts({ engine, env, version, onChange, onSpendingOff }: { en
                   onClick={() => start('create', async () => {
                     const n = await engine.createAccounts();
                     host.ctx?.api.query.invalidateQueries(['accounts']);
-                    return n ? `${n} account${n === 1 ? '' : 's'} created in Wealthfolio.` : 'Accounts linked.';
+                    return n ? `${plural(n, 'account')} created in Wealthfolio.` : 'Accounts linked.';
                   })}>
-            <Spin on={busy === 'create'} /><Icons.Plus className="mr-2 h-4 w-4" />
-            {toCreate ? `Create ${toCreate} Wealthfolio account${toCreate === 1 ? '' : 's'}`
-              : missing ? `Link ${missing} existing account${missing === 1 ? '' : 's'}` : 'All accounts exist'}
+            <Spin on={busy === 'create'} /><Icons.Plus className="h-4 w-4" />
+            {toCreate ? `Create ${plural(toCreate, 'Wealthfolio account')}`
+              : missing ? `Link ${plural(missing, 'existing account')}` : 'All accounts exist'}
           </Button>
           </div>
         </CardHeader>
         {/* Below the buttons, with the refresh's errors and new accounts. */}
         {(refreshing || refresh.length > 0) && (
           <CardContent className="flex flex-col gap-2">
-            {refreshing && <span className="text-muted-foreground flex items-center gap-2 text-sm"><Icons.Spinner className="h-4 w-4 animate-spin" />Checking for new accounts</span>}
+            {refreshing && <span className="text-muted-foreground flex items-center gap-2 text-sm"><Spin on />Checking for new accounts</span>}
             {refresh.length > 0 && <ProgressList list={refresh} />}
           </CardContent>
         )}
         {doubled.length > 0 && (
           <CardContent>
             <Alert>
-              <Icons.AlertTriangle className="h-4 w-4 text-amber-500" />
+              <Icons.AlertTriangle className="h-4 w-4 text-amber-600" />
               <AlertTitle>Joint account turned on twice</AlertTitle>
               <AlertDescription>
                 {doubled.join('; ')}. Each owner's link shows the same account, so syncing both counts it twice. Turn one off.
@@ -154,18 +154,18 @@ export function Accounts({ engine, env, version, onChange, onSpendingOff }: { en
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="pl-6">Sync</TableHead>
+                <TableHead className="ps-6">Sync</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Previous account</TableHead>
                 <TableHead>Created</TableHead>
-                <TableHead className="pr-6">Spend tracking</TableHead>
+                <TableHead className="pe-6">Spend tracking</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map(([id, c]) => (
                 <TableRow key={id}>
-                  <TableCell className="pl-6">
+                  <TableCell className="ps-6">
                     <WithSave>
                       {(save) => (
                         <Switch checked={!c.skip} disabled={c.kind === 'unsupported' || !!busy}
@@ -175,14 +175,14 @@ export function Accounts({ engine, env, version, onChange, onSpendingOff }: { en
                   </TableCell>
                   <TableCell>
                     {String(c.name)}
-                    {(c.joint || joint.has(id) || /\b(joint|jt|jtwros)\b/i.test(String(c.plaid_name))) && <Badge variant="info-subtle" className="ml-2">Joint</Badge>}
+                    {(c.joint || joint.has(id)) && <Badge variant="info-subtle" className="ms-2">Joint</Badge>}
                   </TableCell>
                   <TableCell>{KIND[c.kind] ?? c.kind}</TableCell>
                   <TableCell>{matchCell(id, c)}</TableCell>
                   <TableCell>
                     {targetOf(id, c) ? <Badge variant="success-subtle">Yes</Badge> : <Badge variant="warning-subtle">No</Badge>}
                   </TableCell>
-                  <TableCell className="pr-6">
+                  <TableCell className="pe-6">
                     {!targetOf(id, c) || spending === null || (c.kind !== 'cash' && c.kind !== 'credit')
                       ? <span className="text-muted-foreground text-sm">—</span>
                       : spending.has(targetOf(id, c)!) ? <Badge variant="success-subtle">On</Badge>

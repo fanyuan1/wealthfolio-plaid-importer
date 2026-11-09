@@ -1,5 +1,5 @@
 // After a push: what the user still does by hand in Wealthfolio, from the plan's review rows.
-import type { Review } from "./models";
+import { plural, type Review } from "./models";
 
 // reason -> [heading, instruction]. Reasons not listed fall into OTHER.
 const SECTIONS: [string, string | null, string | null][] = [
@@ -79,7 +79,7 @@ export function todoReport(reviews: Review[], names: Record<string, string>, pri
       lines.push(`  - ${name(r.accountId)}: ${when}${what}${r.detail}`);
     }
   }
-  if (n) lines.splice(priceWarnings.length, 0, `To do in Wealthfolio: ${n} item${n !== 1 ? "s" : ""}`);
+  if (n) lines.splice(priceWarnings.length, 0, `To do in Wealthfolio: ${plural(n, "item")}`);
   return lines;
 }
 

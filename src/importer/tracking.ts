@@ -54,7 +54,7 @@ export function convert(txns: Row[], holdings: Row[], securities: Record<string,
   return [tx, hs, secs];
 }
 
-export const REBASE_LIMIT = D("0.05"); // a bigger ratio jump waits for the user: likely a bad price, not drift
+const REBASE_LIMIT = D("0.05"); // a bigger ratio jump waits for the user: likely a bad price, not drift
 
 export const trackedIds = (symbols: Record<string, Row>): Set<string> => new Set(ratios(symbols).keys());
 
@@ -76,7 +76,7 @@ export function reportedPrice(items: HoldingsItem[], sid: string): [Dec, string]
 
 export interface ExactCloses { exact(symbol: string, day: string): Dec | null }
 
-export class Rebase {
+class Rebase {
   constructor(public sid: string, public name: string, public old: Track, public day: string,
     public price: Dec, public close: Dec | null) {} // close: target close that day; null until Yahoo has it
 

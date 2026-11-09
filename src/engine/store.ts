@@ -1,5 +1,6 @@
-// Addon storage and keychain: settings, connections, accounts, securities, ledger, prices.
-// Secrets (Plaid keys, access tokens) and the daily sync switch live in the system keychain; the rest in addon storage, per Plaid environment.
+// Addon storage and secrets: settings, connections, accounts, securities, ledger, prices.
+// Plaid keys, access tokens and the daily sync switch are addon secrets, which never sync; the rest is in addon storage,
+// per Plaid environment.
 import type { HostAPI } from '@wealthfolio/addon-sdk';
 import { type AccountCfg, type CloseCache, MemoryLedger, type PlaidEnv, type Row } from '../importer';
 
@@ -91,10 +92,11 @@ export class Store {
 
   settings() { return this.json<Settings>("settings", { env: "sandbox" }); }
   saveSettings(s: Settings) { return this.put("settings", s); }
-  /** The daily switch lives in this computer's keychain, which never syncs: two paired computers would push the same
-   * rows twice. The time syncs with the other settings. */
-  async daily(): Promise<Daily> {
-    return { on: (await this.api.secrets.get(KEYS.dailyOn)) === "on", time: (await this.settings()).daily?.time ?? "07:00" };
+  /** The daily switch is a secret, which never syncs: two paired devices would push the same rows twice. The time syncs
+   * with the other settings. */
+  async daily(settings?: Settings): Promise<Daily> {
+    const [on, s] = await Promise.all([this.api.secrets.get(KEYS.dailyOn), settings ?? this.settings()]);
+    return { on: on === "on", time: s.daily?.time ?? "07:00" };
   }
   async saveDaily(d: Daily) {
     await this.api.secrets.set(KEYS.dailyOn, d.on ? "on" : "off");
@@ -117,6 +119,9 @@ export class Store {
   saveLastSync(env: PlaidEnv, message: string) { return this.put(`last_${env}`, { time: new Date().toISOString(), message }); }
   autoRun(env: PlaidEnv) { return this.json<AutoRun>(`auto_${env}`, {}); }
   saveAutoRun(env: PlaidEnv, v: AutoRun) { return this.put(`auto_${env}`, v); }
+  /** The copy of Wealthfolio running the daily sync now. A key of its own, so saving the run history never overwrites it. */
+  dailyLock(env: PlaidEnv) { return this.json<{ id: string; at: string } | null>(`daily_lock_${env}`, null); }
+  saveDailyLock(env: PlaidEnv, v: { id: string; at: string } | null) { return this.put(`daily_lock_${env}`, v); }
 
   async keys(env: PlaidEnv) {
     return { clientId: await this.api.secrets.get(KEYS.clientId), secret: await this.api.secrets.get(KEYS.secret(env)) };

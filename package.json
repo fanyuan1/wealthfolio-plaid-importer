@@ -6,7 +6,10 @@
   "type": "module",
   "main": "dist/addon.js",
   "license": "MIT",
-  "repository": { "type": "git", "url": "git+https://github.com/fanyuan1/wealthfolio-plaid-importer.git" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fanyuan1/wealthfolio-plaid-importer.git"
+  },
   "homepage": "https://github.com/fanyuan1/wealthfolio-plaid-importer#readme",
   "bugs": "https://github.com/fanyuan1/wealthfolio-plaid-importer/issues",
   "scripts": {
@@ -16,7 +19,12 @@
     "package": "mkdir -p dist && find dist -name '*.map' -delete && zip -r dist/$npm_package_name-$npm_package_version.zip manifest.json dist/addon.js README.md -x '*.map'",
     "bundle": "pnpm clean && pnpm build && pnpm package",
     "type-check": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "wf:up": "f=test/docker/.env; [ -f $f ] || echo \"WF_SECRET_KEY=$(openssl rand -base64 32)\" > $f; docker compose -p plaid-wf -f test/docker/compose.yml --env-file $f up -d --wait",
+    "wf:install": "pnpm -s bundle && node test/docker/install.mjs",
+    "wf:down": "docker compose -p plaid-wf -f test/docker/compose.yml --env-file test/docker/.env down",
+    "wf:reset": "docker compose -p plaid-wf -f test/docker/compose.yml --env-file test/docker/.env down -v && rm -f test/docker/.env"
   },
   "dependencies": {
     "big.js": "^7.0.1"
@@ -29,6 +37,7 @@
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.0",
     "@tanstack/react-query": "^5.90.20",
     "@types/big.js": "^7.0.0",
     "@types/node": "^20.0.0",

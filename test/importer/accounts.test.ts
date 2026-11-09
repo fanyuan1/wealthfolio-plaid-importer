@@ -52,6 +52,15 @@ test("crypto filed as cash still maps to a crypto pair", async () => {
   expect(resolve({ security_id: "u", ticker_symbol: "CUR:USD", type: "cash", is_cash_equivalent: true }, {}).kind).toBe("cash");
 });
 
+test("currency cash is cash in any ISO currency, never crypto", async () => {
+  const { isCurrency, resolve } = await import("../../src/importer/securities");
+  for (const t of ["CUR:USD", "CUR:EUR", "CUR:HKD", "CUR:SGD", "cur:nzd"]) {
+    expect(isCurrency({ ticker_symbol: t }), t).toBe(true);
+    expect(resolve({ security_id: "c", ticker_symbol: t, type: "cash", is_cash_equivalent: true }, {}).kind, t).toBe("cash");
+  }
+  for (const t of ["CUR:BTC", "CUR:USDC", "USD", "SPAXX", null]) expect(isCurrency({ ticker_symbol: t }), String(t)).toBe(false);
+});
+
 test("joint by shared mask under two owners", async () => {
   const { jointByMask } = await import("../../src/importer");
   const c = (owner: string, mask: string) => ({ owner, institution_id: "m", mask, plaid_subtype: "cash management", item_id: "i", kind: "investment" });

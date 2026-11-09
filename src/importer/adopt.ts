@@ -1,5 +1,5 @@
 // Rows Plaid would add that Wealthfolio already has: matched to the existing activity, not created again.
-import { D, type Dec, dec, ZERO } from "./dec";
+import { D, type Dec, dec, EPS, ZERO } from "./dec";
 import { Activity, CASH_IN, CASH_OUT, POSITION_SIGN } from "./models";
 
 /** An activity already in Wealthfolio, in the fields that matter for matching. */
@@ -27,7 +27,6 @@ export interface Adoption {
 }
 
 const TOL = D("0.01");
-const QTY_TOL = D("0.000001");
 
 const norm = (s: string | null | undefined) => {
   const t = String(s ?? "").toUpperCase();
@@ -36,14 +35,27 @@ const norm = (s: string | null | undefined) => {
 const near = (a: Dec | null, b: Dec | null, tol: Dec) => a !== null && b !== null && a.abs().minus(b.abs()).abs().lte(tol);
 const group = (t: string) => (CASH_IN.has(t) ? "in" : CASH_OUT.has(t) ? "out" : t);
 
-export const fromPlaid = (id: string) => `plaid:${id}`;
 /** Whether the activity's note carries this Plaid id (a whole word: plaid:abc is not plaid:abcd). */
-export const hasId = (e: Existing, plaidId: string) => (e.comment ?? "").split(/\s+/).includes(fromPlaid(plaidId));
-export const isOurs = (e: Existing) => /plaid:/.test(e.comment ?? "");
+const isOurs = (e: Existing) => /plaid:/.test(e.comment ?? "");
+
+/** Group activities by key, each group in the input order: lookups then find the same first match as a scan would. */
+function index(list: Existing[], keys: (e: Existing) => string[]): Map<string, Existing[]> {
+  const out = new Map<string, Existing[]>();
+  for (const e of list) {
+    for (const k of keys(e)) {
+      const g = out.get(k);
+      if (g) g.push(e);
+      else out.set(k, [e]);
+    }
+  }
+  return out;
+}
+/** Activities by the Plaid ids in their notes. */
+const byNote = (list: Existing[]) => index(list, (e) => (e.comment ?? "").split(/\s+/).filter((w) => w.startsWith("plaid:")).map((w) => w.slice(6)));
 
 function sameAmount(a: Activity, e: Existing): boolean {
   const [aq, eq] = [dec(a.quantity), dec(e.quantity)];
-  if (a.symbol && aq && eq && !aq.eq(0)) return near(aq, eq, QTY_TOL);
+  if (a.symbol && aq && eq && !aq.eq(0)) return near(aq, eq, EPS);
   return near(dec(a.amount), dec(e.amount), TOL);
 }
 
@@ -60,8 +72,11 @@ export function findAdoptions(acts: Activity[], existing: Existing[], wf: (plaid
     ({ key: a.plaidId, plaidId: a.plaidId, accountId: a.accountId, how, decision: how === "new" ? "add" : "discard", row: view(a), existing: e, ...extra });
   const out = new Map<string, Adoption>();
   const rest: Activity[] = [];
+  const noted = byNote(pool);
+  const onDay = index(pool, (e) => [`${e.accountId}|${e.date}`]);
+  const inAccount = index(pool, (e) => [e.accountId]);
   for (const a of acts) { // 1. our own note
-    const hit = pool.find((e) => !used.has(e.id) && e.accountId === wf(a.accountId) && hasId(e, a.plaidId));
+    const hit = noted.get(a.plaidId)?.find((e) => !used.has(e.id) && e.accountId === wf(a.accountId));
     if (hit) {
       used.add(hit.id);
       out.set(a.plaidId, make(a, "exact", hit));
@@ -70,7 +85,7 @@ export function findAdoptions(acts: Activity[], existing: Existing[], wf: (plaid
   const opening: Activity[] = [];
   for (const a of rest) { // 2. the same activity, from a CSV or an earlier link
     if (a.plaidId.startsWith("opening:")) { opening.push(a); continue; }
-    const cands = pool.filter((e) => !used.has(e.id) && e.accountId === wf(a.accountId) && e.date === a.date
+    const cands = (onDay.get(`${wf(a.accountId)}|${a.date}`) ?? []).filter((e) => !used.has(e.id)
       && norm(e.symbol) === norm(a.symbol) && sameAmount(a, e));
     const sameType = cands.find((e) => e.type === a.activityType);
     // Shares moved in on the day are the same shares, whatever Wealthfolio calls the activity.
@@ -86,11 +101,11 @@ export function findAdoptions(acts: Activity[], existing: Existing[], wf: (plaid
     const w = wf(a.accountId);
     if (!w || !a.symbol || !a.quantity) continue;
     // What the account's own earlier activities (any opening balance among them) already hold of this ticker.
-    const parts = pool.filter((e) => e.accountId === w && !isOurs(e) && e.date < a.date && e.symbol && POSITION_SIGN[e.type]
+    const parts = (inAccount.get(w) ?? []).filter((e) => !isOurs(e) && e.date < a.date && e.symbol && POSITION_SIGN[e.type]
       && norm(e.symbol) === norm(a.symbol)).sort((x, y) => x.date.localeCompare(y.date));
     const held = parts.reduce((s, e) => s.plus((dec(e.quantity) ?? ZERO).abs().times(POSITION_SIGN[e.type])), ZERO);
     if (held.eq(0)) continue;
-    out.set(a.plaidId, make(a, a.quantity.minus(held).abs().lte(QTY_TOL) ? "exact" : "similar", null, { held: held.toFixed(), parts }));
+    out.set(a.plaidId, make(a, a.quantity.minus(held).abs().lte(EPS) ? "exact" : "similar", null, { held: held.toFixed(), parts }));
   }
   return acts.map((a) => out.get(a.plaidId) ?? make(a, "new", null));
 }
@@ -100,8 +115,9 @@ export function findAdoptions(acts: Activity[], existing: Existing[], wf: (plaid
 export function matchById(acts: Activity[], existing: Existing[], wf: (plaidAccount: string) => string | undefined): Map<string, Existing> {
   const out = new Map<string, Existing>();
   const used = new Set<string>();
+  const noted = byNote(existing);
   for (const a of acts) {
-    const hit = existing.find((e) => !used.has(e.id) && e.accountId === wf(a.accountId) && hasId(e, a.plaidId));
+    const hit = noted.get(a.plaidId)?.find((e) => !used.has(e.id) && e.accountId === wf(a.accountId));
     if (hit) {
       used.add(hit.id);
       out.set(a.plaidId, hit);

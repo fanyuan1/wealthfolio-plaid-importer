@@ -44,33 +44,41 @@ export function Problem({ error }: { error?: string }) {
   );
 }
 
+/** A card's action buttons, as Wealthfolio lays them out: stacked full width on a phone, in a row from sm up.
+ * Wealthfolio's CSS clips an overflowing .flex row, so a row that does not fit would hide a button. */
+export const ACTIONS = 'flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center';
+/** A switch and its label. inline-flex: the .flex rule's overflow-x: hidden made the switch's touch area scroll the row. */
+export const SWITCH_ROW = 'inline-flex items-center gap-2';
+
 export function Spin({ on }: { on: boolean }) {
-  return on ? <Icons.Spinner className="mr-2 h-4 w-4 animate-spin" /> : null;
+  return on ? <Icons.Spinner className="h-4 w-4 animate-spin" /> : null;
+}
+
+/** Copy to the clipboard. The addon frame may have no clipboard access: then select el's text and try the old way. */
+export async function copyText(text: string, el?: HTMLInputElement | HTMLTextAreaElement | null): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    el?.select();
+    try {
+      return document.execCommand('copy');
+    } catch {
+      return false;
+    }
+  }
 }
 
 /** Wealthfolio cannot open a browser from an addon, so the user copies the link. */
 export function CopyLink({ url, hint = true }: { url: string; hint?: boolean }) {
   const box = useRef<HTMLInputElement>(null);
   const [copied, setCopied] = useState(false);
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-    } catch {
-      // The addon frame may have no clipboard access: select the text and try the old way.
-      box.current?.select();
-      try {
-        setCopied(document.execCommand('copy'));
-      } catch {
-        setCopied(false);
-      }
-    }
-  }
+  const copy = async () => setCopied(await copyText(url, box.current));
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex gap-2">
         <Input ref={box} readOnly value={url} className="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
-        <Button variant="outline" className="min-w-32" onClick={copy}><Icons.Copy className="mr-2 h-4 w-4" />{copied ? 'Copied' : 'Copy link'}</Button>
+        <Button variant="outline" className="min-w-32" onClick={copy}><Icons.Copy className="h-4 w-4" />{copied ? 'Copied' : 'Copy link'}</Button>
       </div>
       {hint && (
         <span className="text-muted-foreground text-xs">
@@ -83,12 +91,12 @@ export function CopyLink({ url, hint = true }: { url: string; hint?: boolean }) 
 
 type State = Progress['state'];
 
-export function StateIcon({ state }: { state: State }) {
-  if (state === 'running') return <Icons.Spinner className="text-muted-foreground h-4 w-4 shrink-0 animate-spin" />;
-  if (state === 'done') return <Icons.CheckCircle className="h-4 w-4 shrink-0 text-green-600" />;
-  if (state === 'warn') return <Icons.AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />;
-  if (state === 'error') return <Icons.XCircle className="text-destructive h-4 w-4 shrink-0" />;
-  return <Icons.Circle className="text-muted-foreground h-4 w-4 shrink-0" />;
+export function StateIcon({ state, size = 'h-4 w-4' }: { state: State; size?: string }) {
+  if (state === 'running') return <Icons.Spinner className={`text-muted-foreground ${size} shrink-0 animate-spin`} />;
+  if (state === 'done') return <Icons.CheckCircle className={`${size} shrink-0 text-green-600`} />;
+  if (state === 'warn') return <Icons.AlertTriangle className={`${size} shrink-0 text-amber-600`} />;
+  if (state === 'error') return <Icons.XCircle className={`text-destructive ${size} shrink-0`} />;
+  return <Icons.Circle className={`text-muted-foreground ${size} shrink-0`} />;
 }
 
 /** One line per connection or stage, with its accounts nested below. */
@@ -103,7 +111,7 @@ export function ProgressList({ list }: { list: Progress[] }) {
           <li key={p.id} className="flex flex-col gap-1.5 px-4 py-2.5">
             <Line p={p} />
             {kids.length > 0 && (
-              <ul className="flex flex-col gap-1 pl-6">
+              <ul className="flex flex-col gap-1 ps-6">
                 {/* A line left running under a finished connection stopped there. */}
                 {kids.map((c) => <li key={c.id}><Line p={c.state === 'running' && p.state !== 'running' ? { ...c, state: 'skipped', detail: 'Stopped' } : c} small /></li>)}
               </ul>
@@ -117,10 +125,11 @@ export function ProgressList({ list }: { list: Progress[] }) {
 
 function Line({ p, small }: { p: Progress; small?: boolean }) {
   return (
-    <div className={`flex min-w-0 items-start gap-2 ${small ? 'text-xs' : 'text-sm'}`}>
+    // A long detail (an error) wraps to its own line instead of squeezing the label.
+    <div className={`flex min-w-0 flex-wrap items-start gap-x-2 gap-y-0.5 ${small ? 'text-xs' : 'text-sm'}`}>
       <span className="mt-0.5"><StateIcon state={p.state} /></span>
-      <span className={`min-w-0 ${small ? 'text-muted-foreground' : 'font-medium'}`}>{p.label}</span>
-      {p.detail && <span className={`text-muted-foreground ml-auto shrink-0 text-xs ${p.state === 'error' ? 'text-destructive' : ''}`}>{p.detail}</span>}
+      <span className={`min-w-32 flex-1 ${small ? 'text-muted-foreground' : 'font-medium'}`}>{p.label}</span>
+      {p.detail && <span className={`text-muted-foreground ms-auto text-end text-xs ${p.state === 'error' ? 'text-destructive' : ''}`}>{p.detail}</span>}
     </div>
   );
 }
@@ -182,8 +191,8 @@ export function useFlash(ms = 2500): [boolean, () => void] {
 
 export function FlashLabel({ on, done, small, children }: { on: boolean; done: string; small?: boolean; children: ReactNode }) {
   return on
-    ? <span key="done" className="animate-in fade-in zoom-in flex items-center text-green-600 duration-300"><Icons.Check className={`mr-2 ${small ? 'h-3 w-3' : 'h-4 w-4'}`} />{done}</span>
-    : <span key="idle" className="animate-in fade-in flex items-center duration-300">{children}</span>;
+    ? <span key="done" className="animate-in fade-in zoom-in flex items-center gap-2 text-green-600 duration-300"><Icons.Check className={small ? 'h-3 w-3' : 'h-4 w-4'} />{done}</span>
+    : <span key="idle" className="animate-in fade-in flex items-center gap-2 duration-300">{children}</span>;
 }
 
 export const ago = (iso?: string) => {

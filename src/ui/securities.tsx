@@ -1,11 +1,11 @@
 // Sync → Securities: how each security maps.
 import { Badge, Button, Card, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, CardContent, CardDescription, CardHeader, CardTitle, Input, Label, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@wealthfolio/ui';
 import { Fragment, useEffect, useState } from 'react';
-import type { Engine, Security, SecurityMode } from '../engine/engine';
-import { cryptoSymbol, isCrypto, type Track } from '../importer';
+import { type Engine, modeOf, type Security, type SecurityMode } from '../engine/engine';
+import type { Track } from '../importer';
 import { Problem, Spin, useBusy } from './common';
 
-export const MODES: [SecurityMode, string, string][] = [
+const MODES: [SecurityMode, string, string][] = [
   ['auto', 'Automatic', "Uses your bank's ticker. Wealthfolio gets the prices."],
   ['ticker', 'Input ticker', "Type the ticker. One share must be worth that ticker's price."],
   ['track', 'Follow ticker', 'No quotes of its own. Priced from another ticker, times a ratio.'],
@@ -17,33 +17,14 @@ export const MODES: [SecurityMode, string, string][] = [
 
 type Tone = 'success-subtle' | 'destructive';
 
-/** Plaid's ticker equals the Wealthfolio ticker. Crypto is the exception: BTC matches BTC-USD. */
-export function tickersMatch(s: Security): boolean {
-  if (s.ticker == null) return false;
-  const [t, r] = [s.ticker.toUpperCase(), s.result.toUpperCase()];
-  return t === r || (isCrypto({ type: s.type, ticker_symbol: s.ticker }) && r === cryptoSymbol(t, r.split('-')[1] || 'USD'));
-}
-
-/** Source column. Automatic only when Plaid's ticker equals the Wealthfolio ticker and Wealthfolio can look it up.
- * A source the user chose counts once the preview was refreshed with it. Anything else is blank: needs review. */
-export function sourceOf(s: Security, known: Record<string, boolean | null> = {}): { label: string; tone: Tone } | null {
-  if (s.pending || s.result === 'unmapped') return null;
+/** Source column. The dry run decides which securities need review (needsReview). A source the user chose counts once
+ * the preview was refreshed with it; an Automatic ticker Wealthfolio refused in the last push needs review again.
+ * Blank: needs review. */
+function sourceOf(s: Security, refused: Record<string, string> = {}): { label: string; tone: Tone } | null {
   const mode = modeOf(s);
+  if (s.pending || s.review || (mode === 'auto' && refused[s.result])) return null;
   const label = MODES.find(([m]) => m === mode)![1];
-  if (mode === 'exclude') return { label, tone: 'destructive' };
-  if (mode !== 'auto') return { label, tone: 'success-subtle' };
-  return tickersMatch(s) && known[s.result] === true ? { label, tone: 'success-subtle' } : null;
-}
-
-export function modeOf(s: Security): SecurityMode {
-  const o = s.override ?? {};
-  if (o.exclude) return 'exclude';
-  if (o.track) return 'track';
-  if (o.cash) return 'cash';
-  if (o.investment) return 'holding';
-  if (o.manual) return 'manual';
-  if (o.symbol) return 'ticker';
-  return 'auto';
+  return { label, tone: mode === 'exclude' ? 'destructive' : 'success-subtle' };
 }
 
 export type Saved = (sid: string, override: Record<string, unknown>, label: string) => void;
@@ -52,31 +33,21 @@ export type Saved = (sid: string, override: Record<string, unknown>, label: stri
 export function Securities({ engine, list, refused = {}, onSaved, onAttention }: { engine: Engine; list: Security[]; refused?: Record<string, string>;
   onSaved: Saved; onAttention: (n: number) => void }) {
   const [open, setOpen] = useState<string>();
-  const [looked, setKnown] = useState<Record<string, boolean | null>>({});
-  const known = { ...looked, ...Object.fromEntries(Object.keys(refused).map((sym) => [sym, false])) };
-  const syms = [...new Set(list.filter((s) => modeOf(s) === 'auto' && tickersMatch(s)).map((s) => s.result))];
-  // Show the table only once every lookup is done, so rows do not jump between sections.
-  const ready = syms.every((x) => x in known);
-  useEffect(() => {
-    let live = true;
-    engine.checkTickers(syms).then((k) => live && setKnown((o) => ({ ...o, ...k })));
-    return () => { live = false; };
-  }, [engine, syms.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
-  const attention = ready ? list.filter((s) => !sourceOf(s, known)) : list;
+  const attention = list.filter((s) => !sourceOf(s, refused));
   useEffect(() => { onAttention(attention.length); }, [attention.length, onAttention]);
   useEffect(() => () => onAttention(0), [onAttention]); // unmounted: nothing left to review
-  const ok = ready ? list.filter((s) => sourceOf(s, known)) : [];
+  const ok = list.filter((s) => sourceOf(s, refused));
   const section = (title: string, rows: Security[], action: string) => rows.length > 0 && (
     <>
       <TableRow className="bg-muted/50 hover:bg-muted/50">
         <TableCell colSpan={5} className="px-6 text-sm font-medium">{title} ({rows.length})</TableCell>
       </TableRow>
       {rows.map((s) => {
-        const src = sourceOf(s, known);
+        const src = sourceOf(s, refused);
         return (
           <Fragment key={s.sid}>
             <TableRow>
-              <TableCell className="pl-6">
+              <TableCell className="ps-6">
                 {s.name}
                 {refused[s.result] && !s.pending && <div className="text-destructive text-xs">Wealthfolio refused it: {refused[s.result]}</div>}
               </TableCell>
@@ -87,7 +58,7 @@ export function Securities({ engine, list, refused = {}, onSaved, onAttention }:
                   : <span>{s.result}{s.override?.track ? ` × ${s.override.track.ratio}` : ''}</span>}
               </TableCell>
               <TableCell>{src && <Badge variant={src.tone}>{src.label}</Badge>}</TableCell>
-              <TableCell className="pr-6 text-right">
+              <TableCell className="pe-6 text-end">
                 <Button variant="outline" size="sm" onClick={() => setOpen(s.sid)}>
                   {s.pending ? 'Change' : action}
                 </Button>
@@ -121,15 +92,14 @@ export function Securities({ engine, list, refused = {}, onSaved, onAttention }:
         </CardDescription>
       </CardHeader>
       <CardContent className="p-0">
-        {!ready ? <p className="text-muted-foreground flex items-center gap-2 px-6 py-4 text-sm"><Spin on />Checking {syms.length} tickers…</p> : (
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="pl-6">Security</TableHead>
+              <TableHead className="ps-6">Security</TableHead>
               <TableHead>Plaid ticker</TableHead>
               <TableHead>Wealthfolio ticker</TableHead>
               <TableHead>Source</TableHead>
-              <TableHead className="pr-6 text-right"></TableHead>
+              <TableHead className="pe-6 text-end"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -137,13 +107,12 @@ export function Securities({ engine, list, refused = {}, onSaved, onAttention }:
             {section('Matching', ok, 'Change')}
           </TableBody>
         </Table>
-        )}
       </CardContent>
     </Card>
   );
 }
 
-export function SecurityEditor({ engine, s, onSaved }: { engine: Engine; s: Security; onSaved: (o: Record<string, unknown>, label: string) => void }) {
+function SecurityEditor({ engine, s, onSaved }: { engine: Engine; s: Security; onSaved: (o: Record<string, unknown>, label: string) => void }) {
   const o = s.override ?? {};
   const [mode, setMode] = useState<SecurityMode>(modeOf(s));
   // A money market fund is a holding with a ticker: default to Plaid's.

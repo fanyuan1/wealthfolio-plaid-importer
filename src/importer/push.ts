@@ -145,7 +145,8 @@ export async function push(p: Plan, wf: Writer, state: Ledger, accountsCfg: Reco
     state.commit();
     step("delete", "Delete rows removed at Plaid", false, `${gone.length} deleted`);
   }
-  for (const row of p.voids) if (!gone.includes(row)) updates.push([{ activityId: row.wf_activity_id, void: true }, row]);
+  const deleted = new Set(gone);
+  for (const row of p.voids) if (!deleted.has(row)) updates.push([{ activityId: row.wf_activity_id, void: true }, row]);
   for (const [pid, atype, pair] of p.retype) {
     updates.push([{ activityId: state.get(pid)!.wf_activity_id, activityType: atype }, [pid, atype, pair]]);
   }

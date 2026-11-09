@@ -1,4 +1,6 @@
 import react from "@vitejs/plugin-react";
+/// <reference types="vitest/config" />
+import { configDefaults } from "vitest/config";
 import { defineConfig } from "vite";
 
 const hostProvidedDependencies = [
@@ -43,4 +45,5 @@ export default defineConfig({
       external: hostProvidedDependencies,
     },
   },
+  test: { exclude: [...configDefaults.exclude, "test/e2e/**"] }, // browser tests: pnpm test:e2e
 });

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Activity, D, MemoryLedger, type PlaidEnv } from "../../src/importer";
 import type { DryRun } from "../../src/engine/engine";
 import type { Plan } from "../../src/importer";
-import { Engine, seenSecurities } from "../../src/engine/engine";
+import { Engine, needsReview, seenSecurities } from "../../src/engine/engine";
 import { split, Store } from "../../src/engine/store";
 
 const LIMIT = 244 * 1024;
@@ -91,6 +91,17 @@ describe("seenSecurities", () => {
     }];
     const out = seenSecurities(items, {});
     expect(out.map((s) => [s.sid, s.result])).toEqual([["s1", "AAA"], ["s2", "unmapped"]]);
+  });
+
+  it("needs review unless the user chose, or Automatic is proven", () => {
+    const sec = (result: string, ticker: string | null, override: object | null = null) =>
+      ({ sid: "s", name: "S", ticker, type: "etf", result, manual: false, reported: null, override, review: false });
+    expect(needsReview(sec("unmapped", null), {})).toBe(true);
+    expect(needsReview(sec("VTI", "VTI"), { VTI: true })).toBe(false);
+    expect(needsReview(sec("VTI", "VTI"), { VTI: null })).toBe(true); // could not check
+    expect(needsReview(sec("cash", "CUR:EUR"), {})).toBe(false); // currency cash
+    expect(needsReview(sec("cash", "SPAXX"), {})).toBe(true); // a money market fund
+    expect(needsReview(sec("cash", "SPAXX", { cash: true }), {})).toBe(false); // the user chose cash
   });
 });
 
@@ -446,22 +457,55 @@ const row = (pid: string, acct: string, pair: string | null = null) => ({ plaid_
 
 describe("autoSync", () => {
   const at = (h: number, m = 0) => new Date(2026, 10, 7, h, m);
-  const fakeDry = (moved = false) => ({ env: "sandbox", rebases: [], adoptions: [], tracked: new Set(), fetched: { items: [], skipped: [], blocked: [] },
+  const engine = () => Object.assign(new Engine(fakeApi().api), { lockSettleMs: 0 });
+  const fakeDry = (moved = false, securities: object[] = []) => ({ env: "sandbox", rebases: [], adoptions: [], securities, tracked: new Set(), fetched: { items: [], skipped: [], blocked: [] },
     plan: { new: [], updates: [], voids: [], pairs: [], reviews: [], categories: new Map(), moved: new Map(moved ? [["OLD", new Set(["A"])]] : []) } }) as never;
 
-  it("runs once a day after the set time, and not while the page is open", async () => {
-    const e = new Engine(fakeApi().api);
+  it("runs in one window when several share the storage", async () => {
+    const { api } = fakeApi();
+    let pushes = 0;
+    const tab = () => {
+      const e = new Engine(api);
+      e.lockSettleMs = 20;
+      e.dryRun = async () => fakeDry();
+      e.push = async () => { pushes++; return { imported: 0, updated: 0, linked: 0 } as never; };
+      return e;
+    };
+    const tabs = [tab(), tab(), tab()];
+    await tabs[0].store.saveDaily({ on: true, time: "08:30" });
+    const runs = await Promise.all(tabs.map((e) => e.autoSync(at(9))));
+    expect(runs.filter(Boolean).length).toBe(1);
+    expect(pushes).toBe(1);
+    expect(await tabs[0].store.dailyLock("sandbox")).toBeNull(); // released
+
+    // A lock held by a running window stops Run now elsewhere; one left by a closed window expires.
+    const e = tab();
+    await e.store.saveDailyLock("sandbox", { id: "other", at: at(10).toISOString() });
+    expect(await e.runDaily(at(10, 5))).toBeNull();
+    expect((await e.runDaily(at(11)))?.status).toBe("ok");
+  });
+
+  it("runs once a day after the set time, and not while another task runs", async () => {
+    const e = engine();
     let pushes = 0;
     e.dryRun = async () => fakeDry();
     e.push = async () => { pushes++; return { imported: 0, updated: 0, linked: 0 } as never; };
     expect(await e.autoSync(at(9))).toBeNull(); // off
     await e.store.saveDaily({ on: true, time: "08:30" });
     expect(await e.autoSync(at(8, 29))).toBeNull(); // before the time
-    e.pageOpen = 1;
+    e.tasks.sync = { label: "Dry run", running: true, progress: [], log: [] }; // waits while the user runs something
     expect(await e.autoSync(at(9))).toBeNull();
-    e.pageOpen = 0;
+    e.tasks.sync = undefined;
+    e.tasks.daily = { label: "run", running: true, progress: [], log: [] }; // and other tasks wait for it
+    await expect(e.task("dry", "dry", async () => 1)).rejects.toThrow(/daily sync is running/);
+    e.tasks.daily = undefined;
     expect((await e.autoSync(at(8, 30)))?.status).toBe("ok");
     expect(await e.autoSync(at(12))).toBeNull(); // done today
+    let reads = 0;
+    const settings = e.store.settings.bind(e.store);
+    e.store.settings = async () => { reads++; return settings(); };
+    expect(await e.autoSync(at(13))).toBeNull();
+    expect(reads).toBe(0); // the rest of the day it reads nothing
     expect(pushes).toBe(1);
     const runs = (await e.store.autoRun("sandbox")).runs!;
     expect(runs.length).toBe(1);
@@ -469,15 +513,32 @@ describe("autoSync", () => {
     expect((await e.nextDaily(at(12)))?.getDate()).toBe(8); // tomorrow
   });
 
-  it("keeps the daily switch on this computer and the time in synced storage", async () => {
+  it("refuses the user's changes while it runs, and waits while one is saved", async () => {
+    const e = engine();
+    await e.store.saveAccounts("sandbox", { a: { item_id: "i", kind: "cash", name: "A" } } as never);
+    e.tasks.daily = { label: "run", running: true, progress: [], log: [] };
+    await expect(e.setSync("a", false)).rejects.toThrow(/daily sync is running/);
+    await expect(e.setSecurity("s", "S", { mode: "cash" })).rejects.toThrow(/daily sync is running/);
+    expect(await e.checkHostedLink("AB", "link")).toEqual({ state: "waiting" }); // finishes the login after the run
+    e.tasks.daily = undefined;
+    await e.store.saveDaily({ on: true, time: "00:00" });
+    let release!: () => void;
+    const saving = (e as unknown as { write: (f: () => Promise<void>) => Promise<void> }).write(() => new Promise<void>((r) => { release = r; }));
+    expect(await e.autoSync(at(9))).toBeNull();
+    release();
+    await saving;
+    expect(e.busy).toBe(false);
+  });
+
+  it("keeps the daily switch on this device and the time in synced storage", async () => {
     const e = new Engine(fakeApi().api);
     await e.store.saveDaily({ on: true, time: "06:15" });
     expect(await e.store.daily()).toEqual({ on: true, time: "06:15" });
-    expect((await e.store.settings()).daily).toEqual({ time: "06:15" }); // no switch in what paired computers share
+    expect((await e.store.settings()).daily).toEqual({ time: "06:15" }); // no switch in what paired devices share
   });
 
   it("does not stop on to-do items, and shows them in Sync", async () => {
-    const e = new Engine(fakeApi().api);
+    const e = engine();
     const d = fakeDry() as unknown as { plan: { reviews: unknown[] } };
     d.plan.reviews = [{}, {}, {}];
     e.dryRun = async () => d as never;
@@ -491,7 +552,7 @@ describe("autoSync", () => {
   });
 
   it("keeps the last 7 runs, newest first", async () => {
-    const e = new Engine(fakeApi().api);
+    const e = engine();
     e.dryRun = async () => { throw new Error("offline"); };
     for (let i = 0; i < 9; i++) await e.runDaily(at(9, i));
     const runs = (await e.store.autoRun("sandbox")).runs!;
@@ -500,8 +561,18 @@ describe("autoSync", () => {
     expect(runs[0].time).toBe(at(9, 8).toISOString());
   });
 
+  it("does not push while a security needs review", async () => {
+    const e = engine();
+    await e.store.saveDaily({ on: true, time: "00:00" });
+    e.dryRun = async () => fakeDry(false, [{ sid: "s", name: "Fund", result: "unmapped", review: true }]);
+    e.push = async () => { throw new Error("must not push"); };
+    const r = await e.autoSync(at(9));
+    expect(r?.status).toBe("stopped");
+    expect(r?.message).toMatch(/1 securities need review/);
+  });
+
   it("does not push when pushed activities moved to another symbol", async () => {
-    const e = new Engine(fakeApi().api);
+    const e = engine();
     await e.store.saveDaily({ on: true, time: "00:00" });
     e.dryRun = async () => fakeDry(true);
     e.push = async () => { throw new Error("must not push"); };
@@ -556,5 +627,57 @@ describe("old data is kept", () => {
     expect(p.updates.length).toBe(1);
     expect(p.voids.length).toBe(0);
     expect(lines[0]).toMatch(/Kept as they are in Wealthfolio \(2\)/);
+  });
+});
+
+describe("categorize", () => {
+  const card = (pid: string, kw: Record<string, unknown> = {}) => ({ plaid_id: pid, account_id: "card", wf_activity_id: `wf-${pid}`,
+    activity_type: "WITHDRAWAL", date: "2026-10-02", symbol: null, quantity: null, unit_price: null, amount: "5", fee: null,
+    currency: "USD", transfer_hint: 0, pair_plaid_id: null, category_set: 0, voided: 0, category: "FOOD_AND_DRINK_COFFEE", ...kw });
+  async function setup(rows: object[]) {
+    const { api } = fakeApi();
+    const assigned: unknown[][] = [];
+    Object.assign(api, { spending: {
+      getCategories: async () => [{ kind: "expense", taxonomyId: "spending_categories", categoryId: "c1", key: "food", name: "Food", path: "Food" }],
+      assignCategory: async (...a: unknown[]) => { assigned.push(a); },
+    } });
+    const e = new Engine(api);
+    await e.store.saveAccounts("sandbox", { card: { item_id: "i", kind: "credit", name: "AB · Card", wealthfolio_account_id: "W" },
+      brk: { item_id: "i", kind: "investment", name: "AB · Broker", wealthfolio_account_id: "W2" } } as never);
+    await e.store.saveLedger("sandbox", new MemoryLedger({ rows: rows as never }));
+    return { e, assigned };
+  }
+
+  it("uses the Plaid category kept with each row, with no Plaid call", async () => {
+    const { e, assigned } = await setup([card("a"), card("set", { category_set: 1 }), card("leg", { pair_plaid_id: "x" }),
+      card("refund", { activity_type: "DEPOSIT" }), card("inv", { account_id: "brk" }), card("gone", { voided: 1 })]);
+    e.plaid = async () => { throw new Error("must not call Plaid"); };
+    expect(await e.categorize()).toBe("Categorized 1 of 1 rows.");
+    expect(assigned).toEqual([["wf-a", "expense", "c1"]]);
+    expect((await e.store.ledger("sandbox")).get("a")?.category_set).toBe(1);
+  });
+
+  it("pulls once for rows pushed before the category was kept", async () => {
+    const { e, assigned } = await setup([card("old", { category: undefined }), card("gone", { category: undefined })]);
+    await e.store.saveItems("sandbox", { i: { owner: "AB", institution_name: "Bank", products: ["transactions"], env: "sandbox" } } as never);
+    await e.store.saveToken("i", "tok");
+    let pulls = 0;
+    const { Plaid } = await import("../../src/importer");
+    e.plaid = async () => new Plaid("id", "secret", "sandbox", async (url) => {
+      const ep = url.replace(/^https:\/\/[^/]+/, "");
+      if (ep === "/transactions/sync") {
+        pulls++;
+        return { status: 200, body: JSON.stringify({ added: [{ transaction_id: "old", account_id: "card", amount: 5, date: "2026-10-02", pending: false,
+          name: "Coffee", iso_currency_code: "USD", personal_finance_category: { primary: "FOOD_AND_DRINK", detailed: "FOOD_AND_DRINK_COFFEE" } }],
+          modified: [], removed: [], next_cursor: "c", has_more: false }) };
+      }
+      return { status: 200, body: JSON.stringify(ep === "/item/get" ? { item: {} } : { accounts: [] }) };
+    });
+    expect(await e.categorize()).toBe("Categorized 1 of 1 rows.");
+    expect(assigned.map((a) => a[0])).toEqual(["wf-old"]);
+    const state = await e.store.ledger("sandbox");
+    expect(state.get("gone")?.category).toBeNull(); // not at Plaid any more: nothing to learn, and not asked again
+    expect(await e.categorize()).toMatch(/already has one/);
+    expect(pulls).toBe(1);
   });
 });

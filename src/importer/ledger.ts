@@ -19,6 +19,7 @@ export interface LedgerRow {
   pair_plaid_id: string | null;
   category_set: number;
   voided: number;
+  category?: string | null; // Plaid's personal_finance_category.detailed; missing on rows from before it was kept
   adopted?: number; // 1: the row was already in Wealthfolio before the importer; the importer never changes or deletes it
 }
 
@@ -43,23 +44,24 @@ export interface Ledger {
   commit(): void;
 }
 
-export const FIELDS = ["activity_type", "date", "symbol", "quantity", "unit_price", "amount", "fee", "currency"] as const;
+const FIELDS = ["activity_type", "date", "symbol", "quantity", "unit_price", "amount", "fee", "currency"] as const;
 const NUMERIC = new Set(["quantity", "unit_price", "amount", "fee"]);
 // A fixed scale, finer than Plaid or Wealthfolio shows, so rounding noise is not a change.
-export const COMPARE_DP = 8;
+const COMPARE_DP = 8;
 
 const str = (v: Dec | null): string | null => (v === null ? null : v.toFixed());
 
-export function toLedgerRow(a: Activity, wfId: string | null, categorySet = false): LedgerRow {
+function toLedgerRow(a: Activity, wfId: string | null, categorySet = false): LedgerRow {
   return {
     plaid_id: a.plaidId, account_id: a.accountId, wf_activity_id: wfId, activity_type: a.activityType, date: a.date,
     symbol: a.symbol, quantity: str(a.activityType === "SPLIT" ? a.splitDelta : a.quantity),
     unit_price: str(a.unitPrice), amount: str(a.amount), fee: str(a.fee), currency: a.currency,
     transfer_hint: a.transferHint ? 1 : 0, pair_plaid_id: a.pairId, category_set: categorySet ? 1 : 0, voided: 0,
+    category: a.category ?? null,
   };
 }
 
-export function rowToActivity(r: LedgerRow): Activity {
+function rowToActivity(r: LedgerRow): Activity {
   return new Activity({
     accountId: r.account_id, plaidId: r.plaid_id, date: r.date, activityType: r.activity_type, currency: r.currency,
     symbol: r.symbol, quantity: dec(r.quantity), unitPrice: dec(r.unit_price), amount: dec(r.amount), fee: dec(r.fee),
@@ -120,6 +122,10 @@ export class MemoryLedger implements Ledger {
   }
   hasOpening(accountId: string) { return this.openings(accountId).length > 0; }
   hasAny(accountId: string) { return [...this.rows.values()].some((r) => r.account_id === accountId); }
+  /** Accounts with at least one row. */
+  accountIds() { return new Set([...this.rows.values()].map((r) => r.account_id)); }
+  /** Rows of a symbol still in Wealthfolio as the importer's own: not voided, not adopted. */
+  live(symbol: string) { return [...this.rows.values()].filter((r) => r.symbol === symbol && !r.voided && !r.adopted); }
   historyStart() { return minDate(this.openings()); }
   openingDate(accountId: string) { return minDate(this.openings(accountId)); }
   get(plaidId: string) { return this.rows.get(plaidId) ?? null; }

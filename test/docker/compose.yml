@@ -1,0 +1,28 @@
+# A throwaway Wealthfolio server for testing the addon in a browser.
+# The browser tests (pnpm test:e2e) start their own copy under another project name and port.
+# Start:  pnpm wf:up    (http://127.0.0.1:8090)
+# Stop:   pnpm wf:down  (keeps the data)   Reset: pnpm wf:reset (deletes the data)
+# Port 8090 on the host: 8088 belongs to the permanent Wealthfolio (~/projects/wealthfolio-docker).
+# No password: the port is bound to this computer only. Do not use real bank data here.
+
+services:
+  wealthfolio:
+    image: wealthfolio/wealthfolio:3.12.0 # the addon's minWealthfolioVersion
+    ports:
+      - "127.0.0.1:${WF_PORT:-8090}:8088"
+    volumes:
+      - data:/data
+    environment:
+      WF_LISTEN_ADDR: "0.0.0.0:8088"
+      WF_DB_PATH: /data/wealthfolio.db
+      WF_SECRET_KEY: "${WF_SECRET_KEY:?run through pnpm wf:up}"
+      WF_AUTH_REQUIRED: "false"
+      WF_AUTH_PASSWORD_HASH: ""
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8088/api/v1/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  data:

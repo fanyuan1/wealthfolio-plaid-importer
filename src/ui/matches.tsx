@@ -2,7 +2,7 @@
 // Three groups: new, similar, exact. New rows start as Add; exact and similar start as Discard.
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Icons, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@wealthfolio/ui';
 import { Fragment, useState } from 'react';
-import type { Adoption } from '../importer';
+import { type Adoption, plural } from '../importer';
 
 const PAGE = 50;
 type How = Adoption['how'];
@@ -47,7 +47,7 @@ export function Matches({ list, names, onChange }: { list: Adoption[]; names: Re
           const limit = shown[how] ?? PAGE;
           return (
             <div key={how} className="border-t">
-              <button type="button" className="hover:bg-muted/50 flex w-full items-center gap-2 px-6 py-3 text-left"
+              <button type="button" className="hover:bg-muted/50 flex w-full items-center gap-2 px-6 py-3 text-start"
                       onClick={() => setToggled((t) => ({ ...t, [how]: !open }))}>
                 {open ? <Icons.ChevronDown className="h-4 w-4" /> : <Icons.ChevronRight className="h-4 w-4" />}
                 <span className="font-medium">{HOW[how]}</span>
@@ -66,18 +66,18 @@ export function Matches({ list, names, onChange }: { list: Adoption[]; names: Re
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-10 pl-6"></TableHead>
+                        <TableHead className="w-10 ps-6"></TableHead>
                         <TableHead>Account</TableHead>
                         <TableHead>From Plaid</TableHead>
                         <TableHead>Already in Wealthfolio</TableHead>
-                        <TableHead className="pr-6 text-right"></TableHead>
+                        <TableHead className="pe-6 text-end"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {rows.slice(0, limit).map((a) => (
                         <Fragment key={a.key}>
                         <TableRow>
-                          <TableCell className="pl-6">
+                          <TableCell className="ps-6">
                             <input type="checkbox" aria-label="Select" checked={picked.has(a.key)} onChange={() => setPicked((p) => flip(p, a.key))} />
                           </TableCell>
                           <TableCell>{names[a.accountId] ?? a.accountId}</TableCell>
@@ -86,7 +86,7 @@ export function Matches({ list, names, onChange }: { list: Adoption[]; names: Re
                             {a.existing ? line(a.existing)
                               : a.held !== undefined ? `Holds ${a.held} sh before ${a.row.date}${a.how === 'exact' ? ' · same as Plaid' : ''}` : '—'}
                           </TableCell>
-                          <TableCell className="pr-6 text-right">
+                          <TableCell className="pe-6 text-end">
                             <div className="flex justify-end gap-2">
                               {a.how !== 'new' && (
                                 <Button size="sm" variant="ghost" onClick={() => setCompare(compare === a.key ? undefined : a.key)}>
@@ -129,8 +129,8 @@ function Versions({ a }: { a: Adoption }) {
     return (
       <div className="flex flex-col gap-2 py-2 text-sm">
         <span>Plaid opening: <b>{a.row.quantity ?? '—'} sh</b> {a.row.symbol} on {a.row.date}</span>
-        <span>Wealthfolio holds before that date: <b>{a.held ?? 0} sh</b> from {parts.length} activit{parts.length === 1 ? 'y' : 'ies'}:</span>
-        <ul className="text-muted-foreground list-disc pl-5">
+        <span>Wealthfolio holds before that date: <b>{a.held ?? 0} sh</b> from {plural(parts.length, 'activity', 'activities')}:</span>
+        <ul className="text-muted-foreground list-disc ps-5">
           {parts.slice(0, 20).map((e) => <li key={e.id}>{line(e)}</li>)}
           {parts.length > 20 && <li>… {parts.length - 20} more</li>}
         </ul>
@@ -143,8 +143,8 @@ function Versions({ a }: { a: Adoption }) {
     ['Quantity', a.row.quantity, e.quantity, true], ['Amount', a.row.amount, e.amount, true], ['Note', a.row.description, e.comment, false]];
   const num = (v?: string | null) => (v != null && v !== '' && !isNaN(Number(v)) ? String(Number(v)) : (v ?? ''));
   return (
-    <table className="my-2 w-full max-w-2xl text-sm">
-      <thead><tr className="text-muted-foreground text-left"><th className="w-24 font-normal"></th><th className="font-normal">Plaid</th><th className="font-normal">Wealthfolio</th></tr></thead>
+    <table className="mt-2 mb-2 w-full max-w-2xl text-sm">
+      <thead><tr className="text-muted-foreground text-start"><th className="w-24 font-normal"></th><th className="font-normal">Plaid</th><th className="font-normal">Wealthfolio</th></tr></thead>
       <tbody>
         {rows.map(([k, p, w, mark]) => (
           <tr key={k} className={mark && num(p) !== num(w) ? 'font-medium text-amber-600' : ''}>
