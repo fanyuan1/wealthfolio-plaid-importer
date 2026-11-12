@@ -1,6 +1,6 @@
 {
   "name": "plaid-importer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Import bank, card and brokerage data from Plaid into Wealthfolio",
   "type": "module",

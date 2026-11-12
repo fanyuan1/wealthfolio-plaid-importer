@@ -2,6 +2,14 @@
 
 Versions follow [semantic versioning](https://semver.org).
 
+## 0.1.1 - 2026-11-11
+
+Works with Wealthfolio 3.13, and still with 3.12.
+
+### Fixed
+
+- The Copy button on Backup and the "rows were not saved" popup on Sync use layout classes that Wealthfolio 3.13 still has. With 0.1.0 on 3.13, the Copy button could be narrower and the popup had no height limit of its own.
+
 ## 0.1.0 - 2026-11-09
 
 First release.

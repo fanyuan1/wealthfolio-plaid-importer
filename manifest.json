@@ -1,7 +1,7 @@
 {
   "id": "plaid-importer",
   "name": "Plaid Importer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Import bank, card and brokerage data from Plaid: transactions, trades, holdings, transfers and spending categories.",
   "author": "fanyuan1",
   "main": "dist/addon.js",

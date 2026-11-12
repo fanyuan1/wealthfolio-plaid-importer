@@ -163,7 +163,7 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
         </DialogContent>
       </Dialog>
       <Dialog open={failed.length > 0} onOpenChange={(o) => { if (!o) set({ failed: [] }); }}>
-        <DialogContent className="max-h-[85vh] max-w-3xl overflow-auto">
+        <DialogContent className="max-h-[80dvh] max-w-3xl overflow-auto">
           <DialogHeader>
             <DialogTitle className="text-destructive">{failed.length === 1 ? '1 row was' : `${failed.length} rows were`} not saved</DialogTitle>
             <DialogDescription>Wealthfolio rejected these rows, so they are missing. They stay in the preview: fix the cause below, then Update preview and push again.</DialogDescription>

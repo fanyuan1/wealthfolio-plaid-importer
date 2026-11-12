@@ -37,7 +37,8 @@ async function call(method: string, path: string, body?: unknown) {
 export async function freshWealthfolio() {
   compose("down", "-v", "--remove-orphans");
   compose("up", "-d", "--wait");
-  await call("PUT", "/settings", { onboardingCompleted: true, baseCurrency: "USD", timezone: "America/Los_Angeles" });
+  // No update check: an older pinned image would open a "New Update Available" popup over every page.
+  await call("PUT", "/settings", { onboardingCompleted: true, autoUpdateCheckEnabled: false, baseCurrency: "USD", timezone: "America/Los_Angeles" });
   const zip = readFileSync(ZIP).toString("base64");
   await call("POST", "/addons/install-zip", { zipDataB64: zip, enableAfterInstall: true, approvedNetworkHosts: HOSTS });
 }

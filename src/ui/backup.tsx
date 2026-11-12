@@ -74,7 +74,7 @@ export function Backup({ engine, env, ready, onChange }: { engine: Engine; env: 
               <span className="text-sm font-medium">{made.kind === 'full' ? 'Full backup' : 'Connections backup'} ready</span>
               <span className="text-muted-foreground text-xs">{(made.text.length / 1024).toFixed(made.text.length < 10240 ? 1 : 0)} KB</span>
               <div className="ms-auto flex flex-wrap gap-2">
-                <Button size="sm" className="min-w-24" onClick={copy}><Icons.Copy className="h-3 w-3" />{made.copied ? 'Copied' : 'Copy'}</Button>
+                <Button size="sm" className="min-w-20" onClick={copy}><Icons.Copy className="h-3 w-3" />{made.copied ? 'Copied' : 'Copy'}</Button>
                 <Button size="sm" variant="outline" disabled={!!busy} onClick={saveFile}
                         className="min-w-32">
                   <Spin on={busy === 'save'} />
