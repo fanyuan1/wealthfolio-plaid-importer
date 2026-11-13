@@ -254,7 +254,8 @@ function OwnerCell({ engine, itemId, value, onSaved }: { engine: Engine; itemId:
   return (
     <SaveMark status={status}>
       <Input aria-label="Initials" className="h-8 w-20" maxLength={4} value={v} onChange={(e) => setV(e.target.value.toUpperCase())}
-             onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
+             onBlur={commit} onKeyDown={(e) => { // IME confirm also fires Enter; keyCode 229 covers Safari's out-of-order isComposing.
+             if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) e.currentTarget.blur(); }} />
     </SaveMark>
   );
 }
