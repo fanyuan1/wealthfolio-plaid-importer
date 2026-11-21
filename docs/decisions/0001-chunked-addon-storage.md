@@ -1,4 +1,4 @@
-# 0001. Split large addon-storage values into content-hashed parts
+# 0001 — D33: Split large addon-storage values into content-hashed parts
 
 ## Context
 Wealthfolio syncs addon storage across devices and caps each value at about 250 KB. The ledger is bigger than that.

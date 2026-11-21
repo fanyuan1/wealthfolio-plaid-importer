@@ -1,4 +1,4 @@
-# 0002. The manifest declares no `contributes`
+# 0002 — D34 (part): The manifest declares no `contributes`
 
 ## Context
 Wealthfolio boots an addon that has contributed routes only when its page is first opened. The daily sync timer must run from startup.

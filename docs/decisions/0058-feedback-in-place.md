@@ -1,0 +1,10 @@
+# 0058 — D57: Feedback in place
+
+## Context
+Messages that came and went moved the controls next to them, so the screen jumped (2026-11-09)
+
+## Decision
+A success shows on the control that caused it, for a moment: the button fades into a green ✓ label (Copied, Saved, Added, Keys work), then back. Its width fits both labels. A control that saves on change shows the ✓ on itself (D49). Status that lasts (a running check, errors, results) goes below a section's buttons, never above its title. Nothing appears beside a control and pushes others aside
+
+## Consequences
+None recorded beyond the decision.

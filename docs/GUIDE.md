@@ -43,7 +43,7 @@ Addon storage caps each value at about 250 KB, so large values are split into pa
 - `src/engine/`: everything without React: storage, connections, dry run, push, daily sync, repairs. `writer.ts` writes through the addon SDK.
 - `src/ui/`: the six steps. `src/index.tsx` registers the page and the daily sync timer.
 
-See DECISIONS.md section 5.1 for each file.
+See BUILD.md section 5.1 for each file.
 
 ### Styling
 
