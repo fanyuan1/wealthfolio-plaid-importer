@@ -71,14 +71,15 @@ export function resolve(security: Row | null | undefined, overrides: Record<stri
   const o = overrides[security.security_id] ?? {};
   if (o.exclude) return res("exclude");
   const stype = security.type;
-  const itype = o.instrument_type || INSTRUMENT_TYPE[stype] || null;
+  const mappedToStock = stype === "derivative" && Boolean(o.symbol) && !OCC.test(String(o.symbol).toUpperCase());
+  const itype = o.instrument_type || (mappedToStock ? "EQUITY" : INSTRUMENT_TYPE[stype]) || null;
   const sweep = stype === "other" && String(security.ticker_symbol ?? "").toUpperCase() === "DEPOSIT";
   if (!o.cash && !o.symbol && !o.track && isCrypto(security)) {
     return res("security", cryptoSymbol(String(security.ticker_symbol), currency), "CRYPTO", Boolean(o.manual));
   }
   const isCash = o.cash || (!o.investment && (security.is_cash_equivalent || stype === "cash" || sweep));
   if (isCash) return res("cash");
-  if (stype === "derivative") {
+  if (stype === "derivative" && !mappedToStock) {
     const occ = o.symbol || occSymbol(security);
     if (!occ) return res("unmapped");
     return res("security", occ, "OPTION", Boolean(o.manual), D(String(o.multiplier || OPTION_MULTIPLIER)));

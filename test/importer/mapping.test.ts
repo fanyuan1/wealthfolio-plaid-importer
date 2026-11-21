@@ -269,6 +269,31 @@ describe("options and plans", () => {
     expect(n(mini.quantity)).toBe(10);
   });
 
+  test("derivative mapped to a stock ticker imports as shares, partial fill included", () => {
+    const secs: Record<string, Row> = {
+      ant_order: { security_id: "ant_order", ticker_symbol: null, type: "derivative", name: "Anthropic" },
+      ant: { security_id: "ant", ticker_symbol: "ANT", type: "equity", market_identifier_code: "XNAS" },
+    };
+    const overrides = { ant_order: { symbol: "ANT" } };
+    expect(resolve(secs.ant_order, overrides)).toMatchObject({ kind: "security", symbol: "ANT", instrumentType: "EQUITY" });
+    expect(n(resolve(secs.ant_order, overrides).multiplier)).toBe(1);
+    const [buy] = mapInvestmentTransactions([tx("p", "buy", "buy", 166, 42, 83, "ant_order", null,
+      { name: "buy 42.000000 shares of Anthropic for $83.00 each. This order is partially filled. - PURCHASED" })], secs, overrides).activities;
+    expect([buy.activityType, buy.subtype, buy.symbol, buy.instrumentType, n(buy.quantity), n(buy.unitPrice)])
+      .toEqual(["BUY", null, "ANT", "EQUITY", 2, 83]);
+    const [hs, cash] = holdingsBySymbol([
+      { account_id: "a1", security_id: "ant", quantity: 2, cost_basis: 166, institution_price: 88.91 },
+      { account_id: "a1", security_id: "s_spaxx", quantity: 0, institution_value: 0 }], { ...SECS, ...secs }, {});
+    const [opening] = openingActivities("a1", "2024-11-09", hs, cash.get("a1")!, [buy]);
+    expect(opening.map((a) => [a.symbol, a.activityType, n(a.amount)])).toEqual([[null, "TRANSFER_IN", 166]]);
+  });
+
+  test("partial fill on an option compares contracts with contracts", () => {
+    const [a] = mapInvestmentTransactions([tx("o1", "buy", "buy", 100, 300, 1.0, "o_occ", null,
+      { name: "buy 3 contracts. This order is partially filled." })], OPT_SECS, {}).activities;
+    expect(n(a.quantity)).toBe(1);
+  });
+
   test("equity short uses position subtypes", () => {
     const r = one([tx("t1", "sell", "sell short", -100, -1, 100, "s_vti"), tx("t2", "buy", "buy to cover", 90, 1, 90, "s_vti")]);
     expect(r.activities.map((a) => a.subtype)).toEqual(["POSITION_OPEN", "POSITION_CLOSE"]);

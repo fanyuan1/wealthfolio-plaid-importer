@@ -106,6 +106,10 @@ function mapOne(t: Row, securities: Record<string, Row>, overrides: Record<strin
   const isOption = isSec && r.instrumentType === "OPTION";
   const mult: Dec = isSec ? r.multiplier : D(1);
   if (price.eq(0) && nz(qty)) price = amount.abs().div(qty);
+  if ((ttype === "buy" || ttype === "sell") && name.toLowerCase().includes(PARTIAL_FILL) && nz(price)) {
+    const filled = amount.abs().div(price);
+    if (filled.gt(0) && filled.lt(qty)) qty = filled;
+  }
   qty = qty.div(mult);
   const secKw: Partial<ActivityInit> = isSec ? {
     symbol: r.symbol, instrumentType: r.instrumentType, securityId: sec!.security_id,
@@ -121,10 +125,6 @@ function mapOne(t: Row, securities: Record<string, Row>, overrides: Record<strin
   if (ttype === "buy" || ttype === "sell") {
     if (!isSec) return [null, null];
     if (qty.eq(0)) return rev("trade with zero quantity");
-    if (name.toLowerCase().includes(PARTIAL_FILL) && nz(price)) {
-      const filled = amount.abs().div(price);
-      if (filled.gt(0) && filled.lt(qty)) qty = filled;
-    }
     if (sub === "contribution") {
       return act("TRANSFER_IN", { quantity: qty, unitPrice: price, ...secKw });
     }

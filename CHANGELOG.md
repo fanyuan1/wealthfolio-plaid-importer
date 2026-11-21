@@ -8,6 +8,7 @@ Works with Wealthfolio 3.13, and still with 3.12.
 
 ### Fixed
 
+- A security that Plaid calls a derivative but that you map to a stock ticker in Securities imports as that stock. Before, it was an option worth 100 shares a unit: a Robinhood buy of 2 ANT shares became 0.42 contracts, and the rest showed up as a free opening position. A partially filled option trade now counts the filled contracts.
 - Restore (keep what is here) brings back the access tokens of connections that lost them, for example after `WF_SECRET_KEY` changed. Before, it skipped every connection that already existed, so they stayed without a token. The README now explains `WF_SECRET_KEY` for Docker users.
 - A ratio update fetches the ticker's newest closes before it proposes a ratio, and uses the nearest close in the lookback, with its date. Before, a stale cached close could set the ratio.
 - An account without a full history pull, or with rows dated before its last sync, is pulled again in full. An account that holds a tracked fund is backfilled on a full pull.
