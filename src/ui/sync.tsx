@@ -18,7 +18,8 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
   const [moving, setMoving] = useState<[string, Set<string>]>();
   const [attention, setAttention] = useState(0);
   const [last, setLast] = useState<{ time: string; message: string } | null>(null);
-  useEffect(() => { engine.store.lastSync(env).then(setLast); }, [engine, env, result]);
+  const { error: loadError, fail } = useBusy();
+  useEffect(() => { engine.store.lastSync(env).then(setLast).catch((e) => fail('load', e)); }, [engine, env, result, fail]);
   const progress = task?.label === 'dry' ? task.progress : [];
   const pushing = task?.label === 'push' ? task.progress : [];
 
@@ -119,7 +120,7 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
         <RatioProposal key={r.sid} engine={engine} p={r} onDone={() => set({ stale: true })} />
       ))}
       {result && <Alert><Icons.CheckCircle className="h-4 w-4 text-green-600" /><AlertTitle>Pushed</AlertTitle><AlertDescription>{result}</AlertDescription></Alert>}
-      <Problem error={error} />
+      <Problem error={error ?? loadError} />
       {stale && (
         <Alert>
           <AlertTitle>Securities changed</AlertTitle>
@@ -182,7 +183,7 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction variant="destructive" onClick={() => {
               const [sym, accts] = moving!;
-              start('retrack', async () => {
+              void start('retrack', async () => {
                 const n = await engine.retrack(sym, accts);
                 set({ dry: undefined, result: `Deleted ${n} ${sym} activities. Click Dry run.` });
                 host.ctx?.api.query.invalidateQueries(['activities']);
@@ -285,6 +286,7 @@ export function Daily({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; 
   const { task, busy, error } = useTask(engine, 'daily');
   const engineBusy = useEngine(engine, (e) => e.busy);
   const onSave = useSave(), timeSave = useSave();
+  const { error: loadError, fail } = useBusy();
   useEffect(() => {
     let live = true;
     Promise.all([engine.store.daily(), engine.store.autoRun(env)]).then(([d, r]) => {
@@ -292,13 +294,13 @@ export function Daily({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; 
       setDaily(d);
       setRec(r);
       setNext(nextRun(d, r));
-    });
+    }).catch((e) => { if (live) fail('load', e); });
     return () => { live = false; };
-  }, [engine, env, tick, busy]);
+  }, [engine, env, tick, busy, fail]);
   useEffect(() => { const t = setInterval(() => setTick((n) => n + 1), 60_000); return () => clearInterval(t); }, []);
   const change = (d: DailyCfg, via: ReturnType<typeof useSave>) => {
     setDaily(d);
-    via.save(async () => {
+    void via.save(async () => {
       await engine.store.saveDaily(d);
       setTick((n) => n + 1);
     });
@@ -340,7 +342,7 @@ export function Daily({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; 
           </div>
           {busy && <p className="text-muted-foreground flex items-center gap-2 text-sm"><Spin on />Daily sync running… You can leave this screen.</p>}
           {busy && <ProgressList list={task?.progress ?? []} />}
-          <Problem error={error} />
+          <Problem error={error ?? loadError} />
         </CardContent>
       </Card>
       {latest && <LastRun r={latest} onStep={onStep} />}

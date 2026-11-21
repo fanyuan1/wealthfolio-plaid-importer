@@ -4,12 +4,14 @@ import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogH
 import { useEffect, useState } from 'react';
 import { Engine } from '../engine/engine';
 import type { PlaidEnv } from '../importer';
-import { host, msg, type Step, TITLE } from './common';
+import { host, msg, Problem, type Step, TITLE } from './common';
 import { Setup } from './setup';
 import { Connections } from './connections';
 import { Accounts, type SpendingOff } from './accounts';
 import { Daily, Sync } from './sync';
 import { Backup } from './backup';
+
+const toastError = (e: unknown) => host.ctx?.api.toast.error(msg(e));
 
 function PlaidImporter({ ctx }: { ctx: AddonContext }) {
   const [engine] = useState(() => (host.engine ??= new Engine(ctx.api)));
@@ -21,14 +23,15 @@ function PlaidImporter({ ctx }: { ctx: AddonContext }) {
   const [done, setDone] = useState<Partial<Record<Step, boolean>>>({});
   const [spendingOff, setSpendingOff] = useState<SpendingOff>({ names: [], available: true });
   const [leaving, setLeaving] = useState<Step>();
-  useEffect(() => { engine.accountsReady().then(setReady); }, [engine, step, version, tick]);
+  const [bootError, setBootError] = useState<string>();
+  useEffect(() => { engine.accountsReady().then(setReady).catch(toastError); }, [engine, step, version, tick]);
   useEffect(() => {
     (async () => {
       const s = await engine.store.settings();
       const k = await engine.store.keys(s.env);
       setDone({ setup: Boolean(k.clientId && k.secret), connections: Object.keys(await engine.store.items(s.env)).length > 0,
         accounts: ready, sync: Boolean(await engine.store.lastSync(s.env)), daily: (await engine.store.daily()).on });
-    })();
+    })().catch(toastError);
   }, [engine, env, step, version, tick, ready]);
   useEffect(() => { if (!ready && (step === 'sync' || step === 'daily')) setStep('accounts'); }, [ready, step]);
   useEffect(() => {
@@ -36,9 +39,9 @@ function PlaidImporter({ ctx }: { ctx: AddonContext }) {
       setEnv((await engine.store.settings()).env);
       const { env } = await engine.store.settings();
       setStep((await engine.store.lastSync(env)) ? 'sync' : 'setup');
-    })();
+    })().catch((e) => setBootError(msg(e)));
   }, [engine]);
-  if (!env || !step) return null;
+  if (!env || !step) return <Problem error={bootError} />;
   const go = (to: Step) => {
     if (step === 'accounts' && to !== 'accounts' && spendingOff.names.length) setLeaving(to);
     else setStep(to);

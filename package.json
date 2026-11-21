@@ -52,7 +52,7 @@
     "eslint": "^10.15.0",
     "husky": "^9.1.7",
     "lint-staged": "^17.6.1",
-    "lints": "github:fanyuan1/lints",
+    "lints": "github:fanyuan1/lints#v0.4.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "typescript": "^5.9.2",

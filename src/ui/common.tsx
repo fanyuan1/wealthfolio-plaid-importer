@@ -16,19 +16,22 @@ export const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 export function useBusy() {
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState<string>();
+  const fail = useCallback((label: string, e: unknown) => {
+    setError(msg(e));
+    host.ctx?.api.logger.error(`plaid-importer: ${label}: ${msg(e)}`);
+  }, []);
   const run = useCallback(async (label: string, fn: () => Promise<unknown>) => {
     setBusy(label);
     setError(undefined);
     try {
       await fn();
     } catch (e) {
-      setError(msg(e));
-      host.ctx?.api.logger.error(`plaid-importer: ${label}: ${msg(e)}`);
+      fail(label, e);
     } finally {
       setBusy(undefined);
     }
-  }, []);
-  return { busy, error, run };
+  }, [fail]);
+  return { busy, error, run, fail };
 }
 
 export function Problem({ error }: { error?: string }) {

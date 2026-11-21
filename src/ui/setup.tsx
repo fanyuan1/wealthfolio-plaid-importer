@@ -9,14 +9,14 @@ export function Setup({ engine, env, onEnv }: { engine: Engine; env: PlaidEnv; o
   const [secret, setSecret] = useState('');
   const [have, setHave] = useState(false);
   const [ok, flashOk] = useFlash();
-  const { busy, error, run } = useBusy();
+  const { busy, error, run, fail } = useBusy();
 
   useEffect(() => {
     engine.store.keys(env).then((k) => {
       setClientId(k.clientId ?? '');
       setHave(Boolean(k.clientId && k.secret));
-    });
-  }, [engine, env]);
+    }).catch((e) => fail('load', e));
+  }, [engine, env, fail]);
 
   return (
     <div className="flex flex-col gap-4">

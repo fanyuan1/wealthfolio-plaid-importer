@@ -21,9 +21,9 @@ export function Connections({ engine, env, onChange, onStep }: { engine: Engine;
   const [tokOwner, setTokOwner] = useState('');
   const [token, setToken] = useState('');
   const [removing, setRemoving] = useState<string>();
-  const { busy, error, run } = useBusy();
+  const { busy, error, run, fail } = useBusy();
   const load = useCallback(() => engine.store.items(env).then(setItems), [engine, env]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load().catch((e) => fail('load', e)); }, [load, fail]);
   const setLink = (l?: Pending) => { engine.pendingLink = l; setLinkState(l); };
 
   const done = async () => {
@@ -166,7 +166,7 @@ export function Connections({ engine, env, onChange, onStep }: { engine: Engine;
           <AlertDialogFooter>
             <AlertDialogCancel>Keep it</AlertDialogCancel>
             <AlertDialogAction variant="destructive"
-                               onClick={() => { const id = removing!; run('remove', async () => { await engine.removeItem(id); await done(); }); }}>
+                               onClick={() => { const id = removing!; void run('remove', async () => { await engine.removeItem(id); await done(); }); }}>
               Remove
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -239,7 +239,7 @@ function OwnerCell({ engine, itemId, value, onSaved }: { engine: Engine; itemId:
   useEffect(() => setV(value), [value]);
   const commit = () => {
     if (v === value) return;
-    save(async () => {
+    void save(async () => {
       try {
         await engine.setOwner(itemId, v);
       } catch (e) {

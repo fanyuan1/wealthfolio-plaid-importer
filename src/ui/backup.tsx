@@ -108,7 +108,7 @@ export function Backup({ engine, env, ready, onChange }: { engine: Engine; env: 
                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
                      const f = e.target.files?.[0];
                      e.target.value = '';
-                     if (f) f.text().then((text) => setPicked({ name: f.name, text }));
+                     if (f) void run('read', async () => setPicked({ name: f.name, text: await f.text() }));
                    }} />
             <Button variant="outline" disabled={!!restoring} onClick={() => file.current?.click()}><Icons.Upload className="h-4 w-4" />Choose a file</Button>
           </div>

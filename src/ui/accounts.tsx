@@ -2,7 +2,7 @@ import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, 
 import { useCallback, useEffect, useState } from 'react';
 import type { Engine } from '../engine/engine';
 import { type AccountCfg, jointByMask, type PlaidEnv, planLinks, plural, WF_TYPE } from '../importer';
-import { ACTIONS, FlashLabel, host, Problem, ProgressList, Spin, useFlash, useSave, useTask, WithSave } from './common';
+import { ACTIONS, FlashLabel, host, Problem, ProgressList, Spin, useBusy, useFlash, useSave, useTask, WithSave } from './common';
 
 const KIND: Record<string, string> = { investment: 'Investment', cash: 'Cash', credit: 'Credit card', unsupported: 'Not supported' };
 
@@ -19,6 +19,7 @@ export function Accounts({ engine, env, version, onChange, onSpendingOff }: { en
   const refresh = (refreshTask?.progress ?? []).filter((p) => p.state === 'error' || p.state === 'warn' || (p.state === 'done' && p.detail !== 'No new accounts'));
   const refreshing = Boolean(refreshTask?.running);
   const { save } = useSave();
+  const { error: loadError, fail } = useBusy();
   const [allSaved, flashAll] = useFlash();
   const load = useCallback(async () => {
     await engine.accountsReady();
@@ -28,12 +29,13 @@ export function Accounts({ engine, env, version, onChange, onSpendingOff }: { en
     setPushed(await engine.pushedAccounts());
     onChange();
   }, [engine, env]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { load(); }, [load, version]);
+  const reload = useCallback(() => { load().catch((e) => fail('load', e)); }, [load, fail]);
+  useEffect(() => { reload(); }, [reload, version]);
   useEffect(() => {
     if (!engine.tasks.refresh?.running) engine.task('refresh', 'refresh', (io) => engine.refreshStale(io.progress)).catch(() => {});
   }, [engine, env]);
-  useEffect(() => { if (refreshTask && !refreshTask.running) load(); }, [refreshTask?.running]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (created && !created.running) load(); }, [created?.running]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (refreshTask && !refreshTask.running) reload(); }, [refreshTask?.running]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (created && !created.running) reload(); }, [created?.running]); // eslint-disable-line react-hooks/exhaustive-deps
   const note = created && !created.running && !created.error ? String(created.result) : undefined;
 
   const joint = jointByMask(cfg);
@@ -188,7 +190,7 @@ export function Accounts({ engine, env, version, onChange, onSpendingOff }: { en
         <p className="text-muted-foreground text-sm">Spending Off: turn it on for that account in Wealthfolio → Settings → Spending. An add-on cannot change it.</p>
       )}
       {note && <Alert><Icons.CheckCircle className="h-4 w-4" /><AlertTitle>{note}</AlertTitle></Alert>}
-      <Problem error={error} />
+      <Problem error={error ?? loadError} />
     </div>
   );
 }
