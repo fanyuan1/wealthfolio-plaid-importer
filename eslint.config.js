@@ -1,3 +1,3 @@
-import devKit from "dev-kit";
+import lints from "lints";
 
-export default devKit.configs.recommended;
+export default lints.configs.recommended;
