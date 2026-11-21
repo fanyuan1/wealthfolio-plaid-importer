@@ -2,6 +2,19 @@
 
 Versions follow [semantic versioning](https://semver.org).
 
+## 0.1.2 - 2026-11-21
+
+Works with Wealthfolio 3.13, and still with 3.12.
+
+### Fixed
+
+- Restore (keep what is here) brings back the access tokens of connections that lost them, for example after `WF_SECRET_KEY` changed. Before, it skipped every connection that already existed, so they stayed without a token. The README now explains `WF_SECRET_KEY` for Docker users.
+- A ratio update fetches the ticker's newest closes before it proposes a ratio, and uses the nearest close in the lookback, with its date. Before, a stale cached close could set the ratio.
+- An account without a full history pull, or with rows dated before its last sync, is pulled again in full. An account that holds a tracked fund is backfilled on a full pull.
+- Reconciliation compares holdings with the quantities this pull will update, so a new ratio no longer shows false differences.
+- Pressing Enter to confirm an IME candidate in the initials field no longer submits it.
+- A failed read on Setup, Connections, Accounts, Sync, Daily sync, or when the addon starts shows an error. Before, the screen stayed blank or out of date. A backup file that cannot be read shows an error.
+
 ## 0.1.1 - 2026-11-11
 
 Works with Wealthfolio 3.13, and still with 3.12.
