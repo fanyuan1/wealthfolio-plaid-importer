@@ -1,4 +1,3 @@
-// Account names and settings.
 import { expect, test } from "vitest";
 import { accountName, MAX_LEN } from "../../src/importer";
 

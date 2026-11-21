@@ -1,4 +1,3 @@
-// Shared UI pieces and the host handle.
 import type { AddonContext } from '@wealthfolio/addon-sdk';
 import { Alert, AlertDescription, AlertTitle, Button, Icons, Input } from '@wealthfolio/ui';
 import { addProgress, type Progress, type Task } from '../engine/engine';

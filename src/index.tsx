@@ -1,6 +1,5 @@
 // Addon entry: the route, the sidebar item, and the daily sync timer.
-// The manifest declares no `contributes`: Wealthfolio boots an addon with contributed routes only when its page is
-// first opened, and the daily sync timer must run from startup.
+// No `contributes` in the manifest: see docs/decisions/0002-no-contributes-in-manifest.md.
 import type { AddonEnableFunction } from '@wealthfolio/addon-sdk';
 import { Engine } from './engine/engine';
 import { host, msg } from './ui/common';

@@ -1,4 +1,3 @@
-// Plaid rows -> Wealthfolio activities.
 import { describe, expect, test } from "vitest";
 import {
   Activity, D, type Dec, INCOME, SPENDING, biltPassthrough, convert, entry, fixSplitPrices, holdingsBySymbol, hkey, mapBankTransaction,

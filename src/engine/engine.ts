@@ -148,7 +148,6 @@ export class Engine {
     }
   }
 
-  // ---------- connect ----------
 
   /** Sandbox only: a test bank with no login page. */
   async connectSandbox(owner: string, institutionId = "ins_109508", products = ["transactions", "investments"]) {
@@ -387,7 +386,6 @@ export class Engine {
     });
   }
 
-  // ---------- accounts ----------
 
   /** Read an Item's accounts from Plaid; new ones are added unselected. Returns the new account ids.
    * identity: Plaid bills each Identity call, so automatic refreshes leave it out and keep the joint flags they have. */
@@ -554,7 +552,6 @@ export class Engine {
     });
   }
 
-  // ---------- repair ----------
 
   /** Set Spending categories on pushed bank and card rows that have none, from the Plaid category kept with each row.
    * No Plaid call, except once for rows pushed before the category was kept. */
@@ -588,7 +585,6 @@ export class Engine {
     for (const r of unlearned(state, cfg)) if (pulled.has(cfg[r.account_id].item_id)) r.category = pfc.get(r.plaid_id) ?? null;
   }
 
-  // ---------- daily ----------
 
   /** The daily sync, run on a timer while Wealthfolio is open: once a day after the set time. It waits while another task runs.
    * It applies small ratio changes and stops on anything that needs the user. Returns the run, or null if it did not run. */
@@ -686,7 +682,6 @@ export class Engine {
     }
   }
 
-  // ---------- securities ----------
 
   /** Set how one security maps. Rows already pushed under another symbol, or now mapped to cash or Leave out, show up
    * as "moved" in the next dry run; a security that starts to be imported gets its full history. */
@@ -813,7 +808,6 @@ export class Engine {
     });
   }
 
-  // ---------- sync ----------
 
   /** fresh: pull from Plaid even when a recent pull of the same accounts exists. The daily sync always pulls. */
   async dryRun(log: (m: string) => void, progress: OnProgress = () => {}, fresh = false): Promise<DryRun> {

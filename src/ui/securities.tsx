@@ -1,4 +1,3 @@
-// Sync → Securities: how each security maps.
 import { Badge, Button, Card, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, CardContent, CardDescription, CardHeader, CardTitle, Input, Label, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@wealthfolio/ui';
 import { Fragment, useEffect, useState } from 'react';
 import { type Engine, modeOf, type Security, type SecurityMode } from '../engine/engine';

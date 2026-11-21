@@ -25,9 +25,7 @@ export interface ItemMeta { owner: string; institution_name: string; institution
 
 const KEYS = { dailyOn: "daily_on", clientId: "plaid_client_id", secret: (env: PlaidEnv) => `plaid_secret_${env}`, token: (id: string) => `token_${id}` };
 
-// Wealthfolio syncs addon storage across devices and caps each value at ~250 KB, so big values (the ledger)
-// are split into parts. A part's key is its content hash: unchanged parts are not written again, and the
-// head that lists them is written last, so a failed save leaves the old value whole.
+// Large values are split into parts: see docs/decisions/0001-chunked-addon-storage.md.
 const PART = 50_000; // characters; 3 bytes each at most in UTF-8, with room for escaping
 type Head = { parts: string[] };
 

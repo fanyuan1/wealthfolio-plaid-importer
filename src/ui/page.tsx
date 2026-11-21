@@ -1,4 +1,3 @@
-// The page: the steps as a stepper.
 import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { AddonContext } from '@wealthfolio/addon-sdk';
 import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Icons, Page, PageContent, PageHeader, Tabs, TabsContent, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@wealthfolio/ui';

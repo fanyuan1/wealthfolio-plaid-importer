@@ -1,4 +1,3 @@
-// Pair transfer legs across linked accounts.
 import type { Activity } from "./models";
 
 export const MAX_DAYS = 3;

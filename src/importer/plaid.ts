@@ -34,12 +34,10 @@ export class Plaid {
     return body;
   }
 
-  // institutions
   async institution(institutionId: string, country = "US"): Promise<Row> {
     return (await this.call("/institutions/get_by_id", { institution_id: institutionId, country_codes: [country] })).institution;
   }
 
-  // link
   async linkToken(clientUserId: string, products: string[] = [], optional: string[] = [], country = "US",
     accessToken?: string, extra: Row = {}): Promise<Row> {
     const req: Row = { client_name: "Plaid Importer", language: "en", country_codes: [country], user: { client_user_id: clientUserId }, ...extra };
@@ -67,7 +65,6 @@ export class Plaid {
     return (await this.call("/sandbox/public_token/create", { institution_id: institutionId, initial_products: products })).public_token;
   }
 
-  // items / accounts
   item(accessToken: string): Promise<Row> {
     return this.call("/item/get", { access_token: accessToken });
   }
@@ -80,7 +77,6 @@ export class Plaid {
     return this.call("/identity/get", { access_token: accessToken });
   }
 
-  // investments
   holdings(accessToken: string): Promise<Row> {
     return this.call("/investments/holdings/get", { access_token: accessToken });
   }

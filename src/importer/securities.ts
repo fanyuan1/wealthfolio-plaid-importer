@@ -1,4 +1,3 @@
-// Resolve a Plaid security to a Wealthfolio symbol.
 import { D, type Dec } from "./dec";
 import type { Row } from "./models";
 

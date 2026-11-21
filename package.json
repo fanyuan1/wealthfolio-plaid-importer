@@ -24,7 +24,10 @@
     "wf:up": "f=test/docker/.env; [ -f $f ] || echo \"WF_SECRET_KEY=$(openssl rand -base64 32)\" > $f; docker compose -p plaid-wf -f test/docker/compose.yml --env-file $f up -d --wait",
     "wf:install": "pnpm -s bundle && node test/docker/install.mjs",
     "wf:down": "docker compose -p plaid-wf -f test/docker/compose.yml --env-file test/docker/.env down",
-    "wf:reset": "docker compose -p plaid-wf -f test/docker/compose.yml --env-file test/docker/.env down -v && rm -f test/docker/.env"
+    "wf:reset": "docker compose -p plaid-wf -f test/docker/compose.yml --env-file test/docker/.env down -v && rm -f test/docker/.env",
+    "lint:comments": "eslint .",
+    "check": "pnpm run lint:comments && pnpm run type-check && pnpm run test",
+    "prepare": "husky"
   },
   "dependencies": {
     "big.js": "^7.0.1"
@@ -46,10 +49,17 @@
     "@vitejs/plugin-react": "^5.0.2",
     "@wealthfolio/addon-sdk": "^3.12.0",
     "@wealthfolio/ui": "^3.12.0",
+    "dev-kit": "git+https://github.com/fanyuan1/dev-kit.git",
+    "eslint": "^10.15.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.6.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "typescript": "^5.9.2",
     "vite": "^7.1.5",
     "vitest": "^3.2.4"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}": "eslint --no-warn-ignored"
   }
 }

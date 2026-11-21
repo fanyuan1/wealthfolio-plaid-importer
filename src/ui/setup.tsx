@@ -1,4 +1,3 @@
-// 1. Setup: Plaid environment and keys.
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label, Switch } from '@wealthfolio/ui';
 import { useEffect, useState } from 'react';
 import type { Engine } from '../engine/engine';

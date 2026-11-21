@@ -2,7 +2,7 @@
 import BigBase from "big.js";
 
 export const D = BigBase(); // own constructor, so its settings never leak to other users of big.js
-D.DP = 28; // division keeps 28 decimal places
+D.DP = 28;
 D.RM = 2; // round half to even
 export type Dec = BigBase.Big;
 
