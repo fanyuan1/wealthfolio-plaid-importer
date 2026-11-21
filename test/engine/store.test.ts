@@ -147,6 +147,15 @@ describe("backup", () => {
     expect(await b.store.token("item1")).toBe("access-sandbox-x");
   });
 
+  it("merge restores the token of a connection that lost it", async () => {
+    const text = await (await source()).backup("connections");
+    const b = new Engine(fakeApi(["wf1"]).api);
+    await b.store.saveItems("sandbox", { item1: { owner: "XY", institution_name: "Test Bank" } });
+    await b.restore(text);
+    expect(await b.store.token("item1")).toBe("access-sandbox-x");
+    expect((await b.store.items("sandbox")).item1.owner).toBe("XY");
+  });
+
   it("merge keeps what is here; overwrite replaces it and removes connections the backup lacks", async () => {
     const text = await (await source()).backup("full");
     const b = new Engine(fakeApi(["wf1"]).api);

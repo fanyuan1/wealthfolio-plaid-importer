@@ -313,6 +313,8 @@ export class Engine {
         if (over || !current[id]) {
           await this.store.saveToken(id, access_token);
           items[id] = meta as ItemMeta;
+        } else if (!(await this.store.token(id))) {
+          await this.store.saveToken(id, access_token);
         }
       }
       await this.store.saveItems(env, items);

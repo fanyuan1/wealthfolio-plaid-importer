@@ -36,6 +36,7 @@ Details: [docs/USAGE.md](docs/USAGE.md).
 ## Privacy
 
 - Plaid keys and access tokens live in Wealthfolio's secret store, which never syncs to other devices.
+- On the Docker server, Wealthfolio encrypts that store with `WF_SECRET_KEY`. Set it to a fixed value and keep it across upgrades. If it changes, enter the Plaid keys again in Setup and restore a backup.
 - Settings and the push record live in Wealthfolio's addon storage and sync with its device sync; tokens don't.
 - Plaid receives `plaid-importer-<initials>` as the user id, not your name or email.
 - Backups contain access tokens, not the Plaid keys. Anyone with the access tokens and your Plaid client ID and secret can read your account data. Delete copies you no longer need.
