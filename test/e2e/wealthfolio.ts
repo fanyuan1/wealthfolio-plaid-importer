@@ -1,4 +1,3 @@
-// A throwaway Wealthfolio in Docker for the browser tests: its own compose project, port and data volume.
 import { execFileSync, execSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -33,11 +32,9 @@ async function call(method: string, path: string, body?: unknown) {
   return text ? JSON.parse(text) : null;
 }
 
-/** A new, empty Wealthfolio with the addon installed and onboarding done. */
 export async function freshWealthfolio() {
   compose("down", "-v", "--remove-orphans");
   compose("up", "-d", "--wait");
-  // No update check: an older pinned image would open a "New Update Available" popup over every page.
   await call("PUT", "/settings", { onboardingCompleted: true, autoUpdateCheckEnabled: false, baseCurrency: "USD", timezone: "America/Los_Angeles" });
   const zip = readFileSync(ZIP).toString("base64");
   await call("POST", "/addons/install-zip", { zipDataB64: zip, enableAfterInstall: true, approvedNetworkHosts: HOSTS });

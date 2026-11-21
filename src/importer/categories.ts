@@ -1,9 +1,6 @@
-// Plaid personal_finance_category -> Wealthfolio spending/income category key.
 export const SPENDING = "spending_categories";
 export const INCOME = "income_sources";
 
-// Detailed matches win over primary matches. Keys must exist in Wealthfolio;
-// unknown subcategory keys fall back to their parent at push time.
 const DETAILED: Record<string, string> = {
   FOOD_AND_DRINK_GROCERIES: "groceries",
   FOOD_AND_DRINK_COFFEE: "food_coffee",
@@ -22,7 +19,7 @@ const DETAILED: Record<string, string> = {
   GENERAL_SERVICES_EDUCATION: "education",
   GOVERNMENT_AND_NON_PROFIT_DONATIONS: "gifts",
   INCOME_SALARY: "income_salary",
-  INCOME_WAGES: "income_salary", // Plaid's older name for INCOME_SALARY
+  INCOME_WAGES: "income_salary",
   INCOME_CONTRACTOR: "income_freelance",
   INCOME_DIVIDENDS: "income_dividends",
   INCOME_INTEREST_EARNED: "income_interest",
@@ -37,7 +34,6 @@ const PRIMARY: Record<string, string> = {
 };
 const PRIMARIES = Object.keys(PRIMARY).sort((a, b) => b.length - a.length);
 
-/** [taxonomyId, categoryKey], or null to leave uncategorized. */
 export function mapCategory(pfc: string | null | undefined, inflow: boolean): [string, string] | null {
   if (!pfc) return null;
   const up = pfc.toUpperCase();
@@ -48,6 +44,6 @@ export function mapCategory(pfc: string | null | undefined, inflow: boolean): [s
   }
   if (key === undefined) key = inflow ? "income_other" : "other_expense";
   const taxonomy = key.startsWith("income_") ? INCOME : SPENDING;
-  if (inflow && taxonomy === SPENDING) return null; // refunds etc.: leave for Wealthfolio rules
+  if (inflow && taxonomy === SPENDING) return null;
   return [taxonomy, key];
 }

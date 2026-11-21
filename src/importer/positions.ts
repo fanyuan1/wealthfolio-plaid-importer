@@ -1,10 +1,8 @@
-// Opening positions, split ratios and holdings reconciliation.
 import { D, type Dec, dec, EPS, nz, ZERO } from "./dec";
 import { Activity, POSITION_SIGN, type Review, review, type Row } from "./models";
 import { resolve } from "./securities";
 
 export type PriceOn = (securityId: string, day: string) => Dec | null;
-/** Holdings keyed by `${accountId}|${symbol}`. */
 export type HoldingMap = Map<string, Row>;
 export const hkey = (accountId: string, symbol: string) => `${accountId}|${symbol}`;
 const splitKey = (k: string): [string, string] => {
@@ -12,7 +10,6 @@ const splitKey = (k: string): [string, string] => {
   return [k.slice(0, i), k.slice(i + 1)];
 };
 
-// Opening rows first on their date, then by date.
 const order = (a: Activity): [string, number] => [a.date, a.plaidId.startsWith("opening:") ? 0 : 1];
 const byOrder = (x: Activity, y: Activity) => {
   const [a, b] = [order(x), order(y)];
@@ -32,7 +29,6 @@ export function holdingsBySymbol(holdings: Row[], securities: Record<string, Row
     if (r.kind === "cash") {
       add(cash, h.account_id, dec(h.institution_value) ?? ZERO);
     } else if (r.kind === "security") {
-      // Options: Plaid counts single options; Wealthfolio counts contracts.
       const qty = (dec(h.quantity) ?? ZERO).div(r.multiplier);
       bySym.set(hkey(h.account_id, r.symbol!), {
         ...h, quantity: qty, _symbol: r.symbol, _itype: r.instrumentType, _manual: r.manual,
@@ -45,8 +41,6 @@ export function holdingsBySymbol(holdings: Row[], securities: Record<string, Row
   return [bySym, cash, unmapped];
 }
 
-/** How many shares one opening share has become by now: the product of the splits after the opening. Plaid's cost basis
- * and Yahoo's closes are in today's shares, but the opening quantity is in the shares held on the opening date. */
 function splitFactor(opening: Dec, acts: Activity[]): Dec {
   let pos = opening, factor = D(1);
   for (const a of [...acts].sort(byOrder)) {
@@ -56,9 +50,6 @@ function splitFactor(opening: Dec, acts: Activity[]): Dec {
   return factor.round(6, 2);
 }
 
-/** Back out positions held before startDate: current holdings minus every pulled change. Without Plaid cost
- * basis, price at the acquisition date: priceOn (a market close), else the earliest price Plaid shows for
- * the security, else today's price. */
 export function openingActivities(accountId: string, startDate: string, holdings: HoldingMap, currentCash: Dec | null,
   acts: Activity[], currency = "USD", priceOn?: PriceOn): [Activity[], Review[]] {
   const deltas = new Map<string, Dec>();
@@ -87,9 +78,9 @@ export function openingActivities(accountId: string, startDate: string, holdings
       continue;
     }
     let price: Dec | null = null;
-    const grown = splitFactor(opening, acts.filter((a) => a.accountId === accountId && a.symbol === sym)); // 8 after an 8-for-1 split
+    const grown = splitFactor(opening, acts.filter((a) => a.accountId === accountId && a.symbol === sym));
     if (h && h.cost_basis != null && nz(current)) {
-      price = dec(h.cost_basis)!.abs().div(current.times(h._mult ?? 1)).times(grown); // per opening share, as Wealthfolio prices
+      price = dec(h.cost_basis)!.abs().div(current.times(h._mult ?? 1)).times(grown);
     } else {
       const sid = h ? h.security_id : acts.find((a) => a.symbol === sym)?.securityId ?? null;
       let source: string | null;
@@ -127,8 +118,6 @@ function acquisitionPrice(sym: string, sid: string | null, day: string, acts: Ac
   return [null, null];
 }
 
-/** Turn SPLIT quantity deltas into Wealthfolio ratios (amount = new/old). prior: positions before the
- * earliest activity in acts. */
 export function resolveSplits(acts: Activity[], prior: Map<string, Dec> = new Map()): Review[] {
   const pos = new Map(prior);
   const reviews: Review[] = [];
@@ -148,10 +137,6 @@ export function resolveSplits(acts: Activity[], prior: Map<string, Dec> = new Ma
   return reviews;
 }
 
-/** Plaid sometimes prices a trade from before a split in today's shares (split-adjusted) while its quantity is in the
- * shares of the day. Wealthfolio applies the split to the quantity later, so the price must be the unadjusted one.
- * A price that matches Yahoo's split-adjusted close, not the close times the later splits, is multiplied by them.
- * acts: the activities to fix. all: the same plus the ledger's, for the splits. Returns one review line per change. */
 export function fixSplitPrices(acts: Activity[], all: Activity[], close: (sym: string | null, day: string) => Dec | null): Review[] {
   const splits = new Map<string, [string, Dec][]>();
   for (const a of all) {
@@ -164,7 +149,7 @@ export function fixSplitPrices(acts: Activity[], all: Activity[], close: (sym: s
     if (!a.symbol || a.marketPrice || a.plaidId.startsWith("opening:") || !POSITION_SIGN[a.activityType] || !nz(a.unitPrice)) continue;
     const later = (splits.get(hkey(a.accountId, a.symbol)) ?? []).filter(([day]) => day > a.date);
     const factor = later.reduce((f, [, r]) => f.times(r), D(1));
-    if (factor.gt("0.67") && factor.lt("1.5")) continue; // no split worth checking
+    if (factor.gt("0.67") && factor.lt("1.5")) continue;
     const y = close(a.symbol, a.date);
     if (!nz(y)) continue;
     const price = a.unitPrice!;
@@ -199,7 +184,6 @@ export function reconcile(accountIds: Set<string>, computed: Map<string, Dec>, h
   return reviews;
 }
 
-// Sort by account, then symbol; "|" in a key would sort differently, so compare parts.
 function tupleOrder(x: string, y: string): number {
   const [a1, s1] = splitKey(x), [a2, s2] = splitKey(y);
   return a1 !== a2 ? (a1 < a2 ? -1 : 1) : s1 < s2 ? -1 : s1 > s2 ? 1 : 0;

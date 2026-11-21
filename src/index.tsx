@@ -1,11 +1,9 @@
-// Addon entry: the route, the sidebar item, and the daily sync timer.
-// No `contributes` in the manifest: see docs/decisions/0002-no-contributes-in-manifest.md.
 import type { AddonEnableFunction } from '@wealthfolio/addon-sdk';
 import { Engine } from './engine/engine';
 import { host, msg } from './ui/common';
 import { AddonRoute } from './ui/page';
 
-const TICK_MS = 60_000; // the daily sync time has minutes
+const TICK_MS = 60_000;
 
 const enable: AddonEnableFunction = (ctx) => {
   host.ctx = ctx;
@@ -16,7 +14,7 @@ const enable: AddonEnableFunction = (ctx) => {
     else ctx.api.toast.warning(`Daily sync ${r.status}: ${r.message}`);
     ctx.api.query.invalidateQueries(['activities']);
   }).catch((e) => ctx.api.logger.error(`plaid-importer: daily: ${msg(e)}`));
-  const first = setTimeout(tick, 60_000); // let Wealthfolio finish starting
+  const first = setTimeout(tick, 60_000);
   const timer = setInterval(tick, TICK_MS);
   ctx.router.add({ id: 'plaid-importer', path: '/addons/plaid-importer', component: AddonRoute });
   const item = ctx.sidebar.addItem({ id: 'plaid-importer', label: 'Plaid Importer', icon: 'plugs-connected', route: '/addons/plaid-importer', order: 100 });

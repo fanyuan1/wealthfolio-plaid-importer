@@ -1,5 +1,3 @@
-// Sync, first push to an account: check the rows Plaid would add against what Wealthfolio already has.
-// Three groups: new, similar, exact. New rows start as Add; exact and similar start as Discard.
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Icons, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@wealthfolio/ui';
 import { Fragment, useState } from 'react';
 import { type Adoption, plural } from '../importer';
@@ -12,8 +10,8 @@ const line = (r: { date: string; type: string; symbol: string | null; amount: st
   `${r.date} · ${r.type}${r.symbol ? ` ${r.symbol}` : ''} · ${r.quantity && r.symbol ? `${r.quantity} sh` : (r.amount ?? '—')}`;
 
 export function Matches({ list, names, onChange }: { list: Adoption[]; names: Record<string, string>; onChange: (next: Adoption[]) => void }) {
-  const [toggled, setToggled] = useState<Partial<Record<How, boolean>>>({}); // the user's own open/close
-  const [compare, setCompare] = useState<string>(); // key of the row shown side by side
+  const [toggled, setToggled] = useState<Partial<Record<How, boolean>>>({});
+  const [compare, setCompare] = useState<string>();
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [shown, setShown] = useState<Partial<Record<How, number>>>({});
   if (!list.length) return null;
@@ -37,7 +35,6 @@ export function Matches({ list, names, onChange }: { list: Adoption[]; names: Re
       </CardHeader>
       <CardContent className="flex flex-col p-0 pb-2">
         {ORDER.map((how) => {
-          // Newest first; the order never depends on the choice, so a row stays where it is when you decide.
           const rows = list.filter((a) => a.how === how).sort((a, b) => b.row.date.localeCompare(a.row.date) || a.key.localeCompare(b.key));
           if (!rows.length) return null;
           const open = toggled[how] ?? true;
@@ -122,7 +119,6 @@ export function Matches({ list, names, onChange }: { list: Adoption[]; names: Re
   );
 }
 
-/** Plaid's version beside Wealthfolio's; differences are marked. An opening row lists the activities it is compared with. */
 function Versions({ a }: { a: Adoption }) {
   if (!a.existing) {
     const parts = a.parts ?? [];

@@ -4,7 +4,7 @@
 Rare; automatic handling is risky
 
 ## Decision
-SPLIT with a computed ratio; dividend reinvestment as DIVIDEND + BUY as Plaid reports it. Merger, spin-off, exercise and assignment go to the to-do report. Merrill and Fidelity splits (cash row with new shares at price 0, or a distribution) become SPLIT
+SPLIT with a computed ratio; dividend reinvestment as DIVIDEND + BUY as Plaid reports it. Merger, spin-off, exercise and assignment go to the to-do report. Merrill and Fidelity splits (cash row with new shares at price 0, or a distribution) become SPLIT A SPLIT row's amount is the addon's own computed ratio, so it is not compared with Plaid's.
 
 ## Consequences
 None recorded beyond the decision.

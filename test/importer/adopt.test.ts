@@ -31,7 +31,7 @@ test("deposit vs transfer-in is similar", () => {
 test("shares transferred in on a day match any activity of the same shares that day", () => {
   const a = act("p1", { activityType: "TRANSFER_IN", amount: null });
   expect(findAdoptions([a], [ex("e1", { type: "BUY" })], wf)[0]).toMatchObject({ how: "exact", decision: "discard" });
-  expect(findAdoptions([act("p2")], [ex("e1", { type: "SELL" })], wf)[0].how).toBe("new"); // a buy is not a sell
+  expect(findAdoptions([act("p2")], [ex("e1", { type: "SELL" })], wf)[0].how).toBe("new");
 });
 
 test("ledger-known ids are never matched", () => {
@@ -54,7 +54,7 @@ test("an account emptied in Wealthfolio is forgotten, with its Item's cursor; ot
   const cfg = { A: { item_id: "item", wealthfolio_account_id: "WA" }, B: { item_id: "item", wealthfolio_account_id: "WB" } };
   expect(forgetEmptied(led, cfg, new Map([["WA", 0], ["WB", 5]]))).toEqual({ accounts: ["A"], rows: 1 });
   expect([led.get("p1"), led.get("p2") !== null, led.cursor("item")]).toEqual([null, true, null]);
-  expect(forgetEmptied(led, cfg, new Map())).toEqual({ accounts: [], rows: 0 }); // unreadable: leave it
+  expect(forgetEmptied(led, cfg, new Map())).toEqual({ accounts: [], rows: 0 });
 });
 
 test("matchById links a row by the whole plaid id in the note, not a prefix", () => {

@@ -1,4 +1,3 @@
-// 4. Sync: dry run, push (fills in categories), ratio proposals. 5. Daily sync.
 import { Alert, AlertDescription, AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Icons, Input, Label, Progress as Bar, Switch, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@wealthfolio/ui';
 import { useEffect, useState } from 'react';
 import { type AutoRun, DEFAULT_DAILY, nextRun, type SyncView, type Daily as DailyCfg, type Engine, type Proposal, type RunRecord, summary } from '../engine/engine';
@@ -10,15 +9,14 @@ import { Securities } from './securities';
 const SECURITIES_ID = 'plaid-securities';
 
 export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; onStep: (s: Step) => void }) {
-  // Everything here lives in the engine, so a dry run or push keeps going, and keeps its progress, on another screen.
   const view = useEngine(engine, (e) => e.view);
   const { task, busy, error, start } = useTask(engine, 'sync');
   const dry = view.dry?.env === env ? view.dry : undefined;
   const secs = dry?.securities ?? [];
   const { stale, result, failed, refused } = view;
   const set = (p: Partial<SyncView>) => engine.setView(p);
-  const [moving, setMoving] = useState<[string, Set<string>]>(); // a moved ticker waiting for the delete confirm
-  const [attention, setAttention] = useState(0); // securities still to review
+  const [moving, setMoving] = useState<[string, Set<string>]>();
+  const [attention, setAttention] = useState(0);
   const [last, setLast] = useState<{ time: string; message: string } | null>(null);
   useEffect(() => { engine.store.lastSync(env).then(setLast); }, [engine, env, result]);
   const progress = task?.label === 'dry' ? task.progress : [];
@@ -39,7 +37,6 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
   const push = () => start('push', async (io) => {
     const d = dry!;
     const s = await engine.pushAndCategorize(d, io.log, io.progress);
-    // What is left (rows Wealthfolio refused) is planned again from the same pull, so the screen keeps its work.
     io.progress({ id: 'push:left', label: 'Plan what is left', state: 'running' });
     const next = await engine.afterPush(d);
     io.progress({ id: 'push:left', label: 'Plan what is left', state: 'done', detail: `${next.plan.new.length} rows left` });
@@ -244,7 +241,6 @@ function TodoCard({ g }: { g: Group }) {
   );
 }
 
-/** push.ts writes each failure as "date type symbol amount (plaid:id) — reason". */
 function FailedRows({ list }: { list: string[] }) {
   const groups = new Map<string, string[][]>();
   for (const f of list) {
@@ -286,10 +282,8 @@ export function Daily({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; 
   const [rec, setRec] = useState<AutoRun>({});
   const [next, setNext] = useState<Date | null>(null);
   const [tick, setTick] = useState(0);
-  // The task is the engine's: a run started here or by the timer shows its progress after leaving and coming back.
   const { task, busy, error } = useTask(engine, 'daily');
-  const engineBusy = useEngine(engine, (e) => e.busy); // the daily sync waits for any other task
-  // The switch and the time each show their own save.
+  const engineBusy = useEngine(engine, (e) => e.busy);
   const onSave = useSave(), timeSave = useSave();
   useEffect(() => {
     let live = true;
@@ -301,7 +295,6 @@ export function Daily({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; 
     });
     return () => { live = false; };
   }, [engine, env, tick, busy]);
-  // The timer may run a sync while this tab is open in another window: refresh now and then.
   useEffect(() => { const t = setInterval(() => setTick((n) => n + 1), 60_000); return () => clearInterval(t); }, []);
   const change = (d: DailyCfg, via: ReturnType<typeof useSave>) => {
     setDaily(d);

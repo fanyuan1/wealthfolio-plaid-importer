@@ -1,8 +1,6 @@
-// The Plaid -> Wealthfolio ledger and sync cursors, kept in the addon's own storage. plan() only reads it.
 import { D, type Dec, dec } from "./dec";
 import { Activity } from "./models";
 
-/** One ledger row. Decimal fields are strings. */
 export interface LedgerRow {
   plaid_id: string;
   account_id: string;
@@ -19,8 +17,8 @@ export interface LedgerRow {
   pair_plaid_id: string | null;
   category_set: number;
   voided: number;
-  category?: string | null; // Plaid's personal_finance_category.detailed; missing on rows from before it was kept
-  adopted?: number; // 1: the row was already in Wealthfolio before the importer; the importer never changes or deletes it
+  category?: string | null;
+  adopted?: number;
 }
 
 export interface Ledger {
@@ -39,14 +37,12 @@ export interface Ledger {
   forget(plaidIds: string[], accountIds: Set<string>): void;
   resetCursor(itemId: string): void;
   setCategory(plaidId: string): void;
-  /** Ledger rows as Activities (not voided). */
   activities(accountIds?: Set<string> | null, unpairedSince?: string | null): Activity[];
   commit(): void;
 }
 
 const FIELDS = ["activity_type", "date", "symbol", "quantity", "unit_price", "amount", "fee", "currency"] as const;
 const NUMERIC = new Set(["quantity", "unit_price", "amount", "fee"]);
-// A fixed scale, finer than Plaid or Wealthfolio shows, so rounding noise is not a change.
 const COMPARE_DP = 8;
 
 const str = (v: Dec | null): string | null => (v === null ? null : v.toFixed());
@@ -74,7 +70,7 @@ function norm(f: string, v: unknown): string | null {
   if (v === null || v === undefined || v === "") return null;
   if (NUMERIC.has(f)) {
     const x = D(String(v)).round(COMPARE_DP, 2);
-    return x.eq(0) ? "0" : x.toFixed(); // -0 equals 0
+    return x.eq(0) ? "0" : x.toFixed();
   }
   return String(v);
 }
@@ -84,20 +80,18 @@ const activityField = (a: Activity, f: (typeof FIELDS)[number]): unknown => ({
   unit_price: a.unitPrice, amount: a.amount, fee: a.fee, currency: a.currency,
 })[f];
 
-/** Fields where Plaid's current view differs from what we pushed. */
 export function differs(row: LedgerRow, a: Activity): string[] {
   const out: string[] = [];
   for (const f of FIELDS) {
-    if (f === "activity_type" && row.pair_plaid_id) continue; // we retyped it to a transfer leg ourselves
+    if (f === "activity_type" && row.pair_plaid_id) continue;
     let v = activityField(a, f);
     if (a.activityType === "SPLIT" && f === "quantity") v = a.splitDelta;
-    if (a.activityType === "SPLIT" && f === "amount") v = row.amount; // the ratio depends on our own math
+    if (a.activityType === "SPLIT" && f === "amount") v = row.amount;
     if (norm(f, row[f]) !== norm(f, v)) out.push(f);
   }
   return out;
 }
 
-/** In-memory ledger: the addon's (loaded from and saved to addon storage) and the tests'. */
 export class MemoryLedger implements Ledger {
   rows = new Map<string, LedgerRow>();
   cursors = new Map<string, string>();
@@ -122,9 +116,7 @@ export class MemoryLedger implements Ledger {
   }
   hasOpening(accountId: string) { return this.openings(accountId).length > 0; }
   hasAny(accountId: string) { return [...this.rows.values()].some((r) => r.account_id === accountId); }
-  /** Accounts with at least one row. */
   accountIds() { return new Set([...this.rows.values()].map((r) => r.account_id)); }
-  /** Rows of a symbol still in Wealthfolio as the importer's own: not voided, not adopted. */
   live(symbol: string) { return [...this.rows.values()].filter((r) => r.symbol === symbol && !r.voided && !r.adopted); }
   historyStart() { return minDate(this.openings()); }
   openingDate(accountId: string) { return minDate(this.openings(accountId)); }
@@ -160,8 +152,6 @@ export class MemoryLedger implements Ledger {
   commit() {}
 }
 
-/** Accounts the ledger holds rows for but Wealthfolio has no activity in: wiped there. Forget their rows and their
- * Item's cursor, so the next pull starts from scratch and pushes everything again. counts: activities per Wealthfolio account. */
 export function forgetEmptied(state: MemoryLedger, cfg: Record<string, { item_id: string; wealthfolio_account_id?: string | null }>,
   counts: Map<string, number>): { accounts: string[]; rows: number } {
   const accounts: string[] = [];

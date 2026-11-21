@@ -1,17 +1,13 @@
-// Layout on every surface: the addon only gets the Tailwind classes Wealthfolio itself uses, and it must fit a phone.
 import { readdirSync, readFileSync } from "node:fs";
 import type { Frame } from "@playwright/test";
 import { expect, test } from "./fixtures";
 
-/** Every class written in a className attribute under src/ui. */
 function uiClasses(): string[] {
   const out = new Set<string>();
   for (const f of readdirSync("src/ui").filter((n) => n.endsWith(".tsx"))) {
     const src = readFileSync(`src/ui/${f}`, "utf8");
     for (const m of src.matchAll(/className=(?:"([^"]*)"|\{([^}]*(?:\$\{[^}]*\}[^}]*)*)\})/g)) {
       const attr = m[1] !== undefined ? `"${m[1]}"` : m[2];
-      // Quoted strings anywhere (also inside ${...}), and the literal parts of template strings.
-      // Skip compared values, e.g. kind === 'full'.
       const parts = [...attr.matchAll(/([!=]==\s*)?(?:'([^']*)'|"([^"]*)")/g)].filter((q) => !q[1]).map((q) => q[2] ?? q[3]);
       for (const b of attr.matchAll(/`([^`]*)`/g)) parts.push(b[1].replace(/\$\{[^}]*\}/g, " "));
       for (const t of parts.join(" ").split(/\s+/)) if (/^[a-z-][\w:/.[\]()%-]*$/.test(t)) out.add(t);
@@ -42,8 +38,6 @@ test("every class the addon uses is in Wealthfolio's stylesheet", async ({ addon
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 360, height: 800 }, isMobile: true, hasTouch: true });
 
-  /** Elements that scroll although they are not meant to: not text boxes, not elements with an overflow class, not the
-   * tables' sideways scroll. */
   const strayScrolls = (frame: Frame) => frame.evaluate(() => [...document.querySelectorAll("*")].filter((el) => {
     if (el.tagName === "TEXTAREA" || /\boverflow-/.test(String(el.className))) return false;
     const cs = getComputedStyle(el);
@@ -52,7 +46,6 @@ test.describe("on a phone", () => {
     return (x || y) && !(x && !y && el.querySelector(":scope > table"));
   }).map((el) => `${el.tagName}.${el.className}: ${(el.textContent ?? "").slice(0, 40)}`));
 
-  /** Buttons cut off by their own width or by a clipping parent. Buttons in a table scroll with it. */
   const clippedButtons = (frame: Frame) => frame.evaluate(() => [...document.querySelectorAll("button")].filter((b) => {
     const r = b.getBoundingClientRect();
     if (!r.width || b.closest("table")) return false;
@@ -67,7 +60,7 @@ test.describe("on a phone", () => {
     const frame = addonFrame(addon.page);
     const go = async (step: Parameters<typeof addon.step>[0]) => {
       await addon.step(step);
-      const anyway = addon.frame.getByRole("button", { name: "Continue anyway" }); // spending is off in a new Wealthfolio
+      const anyway = addon.frame.getByRole("button", { name: "Continue anyway" });
       if (await anyway.isVisible({ timeout: 1500 }).catch(() => false)) await anyway.click();
     };
     const fits = async (step: string) => {
@@ -76,7 +69,7 @@ test.describe("on a phone", () => {
     };
 
     await go("Setup");
-    await fits("Setup"); // the switch's touch area used to scroll its row
+    await fits("Setup");
 
     await go("Connections");
     await fits("Connections");
@@ -100,7 +93,6 @@ test.describe("on a phone", () => {
       await expect(last).not.toHaveText(before!, { timeout: 60_000 });
     }
     await fits("Daily sync");
-    // Recent runs scroll sideways instead of wrapping the message one word per line.
     const message = addon.frame.locator("div[data-slot=card]", { hasText: "Recent runs" }).locator("td").last();
     expect((await message.boundingBox())!.width).toBeGreaterThan(200);
 

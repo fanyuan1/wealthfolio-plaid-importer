@@ -16,9 +16,6 @@ const MODES: [SecurityMode, string, string][] = [
 
 type Tone = 'success-subtle' | 'destructive';
 
-/** Source column. The dry run decides which securities need review (needsReview). A source the user chose counts once
- * the preview was refreshed with it; an Automatic ticker Wealthfolio refused in the last push needs review again.
- * Blank: needs review. */
 function sourceOf(s: Security, refused: Record<string, string> = {}): { label: string; tone: Tone } | null {
   const mode = modeOf(s);
   if (s.pending || s.review || (mode === 'auto' && refused[s.result])) return null;
@@ -28,13 +25,12 @@ function sourceOf(s: Security, refused: Record<string, string> = {}): { label: s
 
 export type Saved = (sid: string, override: Record<string, unknown>, label: string) => void;
 
-/** refused: symbols Wealthfolio did not save in the last push, with its reason. They need attention whatever the lookup says. */
 export function Securities({ engine, list, refused = {}, onSaved, onAttention }: { engine: Engine; list: Security[]; refused?: Record<string, string>;
   onSaved: Saved; onAttention: (n: number) => void }) {
   const [open, setOpen] = useState<string>();
   const attention = list.filter((s) => !sourceOf(s, refused));
   useEffect(() => { onAttention(attention.length); }, [attention.length, onAttention]);
-  useEffect(() => () => onAttention(0), [onAttention]); // unmounted: nothing left to review
+  useEffect(() => () => onAttention(0), [onAttention]);
   const ok = list.filter((s) => sourceOf(s, refused));
   const section = (title: string, rows: Security[], action: string) => rows.length > 0 && (
     <>
@@ -114,7 +110,6 @@ export function Securities({ engine, list, refused = {}, onSaved, onAttention }:
 function SecurityEditor({ engine, s, onSaved }: { engine: Engine; s: Security; onSaved: (o: Record<string, unknown>, label: string) => void }) {
   const o = s.override ?? {};
   const [mode, setMode] = useState<SecurityMode>(modeOf(s));
-  // A money market fund is a holding with a ticker: default to Plaid's.
   const [symbol, setSymbol] = useState<string>(o.symbol ?? (modeOf(s) === 'holding' || o.investment ? s.ticker ?? '' : ''));
   const [target, setTarget] = useState<string>(o.track?.symbol ?? '');
   const [day, setDay] = useState<string>(s.reported?.[1] ?? o.track?.date ?? '');
@@ -122,7 +117,6 @@ function SecurityEditor({ engine, s, onSaved }: { engine: Engine; s: Security; o
   const [close, setClose] = useState<string>('');
   const [track, setTrack] = useState<Track | undefined>(o.track);
   const { busy, error, run } = useBusy();
-  // Live check that Wealthfolio knows the typed ticker, or the ticker to follow.
   const [valid, setValid] = useState<{ state: 'idle' | 'checking' | 'ok' | 'bad'; name?: string; suggestions?: { symbol: string; name?: string }[] }>({ state: 'idle' });
   useEffect(() => {
     const sym = mode === 'track' ? target : mode === 'ticker' ? symbol : '';
@@ -131,7 +125,7 @@ function SecurityEditor({ engine, s, onSaved }: { engine: Engine; s: Security; o
     let live = true;
     const t = setTimeout(() => {
       engine.validTicker(sym).then((r) => live && setValid(r.ok ? { state: 'ok', name: r.name } : { state: 'bad', suggestions: r.suggestions }))
-        .catch(() => live && setValid({ state: 'idle' })); // lookup failed: do not block the user
+        .catch(() => live && setValid({ state: 'idle' }));
     }, 400);
     return () => { live = false; clearTimeout(t); };
   }, [engine, mode, target, symbol]);
@@ -166,7 +160,7 @@ function SecurityEditor({ engine, s, onSaved }: { engine: Engine; s: Security; o
           mode === 'manual' ? 'made up if empty' : mode === 'holding' ? (s.ticker ?? 'VMFXX') : 'VFIAX')}
       {mode === 'ticker' && (
         <>
-          {/* One line kept for the check result, so the dialog does not grow and shrink while you type. */}
+          {}
           <div className="min-h-5 text-sm">
             {valid.state === 'checking' && <span className="text-muted-foreground">Checking {symbol} in Wealthfolio…</span>}
             {valid.state === 'ok' && <span className="text-green-600">{symbol.toUpperCase()} has prices{valid.name ? ` (${valid.name})` : ''}.</span>}
@@ -215,7 +209,6 @@ function SecurityEditor({ engine, s, onSaved }: { engine: Engine; s: Security; o
   );
 }
 
-/** What Wealthfolio's own search offers for a ticker it did not recognize. */
 function Suggest({ list, onPick }: { list?: { symbol: string; name?: string }[]; onPick: (symbol: string) => void }) {
   if (!list?.length) return null;
   return (

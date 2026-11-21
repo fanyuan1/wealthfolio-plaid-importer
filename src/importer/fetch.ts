@@ -1,24 +1,20 @@
-// Fetch every linked Item from Plaid. One broken Item never stops the others.
 import type { Ledger } from "./ledger";
 import type { OnProgress, Row } from "./models";
 import { type AccountCfg, accountLabel, activeAccounts, addDays, BLOCKING_ITEM_ERRORS, HISTORY_DAYS, type ItemData, OVERLAP_DAYS } from "./plan";
 import { type Plaid, PlaidError } from "./plaid";
 
-/** A linked Item with its access token. */
 export interface Token { owner: string; institution_name: string; access_token: string; products?: string[]; env?: string; [k: string]: unknown }
 
 export interface FetchResult {
   items: ItemData[];
-  skipped: string[]; // labels of Items not pulled
-  blocked: string[]; // Item ids whose login expired: they need a reconnect
-  pulledAt?: number; // set by the engine, which reuses a recent pull
+  skipped: string[];
+  blocked: string[];
+  pulledAt?: number;
 }
 
 type Log = (msg: string) => void;
 export const RECONNECT_DETAIL = "Login expired. Reconnect it in Connections.";
 
-/** tracked: security_ids of funds held by exchange ratio; their accounts get full history each time, so a
- * new ratio updates the quantities already pushed. full: more investment accounts to pull in full. */
 export async function fetchItems(plaid: Plaid, tokens: Record<string, Token>, accountsCfg: Record<string, AccountCfg>,
   state: Ledger, today: string, opts: { log?: Log; full?: Set<string>; tracked?: Set<string>;
     progress?: OnProgress } = {}): Promise<FetchResult> {
@@ -66,7 +62,6 @@ async function fetchItem(plaid: Plaid, itemId: string, tok: Token, accts: Record
   const d: ItemData = { itemId, owner: tok.owner, institution: tok.institution_name, invStart: {} };
   let invIds = Object.keys(accts).filter((a) => accts[a].kind === "investment");
   if (invIds.length && !(tok.products ?? ["investments"]).includes("investments")) {
-    // Plaid can list investment accounts on an Item that was linked without the investments product.
     log(`  ${label}: ${invIds.length} investment accounts skipped (${tok.institution_name} has no investments product in Plaid)`);
     invIds = [];
   }

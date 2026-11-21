@@ -8,7 +8,7 @@ export function Setup({ engine, env, onEnv }: { engine: Engine; env: PlaidEnv; o
   const [clientId, setClientId] = useState('');
   const [secret, setSecret] = useState('');
   const [have, setHave] = useState(false);
-  const [ok, flashOk] = useFlash(); // Plaid accepted the saved keys
+  const [ok, flashOk] = useFlash();
   const { busy, error, run } = useBusy();
 
   useEffect(() => {

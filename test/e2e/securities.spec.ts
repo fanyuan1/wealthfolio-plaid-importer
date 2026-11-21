@@ -1,4 +1,3 @@
-// Securities review: Plaid's currency cash is automatic; a cash-like fund still needs the user (D27).
 import { expect, test } from "./fixtures";
 import { wf } from "./wealthfolio";
 

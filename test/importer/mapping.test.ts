@@ -117,7 +117,6 @@ describe("bank and transfers", () => {
       bank("6", "card", -300, "LOAN_PAYMENTS", "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"), bank("7", "chk", 5, "", "", { pending: true }),
       bank("8", "brk", 100), bank("9", "card", 25, "BANK_FEES", "BANK_FEES_INTEREST_CHARGE"),
     ];
-    // As plan.ts does: only bank and card accounts; investment rows come from the Investments product.
     const kinds: Record<string, string> = KINDS;
     const r = { activities: txns.filter((t) => kinds[t.account_id] === "cash" || kinds[t.account_id] === "credit")
       .map((t) => mapBankTransaction(t, kinds[t.account_id])).filter((a) => a != null) };
@@ -178,18 +177,16 @@ describe("positions", () => {
     expect(reviews).toEqual([]);
     const [pos, c] = opening;
     expect([pos.activityType, pos.symbol, n(pos.quantity), n(pos.unitPrice)]).toEqual(["TRANSFER_IN", "VTI", 5, 100]);
-    // 400 now = opening + 1200 deposit - 1000 buy -> opening 200
     expect([c.activityType, n(c.amount)]).toEqual(["TRANSFER_IN", 200]);
   });
 
   test("opening price is per share held at the opening, across a later split", () => {
-    // 10 shares at the opening, an 8-for-1 split adds 70: 80 now, cost 4000 (50 per share today).
     const [hs] = holdingsBySymbol([{ account_id: "a1", security_id: "s_vti", quantity: 80, cost_basis: 4000, institution_price: 60 }], SECS, {});
     const split = new Activity({ accountId: "a1", plaidId: "sp", date: "2026-04-21", activityType: "SPLIT", symbol: "VTI", splitDelta: D(70) });
     let [opening] = openingActivities("a1", "2024-11-05", hs, null, [split]);
-    expect([n(opening[0].quantity), n(opening[0].unitPrice)]).toEqual([10, 400]); // 400 a pre-split share, 4000 in all
+    expect([n(opening[0].quantity), n(opening[0].unitPrice)]).toEqual([10, 400]);
     [opening] = openingActivities("a1", "2024-11-05", new Map([[hkey("a1", "VTI"), { ...hs.get(hkey("a1", "VTI"))!, cost_basis: null }]]), null, [split], "USD", () => D(75));
-    expect(n(opening[0].unitPrice)).toBe(600); // Yahoo's split-adjusted 75 on that day, times 8
+    expect(n(opening[0].unitPrice)).toBe(600);
   });
 
   test("a pre-split price already adjusted by Plaid is scaled back; an unadjusted one is left", () => {
@@ -197,7 +194,7 @@ describe("positions", () => {
       symbol: "VGT", quantity: D(205), unitPrice: D(price) });
     const split = new Activity({ accountId: "a1", plaidId: "sp", date: "2026-04-21", activityType: "SPLIT", symbol: "VGT", splitDelta: D(1435), amount: D(8) });
     const adjusted = mk("x", "2026-04-09", 92.5), raw = mk("y", "2025-12-04", 764), after = mk("z", "2026-06-26", 113);
-    const yahoo = (_s: string | null, day: string) => D(day === "2026-04-09" ? 93 : day === "2025-12-04" ? 96 : 113.5); // split-adjusted closes
+    const yahoo = (_s: string | null, day: string) => D(day === "2026-04-09" ? 93 : day === "2025-12-04" ? 96 : 113.5);
     const rv = fixSplitPrices([adjusted, raw, after], [split, adjusted, raw, after], yahoo);
     expect([n(adjusted.unitPrice), n(raw.unitPrice), n(after.unitPrice)]).toEqual([740, 764, 113]);
     expect(rv.map((r) => r.plaidId)).toEqual(["x"]);
@@ -208,10 +205,8 @@ describe("positions", () => {
     const acts = one([tx("t1", "buy", "buy", 1, 3, 100, "s_td"), tx("t2", "sell", "sell", 1, -3, 100, "s_td"),
       tx("t3", "sell", "sell", 1, -1, 100, "s_td")]).activities;
     let [opening, reviews] = openingActivities("a1", "2024-11-05", hs, null, acts);
-    // Sold since: the earliest Plaid price; still held: today's price.
     expect(opening.map((o) => [o.symbol, n(o.quantity), n(o.unitPrice)])).toEqual([["TD.TO", 1, 100], ["VTI", 2, 250]]);
     expect(new Set(reviews.map((r) => r.reason))).toEqual(new Set(["opening cost basis missing"]));
-    // A market close on the opening date wins over both.
     [opening] = openingActivities("a1", "2024-11-05", hs, null, acts, "USD", () => D(7));
     expect(opening.map((o) => n(o.unitPrice))).toEqual([7, 7]);
   });
@@ -295,7 +290,6 @@ describe("options and plans", () => {
     expect([v.activityType, v.symbol, n(v.quantity), n(v.unitPrice)]).toEqual(["TRANSFER_IN", "VTI", 10.956, 0]);
     expect([j.activityType, n(j.quantity)]).toEqual(["TRANSFER_OUT", 1551.191]);
     expect([c.activityType, c.symbol, n(c.amount)]).toEqual(["WITHDRAWAL", null, 571.38]);
-    // Outside a stock plan, a positive share transfer is incoming.
     expect(one(rows.slice(1, 2)).activities[0].activityType).toBe("TRANSFER_IN");
   });
 
@@ -349,7 +343,7 @@ describe("tracking", () => {
     const [rows, holds, secs] = convert([tx("b", "buy", "contribution", 1000.0, 10, 100.0, "s_cit"), tx("v", "buy", "buy", 100, 1, 100, "s_vti")],
       [{ security_id: "s_cit", quantity: 50, institution_price: 100.0, cost_basis: 5000 }], SECS, symbols);
     expect([n(rows[0].quantity), n(rows[0].price), rows[0].amount]).toEqual([2, 500, 1000]);
-    expect([rows[1].quantity, SECS.s_cit.ticker_symbol]).toEqual([1, null]); // inputs untouched
+    expect([rows[1].quantity, SECS.s_cit.ticker_symbol]).toEqual([1, null]);
     expect([n(holds[0].quantity), n(holds[0].institution_price), holds[0].cost_basis]).toEqual([10, 500, 5000]);
     const r = resolve(secs.s_cit, symbols);
     expect([r.kind, r.manual, r.symbol]).toEqual(["security", false, "VOO"]);
@@ -363,13 +357,13 @@ describe("tracking", () => {
     const symbols = { s_cit: { name: "Trust", symbol: null, track: entry("VOO", "2026-11-06", D("100.00"), D("600.00")) } };
     const items = (price: number, day: string | null) => [{ holdings: { holdings: [{ security_id: "s_cit", account_id: "a1",
       institution_price: price, institution_price_as_of: day }] } }];
-    expect(rebases(items(100.0, "2026-11-06"), symbols, closes)).toEqual([]); // not newer than the stored ratio
-    expect(rebases(items(101.0, null), symbols, closes)).toEqual([]); // no as-of date: never guess the day
+    expect(rebases(items(100.0, "2026-11-06"), symbols, closes)).toEqual([]);
+    expect(rebases(items(101.0, null), symbols, closes)).toEqual([]);
     const [rb] = rebases(items(102.0, "2026-11-09"), symbols, closes);
     expect([n(rb.close), rb.next!.ratio, rb.safe]).toEqual([610, 0.1672131148, true]);
-    expect(rebases(items(130, "2026-11-09"), symbols, closes)[0].safe).toBe(false); // over 5%: waits for the user
+    expect(rebases(items(130, "2026-11-09"), symbols, closes)[0].safe).toBe(false);
     const [none] = rebases(items(102.0, "2026-11-10"), symbols, closes);
-    expect([none.close, none.next, none.safe]).toEqual([null, null, false]); // no same-day close yet
+    expect([none.close, none.next, none.safe]).toEqual([null, null, false]);
   });
 });
 
@@ -379,7 +373,7 @@ describe("prices and to-do", () => {
     const calls: string[] = [];
     const c = new Closes({}, async (sym) => { calls.push(sym); return { "2024-11-08": "100.5" }; }, "2026-11-07");
     await c.load([["GOOG", "2024-11-10"]]);
-    expect(n(c.close("GOOG", "2024-11-10"))).toBe(100.5); // Sunday: Friday's close
+    expect(n(c.close("GOOG", "2024-11-10"))).toBe(100.5);
     await c.load([["GOOG", "2024-11-08"]]);
     expect(calls).toEqual(["GOOG"]);
   });

@@ -1,4 +1,3 @@
-// 2. Connections: Plaid Hosted Link, reconnect, initials, one existing access token.
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Icons, Input, Label, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@wealthfolio/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Engine, LinkCheck } from '../engine/engine';
@@ -7,7 +6,8 @@ import { type PlaidEnv, plural } from '../importer';
 import { ago, CopyLink, FlashLabel, msg, Problem, SaveMark, Spin, type Step, useBusy, useFlash, useSave } from './common';
 
 const POLL_MS = 3000;
-const LINK_MS = 30 * 60_000; // stop asking Plaid after this
+const LINK_MS = 30 * 60_000;
+const IME_PROCESSING_KEYCODE = 229;
 
 type Pending = NonNullable<Engine['pendingLink']>;
 
@@ -141,7 +141,7 @@ export function Connections({ engine, env, onChange, onStep }: { engine: Engine;
             <Label htmlFor="tok-owner">Initials</Label>
             <Input id="tok-owner" className="w-28" maxLength={4} value={tokOwner} onChange={(e) => setTokOwner(e.target.value.toUpperCase())} />
           </div>
-          {/* Stays enabled while it shows Added, so the label is not dimmed; a click then does nothing. */}
+          {}
           <Button className="min-w-32" disabled={!added && (!token.trim() || !tokOwner || !!busy)}
                   onClick={() => !added && run('existing', async () => {
                     await engine.addToken(tokOwner, token);
@@ -176,12 +176,11 @@ export function Connections({ engine, env, onChange, onStep }: { engine: Engine;
   );
 }
 
-/** Waits for the login on Plaid's page by asking Plaid every few seconds. */
 function LinkWait({ engine, link, onDone, onCancel }: { engine: Engine; link: Pending;
   onDone: (r: Extract<LinkCheck, { state: 'done' }>) => void; onCancel: () => void }) {
   const [state, setState] = useState<{ kind: 'waiting' | 'exited' | 'expired'; message?: string }>({ kind: 'waiting' });
   const busy = useRef(false);
-  const finished = useRef(false); // a finished login must not be exchanged twice
+  const finished = useRef(false);
   const check = useCallback(async () => {
     if (busy.current || finished.current) return;
     if (Date.now() - link.started > LINK_MS) { setState({ kind: 'expired' }); return; }
@@ -192,7 +191,7 @@ function LinkWait({ engine, link, onDone, onCancel }: { engine: Engine; link: Pe
       else if (r.state === 'exited') setState({ kind: 'exited', message: r.message });
       else setState({ kind: 'waiting' });
     } catch (e) {
-      setState({ kind: 'waiting', message: msg(e) }); // a failed check is retried on the next tick
+      setState({ kind: 'waiting', message: msg(e) });
     } finally {
       busy.current = false;
     }
@@ -234,7 +233,6 @@ function LinkWait({ engine, link, onDone, onCancel }: { engine: Engine; link: Pe
   );
 }
 
-/** Initials, saved when the field loses focus or on Enter. */
 function OwnerCell({ engine, itemId, value, onSaved }: { engine: Engine; itemId: string; value: string; onSaved: () => void }) {
   const [v, setV] = useState(value);
   const { status, save } = useSave();
@@ -254,8 +252,8 @@ function OwnerCell({ engine, itemId, value, onSaved }: { engine: Engine; itemId:
   return (
     <SaveMark status={status}>
       <Input aria-label="Initials" className="h-8 w-20" maxLength={4} value={v} onChange={(e) => setV(e.target.value.toUpperCase())}
-             onBlur={commit} onKeyDown={(e) => { // IME confirm also fires Enter; keyCode 229 covers Safari's out-of-order isComposing.
-             if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) e.currentTarget.blur(); }} />
+             onBlur={commit} onKeyDown={(e) => {
+             if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== IME_PROCESSING_KEYCODE) e.currentTarget.blur(); }} />
     </SaveMark>
   );
 }

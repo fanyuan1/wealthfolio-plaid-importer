@@ -1,4 +1,3 @@
-// 3. Accounts: which accounts sync, creating them in Wealthfolio. Connections are refreshed on open, once a day.
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Icons, Switch, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@wealthfolio/ui';
 import { useCallback, useEffect, useState } from 'react';
 import type { Engine } from '../engine/engine';
@@ -7,7 +6,6 @@ import { ACTIONS, FlashLabel, host, Problem, ProgressList, Spin, useFlash, useSa
 
 const KIND: Record<string, string> = { investment: 'Investment', cash: 'Cash', credit: 'Credit card', unsupported: 'Not supported' };
 
-/** names: bank and card accounts to sync without spending; available: whether Wealthfolio's spending is on at all. */
 export type SpendingOff = { names: string[]; available: boolean };
 
 export function Accounts({ engine, env, version, onChange, onSpendingOff }: { engine: Engine; env: PlaidEnv; version: number; onChange: () => void;
@@ -16,16 +14,14 @@ export function Accounts({ engine, env, version, onChange, onSpendingOff }: { en
   const [spending, setSpending] = useState<Set<string> | null>(null);
   const [wf, setWf] = useState<Awaited<ReturnType<Engine['wealthfolioAccounts']>>>([]);
   const [pushed, setPushed] = useState<Set<string>>(new Set());
-  // Creating accounts and the refresh are engine tasks: they finish, and keep their result, on another screen.
   const { task: created, busy, error, start } = useTask(engine, 'accounts');
   const { task: refreshTask } = useTask(engine, 'refresh');
-  // Only lines with news: new accounts or a problem. A connection with nothing new is not listed.
   const refresh = (refreshTask?.progress ?? []).filter((p) => p.state === 'error' || p.state === 'warn' || (p.state === 'done' && p.detail !== 'No new accounts'));
   const refreshing = Boolean(refreshTask?.running);
-  const { save } = useSave(); // Select all and Change: their result shows in the table
+  const { save } = useSave();
   const [allSaved, flashAll] = useFlash();
   const load = useCallback(async () => {
-    await engine.accountsReady(); // forgets accounts deleted in Wealthfolio
+    await engine.accountsReady();
     setCfg(await engine.store.accounts(env));
     setSpending(await engine.spendingAccounts());
     setWf(await engine.wealthfolioAccounts());
@@ -33,7 +29,6 @@ export function Accounts({ engine, env, version, onChange, onSpendingOff }: { en
     onChange();
   }, [engine, env]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [load, version]);
-  // New accounts at the institution show up without a button. Errors stay on their line.
   useEffect(() => {
     if (!engine.tasks.refresh?.running) engine.task('refresh', 'refresh', (io) => engine.refreshStale(io.progress)).catch(() => {});
   }, [engine, env]);
@@ -42,7 +37,6 @@ export function Accounts({ engine, env, version, onChange, onSpendingOff }: { en
   const note = created && !created.running && !created.error ? String(created.result) : undefined;
 
   const joint = jointByMask(cfg);
-  // A joint account linked under two owners, synced under both.
   const doubled = (() => {
     const on = new Map<string, string[]>();
     for (const [id, c] of Object.entries(cfg)) {
@@ -57,13 +51,11 @@ export function Accounts({ engine, env, version, onChange, onSpendingOff }: { en
   const supported = rows.filter(([, c]) => c.kind !== 'unsupported');
   const allOn = supported.length > 0 && supported.every(([, c]) => !c.skip);
 
-  // The same plan Create uses, so what a row shows is what it gets. One Wealthfolio account per row.
   const links = planLinks(cfg, wf);
   const linked = new Set(Object.values(cfg).map((c) => c.wealthfolio_account_id).filter(Boolean));
   const pickedElsewhere = (id: string) => new Set(Object.entries(cfg)
     .filter(([x, c]) => x !== id && !c.skip && c.match && c.match !== 'new').map(([, c]) => c.match));
   const freeFor = (id: string, c: AccountCfg) => wf.filter((a) => a.accountType === WF_TYPE[c.kind] && !linked.has(a.id) && !pickedElsewhere(id).has(a.id));
-  // The Wealthfolio account a row is, or will be, linked to.
   const targetOf = (id: string, c: AccountCfg) => c.wealthfolio_account_id || (c.skip || c.kind === 'unsupported' ? null : links[id] ?? null);
   const matchCell = (id: string, c: AccountCfg) => {
     if (c.kind === 'unsupported' || c.skip) return <span className="text-muted-foreground text-sm">—</span>;
@@ -97,11 +89,9 @@ export function Accounts({ engine, env, version, onChange, onSpendingOff }: { en
     );
   };
 
-  // Bank and card accounts to sync that spending does not cover (or cannot be read for).
   const spendingOff = rows.filter(([id, c]) => !c.skip && (c.kind === 'cash' || c.kind === 'credit')
     && !(spending && targetOf(id, c) && spending.has(targetOf(id, c)!))).map(([, c]) => String(c.name));
   const toCreate = rows.filter(([id, c]) => !c.skip && c.kind !== 'unsupported' && !targetOf(id, c)).length;
-  // The page asks before the user leaves this step with spending off.
   const offKey = spendingOff.join('\n');
   useEffect(() => { onSpendingOff({ names: spendingOff, available: Boolean(spending?.size) }); }, [offKey, spending?.size]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -132,7 +122,7 @@ export function Accounts({ engine, env, version, onChange, onSpendingOff }: { en
           </Button>
           </div>
         </CardHeader>
-        {/* Below the buttons, with the refresh's errors and new accounts. */}
+        {}
         {(refreshing || refresh.length > 0) && (
           <CardContent className="flex flex-col gap-2">
             {refreshing && <span className="text-muted-foreground flex items-center gap-2 text-sm"><Spin on />Checking for new accounts</span>}

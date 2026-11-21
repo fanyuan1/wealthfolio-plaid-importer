@@ -17,10 +17,10 @@ function PlaidImporter({ ctx }: { ctx: AddonContext }) {
   const [version, setVersion] = useState(0);
   const [step, setStep] = useState<Step>();
   const [tick, setTick] = useState(0);
-  const [ready, setReady] = useState(false); // accounts chosen and all created in Wealthfolio
+  const [ready, setReady] = useState(false);
   const [done, setDone] = useState<Partial<Record<Step, boolean>>>({});
   const [spendingOff, setSpendingOff] = useState<SpendingOff>({ names: [], available: true });
-  const [leaving, setLeaving] = useState<Step>(); // the step the user tried to open while spending is off
+  const [leaving, setLeaving] = useState<Step>();
   useEffect(() => { engine.accountsReady().then(setReady); }, [engine, step, version, tick]);
   useEffect(() => {
     (async () => {
@@ -35,11 +35,10 @@ function PlaidImporter({ ctx }: { ctx: AddonContext }) {
     (async () => {
       setEnv((await engine.store.settings()).env);
       const { env } = await engine.store.settings();
-      setStep((await engine.store.lastSync(env)) ? 'sync' : 'setup'); // Sync once a push has worked
+      setStep((await engine.store.lastSync(env)) ? 'sync' : 'setup');
     })();
   }, [engine]);
   if (!env || !step) return null;
-  // Leaving Accounts with spending off for a synced bank or card account asks first (D42).
   const go = (to: Step) => {
     if (step === 'accounts' && to !== 'accounts' && spendingOff.names.length) setLeaving(to);
     else setStep(to);

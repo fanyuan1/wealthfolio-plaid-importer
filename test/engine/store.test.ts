@@ -62,7 +62,7 @@ describe("Store parts", () => {
     const before = f.writes.length;
     l.rows.set("new", { ...l.rows.get("p0")!, plaid_id: "new" });
     await s.saveLedger("sandbox", l);
-    expect(f.writes.length - before).toBeLessThanOrEqual(3); // last part (+ maybe one) and the head
+    expect(f.writes.length - before).toBeLessThanOrEqual(3);
     await s.saveLedger("sandbox", new MemoryLedger({}));
     expect([...f.kv.keys()]).toEqual(["ledger_sandbox"]);
     expect((await s.ledger("sandbox")).rows.size).toBe(0);
@@ -98,10 +98,10 @@ describe("seenSecurities", () => {
       ({ sid: "s", name: "S", ticker, type: "etf", result, manual: false, reported: null, override, review: false });
     expect(needsReview(sec("unmapped", null), {})).toBe(true);
     expect(needsReview(sec("VTI", "VTI"), { VTI: true })).toBe(false);
-    expect(needsReview(sec("VTI", "VTI"), { VTI: null })).toBe(true); // could not check
-    expect(needsReview(sec("cash", "CUR:EUR"), {})).toBe(false); // currency cash
-    expect(needsReview(sec("cash", "SPAXX"), {})).toBe(true); // a money market fund
-    expect(needsReview(sec("cash", "SPAXX", { cash: true }), {})).toBe(false); // the user chose cash
+    expect(needsReview(sec("VTI", "VTI"), { VTI: null })).toBe(true);
+    expect(needsReview(sec("cash", "CUR:EUR"), {})).toBe(false);
+    expect(needsReview(sec("cash", "SPAXX"), {})).toBe(true);
+    expect(needsReview(sec("cash", "SPAXX", { cash: true }), {})).toBe(false);
   });
 });
 
@@ -136,7 +136,7 @@ describe("backup", () => {
     expect((await b.restore(text)).rows).toBe(3);
     expect((await b.store.ledger("sandbox")).rows.size).toBe(3);
     expect((await b.restore(text)).rows).toBe(0);
-    expect(await b.store.remap("sandbox")).toEqual({ full: ["acc"], dropped: { VTI: ["acc"] } }); // pending changes, merged once
+    expect(await b.store.remap("sandbox")).toEqual({ full: ["acc"], dropped: { VTI: ["acc"] } });
   });
 
   it("a full backup into another Wealthfolio leaves the ledger out", async () => {
@@ -155,13 +155,13 @@ describe("backup", () => {
     await b.store.saveItems("sandbox", { item1: { owner: "XY", institution_name: "Test Bank" }, item2: { owner: "CD", institution_name: "Other" } });
     await b.store.saveAccounts("sandbox", { acc2: { kind: "cash", item_id: "item2", wealthfolio_account_id: "wf1" } } as never);
     await b.restore(text);
-    expect((await b.store.items("sandbox")).item1.owner).toBe("XY"); // merge: what is here wins
+    expect((await b.store.items("sandbox")).item1.owner).toBe("XY");
     expect(await b.store.token("item1")).toBe("access-sandbox-new");
     expect(await b.overwriteLoss(text)).toEqual(["CD · Other"]);
     const r = await b.restore(text, "overwrite");
     expect(r.removed).toBe(1);
     expect(Object.keys(await b.store.items("sandbox"))).toEqual(["item1"]);
-    expect(await b.store.token("item2")).toBeNull(); // its token is gone too
+    expect(await b.store.token("item2")).toBeNull();
     expect((await b.store.items("sandbox")).item1.owner).toBe("AB");
     expect(await b.store.token("item1")).toBe("access-sandbox-x");
     expect(Object.keys(await b.store.accounts("sandbox"))).toEqual(["acc"]);
@@ -224,7 +224,6 @@ describe("link plan", () => {
       b: { item_id: "i", kind: "cash", name: "AB · Chase Checking 2", wealthfolio_account_id: null, skip: false, match: "w1" },
       c: { item_id: "i", kind: "cash", name: "AB · Savings", wealthfolio_account_id: null, skip: false, match: "w1" },
     } as never;
-    // b picked w1 first (name order), so c's same pick falls back to New and a's suggestion moves off w1.
     expect(planLinks(cfg, wf)).toEqual({ a: null, b: "w1", c: null });
   });
 
@@ -287,7 +286,7 @@ describe("dry run", () => {
     const ids = d.plan.new.map((x) => x.plaidId);
     expect(ids).toEqual(expect.arrayContaining(["t1", "t2"]));
     const state = await e.store.ledger("sandbox");
-    state.record(d.plan.new.find((x) => x.plaidId === "t1")!, "wf1"); // t1 pushed, t2 refused
+    state.record(d.plan.new.find((x) => x.plaidId === "t1")!, "wf1");
     await e.store.saveLedger("sandbox", state);
     const left = await e.afterPush(d);
     expect(left.plan.new.map((x) => x.plaidId)).toContain("t2");
@@ -310,7 +309,6 @@ describe("dry run", () => {
 });
 
 describe("securities changes after a push", () => {
-  // One brokerage account. VTI was bought long ago; the fund (no ticker) was set to Leave out and never imported.
   async function setup() {
     const e = new Engine(fakeApi(["W"]).api);
     await e.store.saveToken("i", "access-sandbox-x");
@@ -332,7 +330,6 @@ describe("securities changes after a push", () => {
         return { securities: secs, investment_transactions: txns.filter((t) => t.date >= start) };
       },
     }) as never;
-    // A push as far as the ledger is concerned: every new row recorded, the pull position saved.
     const pushAll = async (d: Awaited<ReturnType<Engine["dryRun"]>>) => {
       for (const a of d.plan.new) d.state.record(a, `wf-${a.plaidId}`);
       for (const [aid, day] of Object.entries(d.plan.invLastEnd)) d.state.setInvLastEnd(aid, day);
@@ -341,7 +338,6 @@ describe("securities changes after a push", () => {
     const first = await e.dryRun(() => {}, () => {}, true);
     await e.setSecurity("f", "Plan Fund", { mode: "exclude" });
     await pushAll(await e.replan(first));
-    // Wealthfolio now holds the pushed rows, so the dry run does not treat the account as wiped.
     (e as unknown as { api: { activities: { getAll: () => Promise<unknown[]> } } }).api.activities.getAll = async () => [{ id: "wf-t1" }];
     return { e, starts };
   }
@@ -349,11 +345,11 @@ describe("securities changes after a push", () => {
   it("a security that starts to be imported gets its older rows and opening position", async () => {
     const { e, starts } = await setup();
     const quick = await e.dryRun(() => {}, () => {}, true);
-    expect(starts.at(-1)! > "2025-06-03").toBe(true); // incremental: the fund's buy is out of reach
+    expect(starts.at(-1)! > "2025-06-03").toBe(true);
     await e.setSecurity("f", "Plan Fund", { mode: "manual", symbol: "PLANFUND" });
     expect((await e.store.remap("sandbox")).full).toEqual(["B"]);
     const d = await e.replan(quick);
-    expect(starts.at(-1)! <= "2025-06-03").toBe(true); // Update preview pulled the full history
+    expect(starts.at(-1)! <= "2025-06-03").toBe(true);
     expect(d.backfill).toEqual(new Set(["B"]));
     expect(d.plan.new.map((a) => a.plaidId)).toContain("f1");
   });
@@ -371,7 +367,7 @@ describe("securities changes after a push", () => {
     expect(d.plan.moved.size).toBe(0);
     expect(d.backfill).toEqual(new Set(["B"]));
     await e.push(d, () => {});
-    expect((await e.store.remap("sandbox")).full).toEqual([]); // rebuilt: later pulls are incremental again
+    expect((await e.store.remap("sandbox")).full).toEqual([]);
   });
 
   it("setting a symbol back clears its pending delete", async () => {
@@ -476,9 +472,8 @@ describe("autoSync", () => {
     const runs = await Promise.all(tabs.map((e) => e.autoSync(at(9))));
     expect(runs.filter(Boolean).length).toBe(1);
     expect(pushes).toBe(1);
-    expect(await tabs[0].store.dailyLock("sandbox")).toBeNull(); // released
+    expect(await tabs[0].store.dailyLock("sandbox")).toBeNull();
 
-    // A lock held by a running window stops Run now elsewhere; one left by a closed window expires.
     const e = tab();
     await e.store.saveDailyLock("sandbox", { id: "other", at: at(10).toISOString() });
     expect(await e.runDaily(at(10, 5))).toBeNull();
@@ -490,27 +485,27 @@ describe("autoSync", () => {
     let pushes = 0;
     e.dryRun = async () => fakeDry();
     e.push = async () => { pushes++; return { imported: 0, updated: 0, linked: 0 } as never; };
-    expect(await e.autoSync(at(9))).toBeNull(); // off
+    expect(await e.autoSync(at(9))).toBeNull();
     await e.store.saveDaily({ on: true, time: "08:30" });
-    expect(await e.autoSync(at(8, 29))).toBeNull(); // before the time
-    e.tasks.sync = { label: "Dry run", running: true, progress: [], log: [] }; // waits while the user runs something
+    expect(await e.autoSync(at(8, 29))).toBeNull();
+    e.tasks.sync = { label: "Dry run", running: true, progress: [], log: [] };
     expect(await e.autoSync(at(9))).toBeNull();
     e.tasks.sync = undefined;
-    e.tasks.daily = { label: "run", running: true, progress: [], log: [] }; // and other tasks wait for it
+    e.tasks.daily = { label: "run", running: true, progress: [], log: [] };
     await expect(e.task("dry", "dry", async () => 1)).rejects.toThrow(/daily sync is running/);
     e.tasks.daily = undefined;
     expect((await e.autoSync(at(8, 30)))?.status).toBe("ok");
-    expect(await e.autoSync(at(12))).toBeNull(); // done today
+    expect(await e.autoSync(at(12))).toBeNull();
     let reads = 0;
     const settings = e.store.settings.bind(e.store);
     e.store.settings = async () => { reads++; return settings(); };
     expect(await e.autoSync(at(13))).toBeNull();
-    expect(reads).toBe(0); // the rest of the day it reads nothing
+    expect(reads).toBe(0);
     expect(pushes).toBe(1);
     const runs = (await e.store.autoRun("sandbox")).runs!;
     expect(runs.length).toBe(1);
     expect(runs[0].totals).toBeTruthy();
-    expect((await e.nextDaily(at(12)))?.getDate()).toBe(8); // tomorrow
+    expect((await e.nextDaily(at(12)))?.getDate()).toBe(8);
   });
 
   it("refuses the user's changes while it runs, and waits while one is saved", async () => {
@@ -519,7 +514,7 @@ describe("autoSync", () => {
     e.tasks.daily = { label: "run", running: true, progress: [], log: [] };
     await expect(e.setSync("a", false)).rejects.toThrow(/daily sync is running/);
     await expect(e.setSecurity("s", "S", { mode: "cash" })).rejects.toThrow(/daily sync is running/);
-    expect(await e.checkHostedLink("AB", "link")).toEqual({ state: "waiting" }); // finishes the login after the run
+    expect(await e.checkHostedLink("AB", "link")).toEqual({ state: "waiting" });
     e.tasks.daily = undefined;
     await e.store.saveDaily({ on: true, time: "00:00" });
     let release!: () => void;
@@ -534,7 +529,7 @@ describe("autoSync", () => {
     const e = new Engine(fakeApi().api);
     await e.store.saveDaily({ on: true, time: "06:15" });
     expect(await e.store.daily()).toEqual({ on: true, time: "06:15" });
-    expect((await e.store.settings()).daily).toEqual({ time: "06:15" }); // no switch in what paired devices share
+    expect((await e.store.settings()).daily).toEqual({ time: "06:15" });
   });
 
   it("does not stop on to-do items, and shows them in Sync", async () => {
@@ -592,7 +587,7 @@ describe("adoptions", () => {
       fetched: { items: [], skipped: [], blocked: [] }, adoptions: [{ key: "p1", plaidId: "p1", accountId: "A", how: "exact", decision: "add",
         row: {}, existing: { id: "e1" } }] } as never as DryRun;
     d.adoptions[0].decision = "discard";
-    await e.push(d, () => {}).catch(() => {}); // the fake has no importer calls; only the ledger matters here
+    await e.push(d, () => {}).catch(() => {});
     expect(d.state.get("p1")?.wf_activity_id).toBe("e1");
   });
 });
@@ -610,7 +605,7 @@ describe("rows the importer pushed before", () => {
     expect(state.get("p1")?.wf_activity_id).toBe("wf1");
     expect(state.get("p1")?.adopted).toBeFalsy();
     expect(p.new.map((a) => a.plaidId)).toEqual(["p2"]);
-    expect(out.map((a) => a.plaidId)).toEqual(["p2"]); // p2 has the same content as wf1, but wf1 is taken
+    expect(out.map((a) => a.plaidId)).toEqual(["p2"]);
   });
 });
 
@@ -676,7 +671,7 @@ describe("categorize", () => {
     expect(await e.categorize()).toBe("Categorized 1 of 1 rows.");
     expect(assigned.map((a) => a[0])).toEqual(["wf-old"]);
     const state = await e.store.ledger("sandbox");
-    expect(state.get("gone")?.category).toBeNull(); // not at Plaid any more: nothing to learn, and not asked again
+    expect(state.get("gone")?.category).toBeNull();
     expect(await e.categorize()).toMatch(/already has one/);
     expect(pulls).toBe(1);
   });

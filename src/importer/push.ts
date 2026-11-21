@@ -1,11 +1,10 @@
-// Push a plan to Wealthfolio and record it in the ledger, through a Writer (the addon SDK, or a fake in tests).
 import type { Dec } from "./dec";
 import type { Ledger, LedgerRow } from "./ledger";
 import { Activity, type OnProgress } from "./models";
 import type { AccountCfg, Plan } from "./plan";
 
-export const IMPORT_CHUNK = 500; // server limit is 1000
-export const SMALL_CHUNK = 100; // limit for updates, links, categories
+export const IMPORT_CHUNK = 500;
+export const SMALL_CHUNK = 100;
 
 export class WealthfolioError extends Error {}
 
@@ -13,16 +12,12 @@ export type ImportRow = Record<string, string | number | null>;
 export type Update = Record<string, string | number | boolean | null>;
 
 export interface Writer {
-  /** {lineNumber: [status, activityId]}. Throws if a chunk fails validation. */
   commitImport(rows: ImportRow[]): Promise<Map<number, [string, string | null, string?]>>;
-  /** One result per chunk of SMALL_CHUNK, with errors by index inside the chunk. */
   update(updates: Update[]): Promise<{ errors?: { index: number; message: string }[] }[]>;
   delete(ids: string[]): Promise<void>;
   linkTransfers(pairs: [string, string][]): Promise<void>;
-  /** {`${taxonomyId}|${key}`: categoryId} */
   categoryIds(): Promise<Map<string, string>>;
   setCategories(assignments: { activityId: string; taxonomyId: string; categoryId: string }[]): Promise<void>;
-  /** Apply the saved categorization rules to uncategorized rows. Returns the rows changed. */
   rerunRules(): Promise<number>;
 }
 
@@ -47,14 +42,12 @@ export const chunks = <T>(xs: T[], n: number): T[][] =>
 export interface PushStats {
   imported: number; duplicates: number; failed: number; updated: number; voided: number; linked: number;
   categorized: number; ruled: number;
-  failures: string[]; // one line per row Wealthfolio did not save, with the reason
-  refused: Record<string, string>; // symbol -> Wealthfolio's reason, for rows it did not save
+  failures: string[];
+  refused: Record<string, string>;
 }
 
 type Log = (msg: string) => void;
 
-/** Set categories on pushed rows. A batch is all-or-nothing in Wealthfolio, so a failed batch is retried one
- * row at a time, so one bad row does not leave the others uncategorized. Returns how many were set. */
 export async function assignCategories(wf: Writer, state: Ledger, categories: Map<string, [string, string]>, log: Log = console.log): Promise<number> {
   const ids = await wf.categoryIds();
   const todo: [string, { activityId: string; taxonomyId: string; categoryId: string }][] = [];
@@ -75,7 +68,7 @@ export async function assignCategories(wf: Writer, state: Ledger, categories: Ma
         try {
           await wf.setCategories([a]);
           ok.push([pid, a]);
-        } catch (e) { // e.g. the account is not in Spending
+        } catch (e) {
           const msg = String((e as Error).message ?? e).slice(0, 200);
           errors.set(msg, [...(errors.get(msg) ?? []), pid]);
         }
@@ -90,7 +83,6 @@ export async function assignCategories(wf: Writer, state: Ledger, categories: Ma
   return done;
 }
 
-/** rows: p.new as import rows, already resolved by the caller; built here when omitted. */
 export async function push(p: Plan, wf: Writer, state: Ledger, accountsCfg: Record<string, AccountCfg>,
   log: Log = console.log, rows?: ImportRow[], progress: OnProgress = () => {}): Promise<PushStats> {
   const step = (id: string, label: string, run: boolean, detail?: string) =>
@@ -137,7 +129,7 @@ export async function push(p: Plan, wf: Writer, state: Ledger, accountsCfg: Reco
     updates.push([u, a]);
   }
   const gone = p.voids.filter((r) => !r.pair_plaid_id && r.wf_activity_id);
-  if (gone.length) { // deleted, not voided: Spending counts voided rows
+  if (gone.length) {
     step("delete", "Delete rows removed at Plaid", true, `${gone.length} rows`);
     await wf.delete(gone.map((r) => r.wf_activity_id!));
     for (const r of gone) state.setVoided(r.plaid_id, true);
@@ -176,7 +168,7 @@ export async function push(p: Plan, wf: Writer, state: Ledger, accountsCfg: Reco
     if (!(ro && ri && ro.wf_activity_id && ri.wf_activity_id)) continue;
     try {
       await wf.linkTransfers([[ro.wf_activity_id, ri.wf_activity_id]]);
-    } catch (e) { // Wealthfolio may have auto-linked same-day pairs
+    } catch (e) {
       if (!String((e as Error).message ?? e).toLowerCase().includes("already")) {
         log(`  link failed ${o} <-> ${i}: ${(e as Error).message ?? e}`);
         continue;
@@ -195,7 +187,6 @@ export async function push(p: Plan, wf: Writer, state: Ledger, accountsCfg: Reco
     step("categories", "Set spending categories", false, `${stats.categorized} set`);
   }
   if (stats.imported) {
-    // Wealthfolio applies the user's own rules only on a rerun, never to rows imported from outside.
     try {
       stats.ruled = await wf.rerunRules();
     } catch (e) {

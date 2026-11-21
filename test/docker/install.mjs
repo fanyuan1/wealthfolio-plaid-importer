@@ -1,4 +1,3 @@
-// Install (or replace) the built zip in the local test Wealthfolio, approving the manifest's network hosts.
 import { readFileSync } from "node:fs";
 
 const port = process.env.WF_PORT ?? 8090;

@@ -45,5 +45,5 @@ export default defineConfig({
       external: hostProvidedDependencies,
     },
   },
-  test: { exclude: [...configDefaults.exclude, "test/e2e/**"] }, // browser tests: pnpm test:e2e
+  test: { exclude: [...configDefaults.exclude, "test/e2e/**"] },
 });

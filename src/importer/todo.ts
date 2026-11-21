@@ -1,7 +1,5 @@
-// After a push: what the user still does by hand in Wealthfolio, from the plan's review rows.
 import { plural, type Review } from "./models";
 
-// reason -> [heading, instruction]. Reasons not listed fall into OTHER.
 const SECTIONS: [string, string | null, string | null][] = [
   [
     "opening cost basis missing",
@@ -51,7 +49,6 @@ const SECTIONS: [string, string | null, string | null][] = [
 ];
 const OTHER: [string, string] = ["Activities to add by hand", "Plaid did not give enough detail to import these. Add them in Wealthfolio from your statements."];
 
-/** The to-do list's lines: a heading, an instruction, then the items. Empty when there is nothing to do. */
 export function todoReport(reviews: Review[], names: Record<string, string>, priceWarnings: string[] = []): string[] {
   const lines = priceWarnings.map((w) => `Warning: ${w}`);
   const known = new Set(SECTIONS.map(([r]) => r));
@@ -85,7 +82,6 @@ export function todoReport(reviews: Review[], names: Record<string, string>, pri
 
 export interface TodoGroup { heading: string; count: number; text: string; items: string[]; warning?: boolean }
 
-/** todoReport's lines (and the engine's kept-rows lines) read back as groups: a heading "Name (n)", an indented instruction, then "  - item" lines. */
 export function todoGroups(lines: string[]): TodoGroup[] {
   const out: TodoGroup[] = [];
   for (const raw of lines) {

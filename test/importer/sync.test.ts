@@ -1,4 +1,3 @@
-// plan + push over several runs, with a fake Wealthfolio.
 import { describe, expect, test } from "vitest";
 import {
   Activity, D, type ImportRow, type ItemData, MemoryLedger, openingDay, plan, push, type Row,
@@ -65,7 +64,7 @@ describe("sync", () => {
     const wf = new FakeWF();
     const first = items(
       [invTx("t1", "buy", "buy", 1000, 10, 100, "s_vti"), invTx("t2", "cash", "deposit", -500, 0, 0, null, "2026-10-03"),
-        invTx("t3", "buy", "buy", 50, 50, 1, "s_cash")], // sweep: dropped
+        invTx("t3", "buy", "buy", 50, 50, 1, "s_cash")],
       [{ account_id: "brk", security_id: "s_vti", quantity: 12, cost_basis: 1240, institution_price: 110 },
         { account_id: "brk", security_id: "s_cash", quantity: 300, institution_value: 300 }],
       [bank("b1", "chk", 500, "TRANSFER_OUT", "TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS"),
@@ -76,34 +75,31 @@ describe("sync", () => {
       ["opening:chk:cash", "TRANSFER_IN"], ["t1", "BUY"], ["t2", "TRANSFER_IN"]]);
     expect(p.pairs).toEqual([["b1", "t2"]]);
     expect(Object.fromEntries(p.categories)).toEqual({ b2: ["spending_categories", "food_coffee"] });
-    expect(p.reviews).toEqual([]); // positions reconcile: 2 opening + 10 bought = 12
+    expect(p.reviews).toEqual([]);
     const stats = await run(p, wf, state);
     expect([stats.imported, stats.linked, stats.categorized]).toEqual([8, 1, 1]);
-    expect(wf.cats[0].categoryId).toBe("cat_food"); // food_coffee missing -> parent
-    expect(wf.reruns).toBe(1); // the user's own rules, for rows Wealthfolio imported without them
+    expect(wf.cats[0].categoryId).toBe("cat_food");
+    expect(wf.reruns).toBe(1);
     expect(state.cursor("i_boa")).toBe("c1");
     expect(state.invLastEnd("brk")).toBe("2026-11-05");
 
-    // Second run: overlap re-pulls t1, a txn is edited, one cancelled, a payment pairs with an old leg.
     const second = items(
       [invTx("t1", "buy", "buy", 1000, 10, 100, "s_vti"), invTx("t4", "cancel", "cancel", 0, 0, 0, "s_vti", "2026-10-20", { cancel_transaction_id: "t1" })],
       [{ account_id: "brk", security_id: "s_vti", quantity: 2, cost_basis: 240, institution_price: 110 }],
       [bank("b5", "card", -30, "LOAN_PAYMENTS", "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT", "2026-10-21")],
       [bank("b2", "card", 26, "FOOD_AND_DRINK", "FOOD_AND_DRINK_COFFEE")], [], false, "2026-09-17");
-    // an old unpaired checking payment, already in Wealthfolio
     state.record(new Activity({ accountId: "chk", plaidId: "b4", date: "2026-10-20", activityType: "WITHDRAWAL", amount: D(30), transferHint: true }), "wf_old");
     const p2 = plan(second, ACCOUNTS, {}, state, TODAY);
     expect(p2.new.map((a) => a.plaidId)).toEqual(["b5"]);
     expect(p2.voids.map((r) => r.plaid_id)).toEqual(["t1"]);
     expect(p2.updates.map(([, a, f]) => [a.plaidId, f])).toEqual([["b2", ["amount"]]]);
     expect(p2.retype).toEqual([["b4", "TRANSFER_OUT", "b5"]]);
-    expect(p2.reviews).toEqual([]); // 2 opening + 10 bought - voided 10 = 2
+    expect(p2.reviews).toEqual([]);
     await run(p2, wf, state);
     expect(wf.updates).toContainEqual({ activityId: "wf_old", activityType: "TRANSFER_OUT" });
-    expect(wf.deleted.length > 0 && !wf.updates.some((u) => u.void)).toBe(true); // Spending counts voided rows
+    expect(wf.deleted.length > 0 && !wf.updates.some((u) => u.void)).toBe(true);
     expect([state.get("t1")!.voided, state.get("t1")!.wf_activity_id, state.get("b4")!.pair_plaid_id]).toEqual([1, null, "b5"]);
 
-    // Third run with nothing new is a no-op.
     const p3 = plan(items([invTx("t1", "buy", "buy", 1000, 10, 100, "s_vti")], [{ account_id: "brk", security_id: "s_vti", quantity: 2 }],
       [], [], [], false, "2026-09-17"), ACCOUNTS, {}, state, TODAY);
     expect([p3.new, p3.updates, p3.voids, p3.pairs]).toEqual([[], [], [], []]);
@@ -123,12 +119,10 @@ describe("sync", () => {
     await run(p1, wf, state);
     const cashBefore = state.get("opening:brk:cash")!.amount!;
 
-    // User maps the fund later. A normal run sees nothing (old rows are outside the 14-day window).
     const symbols = { s_fund: { manual: true } };
     const p2 = plan(items(txns, holdings, [], [], [], false, "2024-11-06", secs), ACCOUNTS, symbols, state, TODAY, new Set(["brk"]));
     expect(p2.new.map((a) => a.plaidId).sort()).toEqual(["f1", "f2", "opening:brk:PLANFUND-S_FU"]);
     expect(p2.new.filter((a) => a.plaidId.startsWith("opening:")).map((a) => a.quantity!.toNumber())).toEqual([2]);
-    // Opening cash grows by the 100 the fund buys spent, since that cash must have been there.
     expect(p2.updates.length).toBe(1);
     const [row, a, fields] = p2.updates[0];
     expect([row.plaid_id, fields]).toEqual(["opening:brk:cash", ["amount"]]);
@@ -138,13 +132,12 @@ describe("sync", () => {
 
   test("rebuilt account opens on the shared history start", () => {
     const state = new MemoryLedger();
-    expect(openingDay(state, "2024-11-08")).toBe("2024-11-08"); // first run: Plaid's window start
+    expect(openingDay(state, "2024-11-08")).toBe("2024-11-08");
     state.record(new Activity({ accountId: "chk", plaidId: "opening:chk:cash", date: "2024-11-07", activityType: "TRANSFER_IN", amount: D(1) }), "wf1");
-    // Reimported a day later: Plaid's window starts a day later, the opening keeps the shared day.
     const p = plan(items([invTx("t1", "buy", "buy", 1000, 10, 100, "s_vti")], [{ account_id: "brk", security_id: "s_vti", quantity: 12, cost_basis: 1240 }],
       [], [], [], false, "2024-11-08"), ACCOUNTS, {}, state, TODAY);
     expect(p.new.filter((a) => a.plaidId.startsWith("opening:")).map((a) => [a.plaidId, a.date])).toEqual([["opening:brk:VTI", "2024-11-07"]]);
-    expect(openingDay(state, "2025-06-01")).toBe("2025-06-01"); // an account linked much later opens on its own
+    expect(openingDay(state, "2025-06-01")).toBe("2025-06-01");
   });
 
   test("import rows: manual quote mode and comment", () => {
@@ -181,11 +174,10 @@ describe("fetch", () => {
     const last = new Map<string, string>();
     const r = await fetchItems(plaidStub, tokens, cfg, new MemoryLedger(), "2026-11-05",
       { log: (m) => logs.push(m), progress: (p) => last.set(p.id, p.state) });
-    // Each connection ends done or error; its transactions line ends done. A consent end date is not reported.
     expect(Object.fromEntries(last)).toEqual({ i1: "done", "i1:tx": "done", i2: "error", "i2:tx": "running", i3: "done", "i3:tx": "done" });
     expect(r.items.map((d) => [d.itemId, d.inv ?? null])).toEqual([["i1", null], ["i3", null]]);
     expect(r.skipped).toEqual(["AB · Broken"]);
-    expect(r.blocked).toEqual([]); // a Plaid error is not an expired login
+    expect(r.blocked).toEqual([]);
     expect(logs.some((m) => m.includes("investment accounts skipped"))).toBe(true);
     expect(PlaidError).toBeDefined();
   });

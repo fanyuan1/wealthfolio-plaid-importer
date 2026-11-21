@@ -1,4 +1,3 @@
-// src/importer must stay pure: no host SDK, no React. The engine and UI depend on it, never the reverse.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";

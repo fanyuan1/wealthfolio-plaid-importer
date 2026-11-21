@@ -1,6 +1,3 @@
-// A fake Plaid for the browser tests. Wealthfolio's server only calls public HTTPS hosts, so the fake does not sit
-// behind a URL: the tests answer the addon's network calls (POST /api/v1/addons/<id>/network/request) with it.
-// One test bank: checking, credit card and brokerage. Unknown endpoints fail loudly.
 type Row = Record<string, any>;
 
 export const KEYS = { clientId: "fake-client-id", secret: "fake-sandbox-secret" };
@@ -10,7 +7,6 @@ const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISO
 
 export class FakePlaid {
   calls: string[] = [];
-  /** Hosted Link: polls of /link/token/get before the login counts as done. */
   pollsUntilLinked = 1;
   private items = new Map<string, { token: string }>();
   private polls = new Map<string, number>();
@@ -39,7 +35,6 @@ export class FakePlaid {
     { investment_transaction_id: "inv_div", account_id: "acc_brk", security_id: "sec_vti", type: "cash", subtype: "dividend",
       amount: -12.5, quantity: 0, price: 0, fees: 0, date: day(-10), name: "DIVIDEND VTI", iso_currency_code: "USD" },
   ];
-  /** Bank and card transactions, in the order /transactions/sync hands them out. */
   transactions: Row[] = [
     bank("tx_pay", "acc_chk", -2500, day(-25), "Payroll", "INCOME", "INCOME_WAGES"),
     bank("tx_coffee", "acc_card", 4.75, day(-5), "Blue Bottle", "FOOD_AND_DRINK", "FOOD_AND_DRINK_COFFEE"),
@@ -90,7 +85,6 @@ export class FakePlaid {
           total_investment_transactions: rows.length });
       }
       case "/transactions/sync": {
-        // The cursor is the count already handed out, so rows added later come on the next sync.
         const from = Number(req.cursor ?? 0);
         return ok({ added: this.transactions.slice(from), modified: [], removed: [], next_cursor: String(this.transactions.length), has_more: false });
       }

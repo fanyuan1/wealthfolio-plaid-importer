@@ -1,35 +1,27 @@
-// Addon storage and secrets: settings, connections, accounts, securities, ledger, prices.
-// Plaid keys, access tokens and the daily sync switch are addon secrets, which never sync; the rest is in addon storage,
-// per Plaid environment.
 import type { HostAPI } from '@wealthfolio/addon-sdk';
 import { type AccountCfg, type CloseCache, MemoryLedger, type PlaidEnv, type Row } from '../importer';
 
 export type Api = HostAPI;
-export interface Daily { on: boolean; time: string } // time: local "HH:MM"
+export interface Daily { on: boolean; time: string }
 export interface Settings { env: PlaidEnv; daily?: { time: string } }
-/** One daily sync. stopped: something needs the user; goto is the step that fixes it. */
 export interface RunRecord {
   time: string; status: "ok" | "stopped" | "failed"; message: string; goto?: "connections" | "sync";
   accounts?: { name: string; new: number; updated: number; removed: number }[];
   totals?: { new: number; updated: number; removed: number; categorized: number; failed: number };
 }
-// done: local day of the last finished daily sync; tried: time of the last try; runs: newest first.
 export interface AutoRun { done?: string; tried?: string; runs?: RunRecord[] }
-/** Securities settings changes the next push still has to apply. full: investment accounts to pull in full and
- * rebuild the opening rows of. dropped: symbol -> accounts whose pushed rows of it now map elsewhere. */
 export interface Remap { full: string[]; dropped: Record<string, string[]> }
 export interface ItemMeta { owner: string; institution_name: string; institution_id?: string; products?: string[]; env?: string;
-  checked?: string; // last account refresh
-  reconnect?: boolean; // the last pull found the login expired
+  checked?: string;
+  reconnect?: boolean;
   [k: string]: unknown }
 
 const KEYS = { dailyOn: "daily_on", clientId: "plaid_client_id", secret: (env: PlaidEnv) => `plaid_secret_${env}`, token: (id: string) => `token_${id}` };
 
-// Large values are split into parts: see docs/decisions/0001-chunked-addon-storage.md.
-const PART = 50_000; // characters; 3 bytes each at most in UTF-8, with room for escaping
+const PART = 50_000;
 type Head = { parts: string[] };
 
-function hash(s: string): string { // FNV-1a, two 32-bit lanes
+function hash(s: string): string {
   let a = 0x811c9dc5, b = 0x01000193 ^ s.length;
   for (let i = 0; i < s.length; i++) {
     const c = s.charCodeAt(i);
@@ -43,7 +35,7 @@ export function split(s: string, size = PART): string[] {
   const out: string[] = [];
   for (let i = 0; i < s.length;) {
     let j = Math.min(i + size, s.length);
-    if (j < s.length && s.charCodeAt(j - 1) >= 0xd800 && s.charCodeAt(j - 1) <= 0xdbff) j--; // keep surrogate pairs whole
+    if (j < s.length && s.charCodeAt(j - 1) >= 0xd800 && s.charCodeAt(j - 1) <= 0xdbff) j--;
     out.push(s.slice(i, j));
     i = j;
   }
@@ -90,8 +82,6 @@ export class Store {
 
   settings() { return this.json<Settings>("settings", { env: "sandbox" }); }
   saveSettings(s: Settings) { return this.put("settings", s); }
-  /** The daily switch is a secret, which never syncs: two paired devices would push the same rows twice. The time syncs
-   * with the other settings. */
   async daily(settings?: Settings): Promise<Daily> {
     const [on, s] = await Promise.all([this.api.secrets.get(KEYS.dailyOn), settings ?? this.settings()]);
     return { on: on === "on", time: s.daily?.time ?? "07:00" };
@@ -100,7 +90,6 @@ export class Store {
     await this.api.secrets.set(KEYS.dailyOn, d.on ? "on" : "off");
     await this.saveSettings({ ...(await this.settings()), daily: { time: d.time } });
   }
-  // Per environment, so sandbox test data never mixes with real data.
   items(env: PlaidEnv) { return this.json<Record<string, ItemMeta>>(`items_${env}`, {}); }
   saveItems(env: PlaidEnv, v: Record<string, ItemMeta>) { return this.put(`items_${env}`, v); }
   accounts(env: PlaidEnv) { return this.json<Record<string, AccountCfg>>(`accounts_${env}`, {}); }
@@ -117,7 +106,6 @@ export class Store {
   saveLastSync(env: PlaidEnv, message: string) { return this.put(`last_${env}`, { time: new Date().toISOString(), message }); }
   autoRun(env: PlaidEnv) { return this.json<AutoRun>(`auto_${env}`, {}); }
   saveAutoRun(env: PlaidEnv, v: AutoRun) { return this.put(`auto_${env}`, v); }
-  /** The copy of Wealthfolio running the daily sync now. A key of its own, so saving the run history never overwrites it. */
   dailyLock(env: PlaidEnv) { return this.json<{ id: string; at: string } | null>(`daily_lock_${env}`, null); }
   saveDailyLock(env: PlaidEnv, v: { id: string; at: string } | null) { return this.put(`daily_lock_${env}`, v); }
 

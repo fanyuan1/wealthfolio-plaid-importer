@@ -1,5 +1,3 @@
-// Plaid REST client over a pluggable transport: the addon SDK's network broker, or a stub in tests.
-// Plain JSON in and out, no Plaid SDK.
 import type { Row } from "./models";
 
 export class PlaidError extends Error {
@@ -8,7 +6,6 @@ export class PlaidError extends Error {
   }
 }
 
-/** POST a JSON body; return the status and the response body. */
 export type Transport = (url: string, body: string, headers: Record<string, string>) => Promise<{ status: number; body: string }>;
 
 const PLAID_HOSTS = { sandbox: "https://sandbox.plaid.com", production: "https://production.plaid.com" } as const;
@@ -42,13 +39,12 @@ export class Plaid {
     accessToken?: string, extra: Row = {}): Promise<Row> {
     const req: Row = { client_name: "Plaid Importer", language: "en", country_codes: [country], user: { client_user_id: clientUserId }, ...extra };
     if (accessToken) {
-      // Update mode: re-auth and add accounts on the same Item, no new Item slot.
       req.access_token = accessToken;
       req.update = { account_selection_enabled: true };
     } else {
       req.products = products;
       if (optional.length) req.optional_products = optional;
-      req.transactions = { days_requested: 730 }; // only honored at link time
+      req.transactions = { days_requested: 730 };
     }
     return this.call("/link/token/create", req);
   }
@@ -81,7 +77,6 @@ export class Plaid {
     return this.call("/investments/holdings/get", { access_token: accessToken });
   }
 
-  /** All pages. Retries PRODUCT_NOT_READY, which happens right after linking. */
   async investmentTransactions(accessToken: string, start: string, end: string, retries = 6): Promise<Row> {
     const txns: Row[] = [];
     const secs: Record<string, Row> = {};
@@ -107,7 +102,6 @@ export class Plaid {
     }
   }
 
-  /** Drain /transactions/sync from cursor. Restarts on mutation during pagination. */
   async transactionsSync(accessToken: string, cursor: string | null): Promise<Row> {
     for (;;) {
       const added: Row[] = [], modified: Row[] = [], removed: Row[] = [];

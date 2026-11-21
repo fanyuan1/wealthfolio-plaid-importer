@@ -1,4 +1,3 @@
-// The addon must start with Wealthfolio, not on the first visit: the daily sync timer lives in it.
 import { BASE } from "./wealthfolio";
 import { expect, test } from "./fixtures";
 

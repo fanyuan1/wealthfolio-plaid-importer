@@ -36,12 +36,12 @@ test("imports through checkImport and saveMany, mapping lines to new ids", async
     { lineNumber: 3, accountId: "B", date: "2026-01-03", activityType: "DEPOSIT", currency: "USD", amount: 5 },
     { lineNumber: 4, accountId: "A", date: "2026-01-04", activityType: "SELL", currency: "USD", symbol: "VTI", quantity: 1, unitPrice: 11 },
   ]);
-  expect(calls.checked).toEqual([2]); // VTI and BAD once each; the cash row is not checked
+  expect(calls.checked).toEqual([2]);
   expect(Object.fromEntries(out)).toEqual({ 1: ["imported", "wf-plaid-importer-1"], 2: ["failed", null, expect.any(String)], 3: ["imported", "wf-plaid-importer-3"], 4: ["imported", "wf-plaid-importer-4"] });
   const creates = (calls.saveMany[0] as { creates: Record<string, unknown>[] }).creates;
   expect(creates[0].asset).toEqual({ id: "asset-VTI", symbol: "VTI", exchangeMic: "XNAS" });
   expect([creates[1].asset, creates[1].activityDate, creates[1].amount]).toEqual([undefined, "2026-01-03", 5]);
-  expect(creates[2].asset).toEqual({ id: "asset-VTI", symbol: "VTI", exchangeMic: "XNAS" }); // reuses line 1's lookup
+  expect(creates[2].asset).toEqual({ id: "asset-VTI", symbol: "VTI", exchangeMic: "XNAS" });
 });
 
 test("updates send the whole activity and map errors to indexes", async () => {
@@ -53,7 +53,7 @@ test("updates send the whole activity and map errors to indexes", async () => {
   expect(ups[0]).toEqual({ id: "wf-1", accountId: "acct-wf-1", activityType: "WITHDRAWAL", activityDate: "2026-02-01", currency: "USD", amount: 26 });
   expect(ups[1].status).toBe("VOID");
   expect(ups[2].activityType).toBe("TRANSFER_OUT");
-  expect(ups.every((u) => u.currency === "USD")).toBe(true); // save_activities rejects an update without it
+  expect(ups.every((u) => u.currency === "USD")).toBe(true);
 });
 
 test("categories use the kind of the category", async () => {

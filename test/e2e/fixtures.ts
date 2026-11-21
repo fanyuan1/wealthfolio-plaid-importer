@@ -1,11 +1,9 @@
-// Each test gets a fresh Wealthfolio, a fake Plaid wired into the page, and helpers to drive the addon.
 import { test as base, expect, type FrameLocator, type Page } from "@playwright/test";
 import { FakePlaid, KEYS } from "./fake-plaid";
 import { BASE, freshWealthfolio } from "./wealthfolio";
 
 const NETWORK = "**/api/v1/addons/plaid-importer/network/request";
 
-/** Answer the addon's network calls: Plaid from the fake, Yahoo Finance with no data. */
 export async function routePlaid(page: Page, plaid: FakePlaid) {
   await page.route(NETWORK, async (route) => {
     const { request } = route.request().postDataJSON() as { request: { url: string; body?: string } };
@@ -25,13 +23,12 @@ export const test = base.extend<{ plaid: FakePlaid; addon: Addon }>({
     await use(plaid);
   },
   addon: async ({ page, plaid }, use) => {
-    void plaid; // the fake must be wired before the page loads
+    void plaid;
     await use(new Addon(page));
   },
 });
 export { expect };
 
-/** The addon's page. Addons render inside a sandboxed iframe. */
 export class Addon {
   constructor(readonly page: Page) {}
 
@@ -56,7 +53,6 @@ export class Addon {
     await expect(this.frame.getByText("Keys work")).toBeVisible();
   }
 
-  /** Connect through the hosted login. The fake reports it done on the second poll; the page polls by itself. */
   async connect(owner = "AP") {
     await this.step("Connections");
     await this.frame.locator("#owner").fill(owner);
@@ -74,13 +70,12 @@ export class Addon {
 
   async dryRun() {
     await this.step("Sync");
-    const anyway = this.frame.getByRole("button", { name: "Continue anyway" }); // spending is off in a new Wealthfolio
+    const anyway = this.frame.getByRole("button", { name: "Continue anyway" });
     if (await anyway.isVisible({ timeout: 2000 }).catch(() => false)) await anyway.click();
     await this.frame.getByRole("button", { name: "Dry run" }).click();
     await expect(this.frame.getByText("Push would make:")).toBeVisible({ timeout: 60_000 });
   }
 
-  /** Review one security under Needs attention, then update the preview. */
   async review(security: string, mode: string) {
     await this.frame.getByRole("row", { name: new RegExp(security) }).getByRole("button", { name: "Review" }).click();
     await this.frame.getByRole("button", { name: mode, exact: true }).click();
@@ -95,13 +90,12 @@ export class Addon {
     await expect(this.frame.getByText("Pushed", { exact: true })).toBeVisible({ timeout: 60_000 });
   }
 
-  /** Keys, one connection, its accounts, and a first push. */
   async firstPush() {
     await this.open();
     await this.saveKeys();
     await this.connect();
     await this.createAccounts();
     await this.dryRun();
-    await this.push(); // Plaid's CUR:USD needs no review
+    await this.push();
   }
 }

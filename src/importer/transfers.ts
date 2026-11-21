@@ -1,7 +1,7 @@
 import type { Activity } from "./models";
 
 export const MAX_DAYS = 3;
-const REF = /\d{6,}/g; // e.g. Chase "transaction#: 23473949867", printed on both legs
+const REF = /\d{6,}/g;
 
 const refs = (a: Activity): Set<string> => new Set(a.description?.match(REF) ?? []);
 export const daysBetween = (a: string, b: string): number =>
@@ -12,8 +12,6 @@ const cmp = (a: (string | number)[], b: (string | number)[]): number => {
   return 0;
 };
 
-/** Greedy match of WITHDRAWAL->DEPOSIT legs. Both legs must carry Plaid's transfer hint, be in different
- * accounts, share currency and amount, and be within maxDays. Matched legs are retyped in place. */
 export function matchTransfers(acts: Activity[], maxDays = MAX_DAYS): [Activity, Activity][] {
   const free = (a: Activity) => a.transferHint && a.pairId === null && a.symbol === null;
   const outs = acts.filter((a) => free(a) && (a.activityType === "WITHDRAWAL" || a.activityType === "TRANSFER_OUT"));
@@ -24,8 +22,6 @@ export function matchTransfers(acts: Activity[], maxDays = MAX_DAYS): [Activity,
       const days = daysBetween(o.date, i.date);
       if (o.accountId !== i.accountId && o.currency === i.currency && o.amount !== null && i.amount !== null
         && o.amount.eq(i.amount) && days <= maxDays) {
-        // A shared reference number beats date and id order: two same-day legs of one amount
-        // are otherwise paired by plaid_id, which is arbitrary.
         const ri = refs(i);
         const shared = [...refs(o)].some((r) => ri.has(r)) ? 0 : 1;
         candidates.push({ key: [shared, days, o.date, o.plaidId, i.plaidId], o, i });

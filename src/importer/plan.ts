@@ -1,5 +1,3 @@
-// Plan a sync against the ledger: what is new, changed, voided, paired and categorized. Pure apart from
-// ledger reads; fetching and pushing live in the paths that use it.
 import { mapCategory } from "./categories";
 import { type Dec, dec, ZERO } from "./dec";
 import { type Ledger, type LedgerRow, differs } from "./ledger";
@@ -11,8 +9,8 @@ import { yahooSymbol } from "./securities";
 import { convert } from "./tracking";
 import { MAX_DAYS, matchTransfers } from "./transfers";
 
-export const HISTORY_DAYS = 729; // Plaid investments allow 24 months
-const ANCHOR_DAYS = 31; // an account rebuilt within this many days of the first pull reuses its history start
+export const HISTORY_DAYS = 729;
+const ANCHOR_DAYS = 31;
 export const OVERLAP_DAYS = 14;
 export const BLOCKING_ITEM_ERRORS = new Set(["ITEM_LOGIN_REQUIRED", "ITEM_LOCKED", "ACCESS_NOT_GRANTED",
   "INVALID_CREDENTIALS", "USER_SETUP_REQUIRED", "MFA_NOT_SUPPORTED", "NO_ACCOUNTS"]);
@@ -22,9 +20,6 @@ export const addDays = (day: string, n: number): string =>
   new Date(Date.parse(day + "T00:00:00Z") + n * 86_400_000).toISOString().slice(0, 10);
 const dayDiff = (a: string, b: string): number => Math.round((Date.parse(a) - Date.parse(b)) / 86_400_000);
 
-/** Date for a new opening row. Plaid's window starts 729 days before the run, so an account reimported or
- * re-priced a day later would open a day later than the rest. Reuse the other accounts' history start when it
- * is close; an account linked much later opens at its own window start. */
 export function openingDay(state: Ledger, windowStart: string): string {
   const anchor = state.historyStart();
   if (anchor && anchor < windowStart && dayDiff(windowStart, anchor) <= ANCHOR_DAYS) return anchor;
@@ -36,7 +31,6 @@ export interface AccountCfg {
   wealthfolio_account_id?: string | null; match?: string; [k: string]: unknown;
 }
 
-/** An account's name as the addon shows it; the Plaid account id when it has none. */
 export const accountLabel = (cfg: Record<string, AccountCfg>, aid: string) => String(cfg[aid]?.name ?? aid);
 export const accountNames = (cfg: Record<string, AccountCfg>) => Object.fromEntries(Object.keys(cfg).map((aid) => [aid, accountLabel(cfg, aid)]));
 
@@ -48,27 +42,25 @@ export interface ItemData {
   itemId: string;
   owner: string;
   institution: string;
-  inv?: Row | null; // investment_transactions result
+  inv?: Row | null;
   holdings?: Row | null;
-  invStart: Record<string, string>; // account_id -> window start
-  tx?: Row | null; // transactions_sync result
+  invStart: Record<string, string>;
+  tx?: Row | null;
   firstTxSync?: boolean;
-  balances?: Record<string, Row>; // account_id -> balances
+  balances?: Record<string, Row>;
 }
 
 export interface Plan {
   new: Activity[];
   updates: [LedgerRow, Activity, string[]][];
   voids: LedgerRow[];
-  retype: [string, string, string][]; // (plaid_id, type, pair plaid_id)
-  pairs: [string, string][]; // (out plaid_id, in plaid_id)
-  categories: Map<string, [string, string]>; // plaid_id -> (taxonomy, key)
+  retype: [string, string, string][];
+  pairs: [string, string][];
+  categories: Map<string, [string, string]>;
   reviews: Review[];
   cursors: Record<string, string>;
   invLastEnd: Record<string, string>;
   unmapped: Map<string, string>;
-  // old symbol -> accounts: pushed rows whose security now maps to another symbol. Wealthfolio cannot move
-  // them to a new asset, so they are deleted and imported again before any push.
   moved: Map<string, Set<string>>;
 }
 
@@ -79,8 +71,6 @@ function earliest(acts: Activity[], aid: string, today: string): string {
   return ds.length ? ds.reduce((m, d) => (d < m ? d : m)) : today;
 }
 
-/** backfill: accounts whose opening rows are rebuilt from the ledger plus a full re-pull, so a security mapped
- * after the first push (from unmapped, cash or Leave out) gets its history and opening position. */
 export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>, symbols: Record<string, Row>,
   state: Ledger, today: string, backfill: Set<string> = new Set(), closes?: ClosesFn): Plan {
   const p: Plan = {
@@ -111,7 +101,7 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
       const s = secs;
       const priceOn = (sid: string, day: string): Dec | null => {
         if (!closes) return null;
-        const o = symbols[sid] ?? {}; // Plaid has no ticker: the one the user typed in Securities
+        const o = symbols[sid] ?? {};
         return closes(yahooSymbol(s[sid]) || (!o.manual ? o.symbol ?? null : null), day);
       };
       for (const a of r.activities) {
@@ -133,9 +123,8 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
       for (const a of d.holdings?.accounts ?? []) {
         const bal = dec(a.balances?.current) ?? ZERO;
         if (ids.has(a.account_id) && !seen.has(a.account_id) && bal.gt(1)) {
-          balanceOnly.add(a.account_id); // positions entered by hand; nothing to check them against
+          balanceOnly.add(a.account_id);
           if (!state.hasAny(a.account_id)) {
-            // e.g. a brokerage window: Plaid sends the balance only
             p.reviews.push(review(a.account_id, a.account_id, "", "no holdings from Plaid",
               `balance ${bal}, but Plaid sends no holdings or activity`));
           }
@@ -159,13 +148,12 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
           acts = [...op, ...acts];
           p.reviews.push(...rv);
         } else if (backfill.has(aid)) {
-          // Every change since the original opening date: pushed rows plus anything new.
           const known = new Map<string, Activity>();
           for (const a of state.activities(new Set([aid]))) if (!a.plaidId.startsWith("opening:")) known.set(a.plaidId, a);
           for (const a of acts) known.set(a.plaidId, a);
           const [op, rv] = openingActivities(aid, state.openingDate(aid) || openingDay(state, d.invStart[aid]), hs,
             cash.get(aid) ?? null, [...known.values()], cur, priceOn);
-          acts = [...op, ...acts]; // new opening rows are added; changed ones become updates
+          acts = [...op, ...acts];
           p.reviews.push(...rv);
         }
         batch.push(...acts);
@@ -189,7 +177,7 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
           if (state.hasOpening(aid)) continue;
           let current = dec((d.balances ?? {})[aid]?.current);
           if (current === null) continue;
-          if (kind === "credit") current = current.neg(); // Plaid reports card debt as a positive balance
+          if (kind === "credit") current = current.neg();
           const [op, rv] = openingActivities(aid, earliest(acts, aid, today), new Map(), current,
             acts.filter((a) => a.accountId === aid), accts[aid].currency || "USD");
           acts = [...op, ...acts];
@@ -201,7 +189,6 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
     }
   }
 
-  // Ledger rows for the accounts we touched, to compute split ratios and positions.
   const touched = new Set(batch.map((a) => a.accountId));
   const ledgerActs = state.activities(touched);
   const batchIds = new Set(batch.map((a) => a.plaidId));
@@ -230,7 +217,6 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
     if (row !== null && !row.voided) p.voids.push(row);
   }
 
-  // Transfers: new legs plus unpaired ledger legs near them.
   if (p.new.length) {
     const since = addDays(p.new.map((a) => a.date).reduce((m, d) => (d < m ? d : m)), -MAX_DAYS);
     const voidedIds = new Set(p.voids.map((r) => r.plaid_id));
@@ -254,19 +240,15 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
     const pending = new Set([...invAccounts].filter((a) => !balanceOnly.has(a)));
     p.reviews.push(...reconcile(pending, positions([...pushed, ...p.new.filter((a) => !pushedIds.has(a.plaidId))]), holdingsAll));
   }
-  // balance-only accounts hold hand-entered positions, so "holdings 0" says nothing about them
   p.reviews = p.reviews.filter((r) => !(balanceOnly.has(r.accountId) && r.reason === "negative opening position"));
   return p;
 }
 
-/** The Spending category of a bank or card row: Plaid's category mapped, or null. A transfer leg gets none. */
 function categoryOf(kind: string | undefined, pfc: string | null | undefined, pairId: string | null, activityType: string): [string, string] | null {
   if (!pfc || pairId || (kind !== "cash" && kind !== "credit")) return null;
   return mapCategory(pfc, ["DEPOSIT", "CREDIT", "INTEREST"].includes(activityType));
 }
 
-/** Pushed bank and card rows whose Spending category is not set yet, from the Plaid category kept with each row.
- * Mapping now means a changed mapping also reaches older rows. */
 export function uncategorized(state: { rows: Map<string, LedgerRow> }, cfg: Record<string, AccountCfg>): Map<string, [string, string]> {
   const out = new Map<string, [string, string]>();
   for (const r of state.rows.values()) {

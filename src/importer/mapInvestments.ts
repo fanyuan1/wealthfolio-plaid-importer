@@ -1,4 +1,3 @@
-// Plaid /investments/transactions/get rows -> Wealthfolio activities.
 import { D, type Dec, dec, nz, ZERO } from "./dec";
 import { Activity, type ActivityInit, mapResult, type MapResult, type Review, review, type Row } from "./models";
 import { resolve } from "./securities";
@@ -23,7 +22,6 @@ const REINVEST_MATCH_DAYS = 7;
 const currencyOf = (t: Row, def: string): string => t.iso_currency_code || t.unofficial_currency_code || def;
 const has = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
 
-/** stockPlan: account ids of employee stock plans (Plaid subtype "stock plan"). */
 export function mapInvestmentTransactions(txns: Row[], securities: Record<string, Row>, overrides: Record<string, Row>,
   defaultCurrency = "USD", stockPlan: Set<string> = new Set()): MapResult {
   const r = mapResult();
@@ -44,8 +42,6 @@ export function mapInvestmentTransactions(txns: Row[], securities: Record<string
   return r;
 }
 
-/** Merrill reports a dividend reinvestment twice: a memo with quantity 0, then the fill with shares and
- * price, sometimes days later. The memo is dropped when its fill is present. */
 function reinvestMemos(txns: Row[]): Set<string> {
   const reinv = txns.filter((t) => t.type === "buy" && String(t.subtype ?? "").toLowerCase() === "dividend reinvestment");
   const fills = reinv.filter((t) => nz(dec(t.quantity)));
@@ -63,8 +59,6 @@ function reinvestMemos(txns: Row[]): Set<string> {
   return memos;
 }
 
-/** Same account, security and day, one row out and one back in with nothing net: a 401(k) "Source to
- * Source/Fund to Fund" move, or Merrill reposting a row. Both are dropped. */
 function reversals(txns: Row[]): Set<string> {
   const used = new Set<string>();
   const rows = txns.filter((t) => t.security_id && t.type !== "buy" && t.type !== "sell" && nz(dec(t.quantity)));
@@ -111,8 +105,8 @@ function mapOne(t: Row, securities: Record<string, Row>, overrides: Record<strin
   const isSec = r.kind === "security";
   const isOption = isSec && r.instrumentType === "OPTION";
   const mult: Dec = isSec ? r.multiplier : D(1);
-  if (price.eq(0) && nz(qty)) price = amount.abs().div(qty); // per unit Plaid counts (per share for options)
-  qty = qty.div(mult); // options: single options -> contracts
+  if (price.eq(0) && nz(qty)) price = amount.abs().div(qty);
+  qty = qty.div(mult);
   const secKw: Partial<ActivityInit> = isSec ? {
     symbol: r.symbol, instrumentType: r.instrumentType, securityId: sec!.security_id,
     symbolName: sec!.name ?? null, quoteManual: r.manual,
@@ -125,26 +119,23 @@ function mapOne(t: Row, securities: Record<string, Row>, overrides: Record<strin
   if (sub === "expire") return isSec ? act("ADJUSTMENT", { subtype: "OPTION_EXPIRY", quantity: qty, ...secKw }) : rev("expire");
 
   if (ttype === "buy" || ttype === "sell") {
-    if (!isSec) return [null, null]; // cash sweep trade: cash never left the account
+    if (!isSec) return [null, null];
     if (qty.eq(0)) return rev("trade with zero quantity");
     if (name.toLowerCase().includes(PARTIAL_FILL) && nz(price)) {
       const filled = amount.abs().div(price);
-      // Plaid can report a partly filled order at its full size; the amount is what filled.
       if (filled.gt(0) && filled.lt(qty)) qty = filled;
     }
     if (sub === "contribution") {
-      // 401(k) plan contribution: shares arrive from payroll; no cash moves in the account.
       return act("TRANSFER_IN", { quantity: qty, unitPrice: price, ...secKw });
     }
     const atype = ttype === "buy" ? "BUY" : "SELL";
-    // Wealthfolio marks trade intent with POSITION_OPEN / POSITION_CLOSE (shorts, options).
     let subtype: string | null = ({ "buy to cover": "POSITION_CLOSE", "sell short": "POSITION_OPEN" } as Record<string, string>)[sub] ?? null;
     if (isOption && subtype === null) subtype = ttype === "buy" ? "POSITION_OPEN" : "POSITION_CLOSE";
     return act(atype, { quantity: qty, unitPrice: price, fee, subtype, ...secKw });
   }
 
   if (has(DIVIDEND_SUBTYPES, sub) || (sub === "dividend reinvestment" && ttype === "cash")) {
-    if (!isSec) return act("INTEREST", { amount: amount.abs() }); // money-market dividends are effectively interest
+    if (!isSec) return act("INTEREST", { amount: amount.abs() });
     return act("DIVIDEND", { amount: amount.abs(), subtype: DIVIDEND_SUBTYPES[sub] ?? null, ...secKw });
   }
   if (INTEREST_SUBTYPES.has(sub)) return act("INTEREST", { amount: amount.abs() });
@@ -156,17 +147,12 @@ function mapOne(t: Row, securities: Record<string, Row>, overrides: Record<strin
   const noPrice = !nz(dec(t.price));
   if (isSec && ttype === "cash" && (sub === "deposit" || sub === "distribution") && nz(qty) && noPrice
     && name.toUpperCase().includes("DISTRIBUTION")) {
-    // Fidelity sends a stock split as a cash "DISTRIBUTION" of the new shares, priced at 0 and valued
-    // at market in amount. No money moves.
     return act("SPLIT", { splitDelta: (rawQty ?? ZERO).div(mult), ...secKw });
   }
   if (isSec && amount.eq(0) && !stockPlan && ttype === "cash" && noPrice && rawQty !== null && rawQty.gt(0)) {
-    // Merrill sends a stock split as a cash row of the new shares, priced at 0. Shares with no cash
-    // outside a stock plan are a split, not a vest.
     return act("SPLIT", { splitDelta: rawQty.div(mult), ...secKw });
   }
   if (isSec && amount.eq(0) && nz(qty) && ["deposit", "contribution", "withdrawal", "distribution"].includes(sub)) {
-    // Shares with no cash, e.g. Schwab "RESTRICTED STOCK DEPOSIT" (an RSU vest). Plaid sends no vest price.
     const q = rawQty!.div(mult);
     return act(q.gt(0) ? "TRANSFER_IN" : "TRANSFER_OUT", { quantity: q.abs(), unitPrice: ZERO, marketPrice: true, ...secKw });
   }
@@ -177,15 +163,11 @@ function mapOne(t: Row, securities: Record<string, Row>, overrides: Record<strin
       const q = (rawQty ?? ZERO).div(mult);
       if (q.eq(0) && amount.eq(0)) return rev("security transfer with zero quantity");
       if (!q.eq(0)) {
-        // Stock plans only receive shares as vests; Plaid sends their journals out with a positive quantity.
         const out = q.lt(0) || (stockPlan && amount.eq(0));
-        // No price (Merrill journals, broker-to-broker moves): the close that day, so cost basis is known.
         return act(out ? "TRANSFER_OUT" : "TRANSFER_IN", { quantity: q.abs(), unitPrice: price, marketPrice: !nz(price), ...secKw });
       }
-      // A cash journal tagged with the security, e.g. Schwab "Journal To Account … JRNLFUND".
     }
     if (amount.eq(0)) return [null, null];
-    // Plaid: negative amount = cash into the account.
     return act(amount.lt(0) ? "DEPOSIT" : "WITHDRAWAL", { amount: amount.abs(), transferHint: true });
   }
   return rev(`unknown type ${ttype}/${sub}`);

@@ -1,4 +1,3 @@
-// Build the zip the tests install, and pull the Wealthfolio image once.
 import { execSync } from "node:child_process";
 import { stopWealthfolio } from "./wealthfolio";
 

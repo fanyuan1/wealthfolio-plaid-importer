@@ -1,15 +1,11 @@
-// Daily closing prices from Yahoo Finance (Wealthfolio's default provider), cached. Used only where Plaid
-// gives no price: opening positions without cost basis, and RSU vests.
 import { D, type Dec } from "./dec";
 import { addDays } from "./plan";
 
-const LOOKBACK_DAYS = 7; // a weekend or holiday takes the last close before it
-export type CloseCache = Record<string, Record<string, string>>; // symbol -> day -> close
-/** [start, end] days -> {day: close}. Throws on failure; a NotFound error means Yahoo has no such symbol. */
+const LOOKBACK_DAYS = 7;
+export type CloseCache = Record<string, Record<string, string>>;
 export type CloseFetch = (sym: string, start: string, end: string) => Promise<Record<string, string>>;
 class NotFound extends Error {}
 
-/** GET a URL; return the status and body. */
 export type HttpGet = (url: string, headers: Record<string, string>) => Promise<{ status: number; body: string }>;
 
 export function yahooFetch(get: HttpGet): CloseFetch {
@@ -31,14 +27,12 @@ export function yahooFetch(get: HttpGet): CloseFetch {
   };
 }
 
-/** Prices are prefetched with load() before planning, since plan() is synchronous. */
 export class Closes {
-  failed = new Map<string, string>(); // symbol -> why the lookup failed
+  failed = new Map<string, string>();
 
   constructor(public cache: CloseCache, private fetch: CloseFetch, private today: string,
     private save: (c: CloseCache) => void | Promise<void> = () => {}) {}
 
-  /** Make sure the cache covers day for each symbol, fetching ~800 days at once. */
   async load(needs: [string, string][]): Promise<void> {
     let changed = false;
     for (const [sym, day] of needs) {
@@ -46,28 +40,25 @@ export class Closes {
       try {
         this.cache[sym] = { ...this.cache[sym], ...(await this.fetch(sym, addDays(day, -800), this.today)) };
         changed = true;
-      } catch (e) { // offline, rate-limited or unknown symbol: fall back, never block a sync
+      } catch (e) {
         this.failed.set(sym, e instanceof NotFound ? "no prices for this symbol" : `could not reach it (${(e as Error).message})`);
       }
     }
     if (changed) await this.save(this.cache);
   }
 
-  /** The close on day, or the last one within a week before it. */
   close = (sym: string | null, day: string): Dec | null => {
     if (!sym || this.failed.has(sym)) return null;
     const v = this.lookup(sym, day);
     return v ? D(v) : null;
   };
 
-  /** The close on that very day, or null (no lookback): an exchange ratio needs same-day prices. */
   exact(sym: string | null, day: string): Dec | null {
     if (!sym || this.failed.has(sym)) return null;
     const v = this.cache[sym]?.[day];
     return v ? D(v) : null;
   }
 
-  /** The close nearest to day, before or after (no limit): for an exchange ratio when that very day has no price. */
   nearest(sym: string | null, day: string): { day: string; close: Dec } | null {
     if (!sym || this.failed.has(sym)) return null;
     const t = Date.parse(day);
@@ -98,8 +89,6 @@ export class Closes {
   }
 }
 
-/** plan() needs prices synchronously. Plan once to learn which closes it asks for, fetch them, then plan
- * again with the cache filled. plan() is pure, so the first pass has no effect. */
 export async function withPrices<T>(closes: Closes, planFn: (c: (sym: string | null, day: string) => Dec | null) => T): Promise<T> {
   const needs: [string, string][] = [];
   planFn((sym, day) => {

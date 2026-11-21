@@ -6,7 +6,6 @@ export { addProgress };
 import { type ReactNode, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { Engine } from '../engine/engine';
 
-/** Set by enable(): the host context, and the one engine the page and the daily sync share. */
 export const host: { ctx?: AddonContext; engine?: Engine } = {};
 
 export const TITLE = 'Plaid Importer';
@@ -43,17 +42,13 @@ export function Problem({ error }: { error?: string }) {
   );
 }
 
-/** A card's action buttons, as Wealthfolio lays them out: stacked full width on a phone, in a row from sm up.
- * Wealthfolio's CSS clips an overflowing .flex row, so a row that does not fit would hide a button. */
 export const ACTIONS = 'flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center';
-/** A switch and its label. inline-flex: the .flex rule's overflow-x: hidden made the switch's touch area scroll the row. */
 export const SWITCH_ROW = 'inline-flex items-center gap-2';
 
 export function Spin({ on }: { on: boolean }) {
   return on ? <Icons.Spinner className="h-4 w-4 animate-spin" /> : null;
 }
 
-/** Copy to the clipboard. The addon frame may have no clipboard access: then select el's text and try the old way. */
 export async function copyText(text: string, el?: HTMLInputElement | HTMLTextAreaElement | null): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
@@ -68,7 +63,6 @@ export async function copyText(text: string, el?: HTMLInputElement | HTMLTextAre
   }
 }
 
-/** Wealthfolio cannot open a browser from an addon, so the user copies the link. */
 export function CopyLink({ url, hint = true }: { url: string; hint?: boolean }) {
   const box = useRef<HTMLInputElement>(null);
   const [copied, setCopied] = useState(false);
@@ -98,7 +92,6 @@ export function StateIcon({ state, size = 'h-4 w-4' }: { state: State; size?: st
   return <Icons.Circle className={`text-muted-foreground ${size} shrink-0`} />;
 }
 
-/** One line per connection or stage, with its accounts nested below. */
 export function ProgressList({ list }: { list: Progress[] }) {
   if (!list.length) return null;
   const top = list.filter((p) => !p.parent || !list.some((x) => x.id === p.parent));
@@ -111,7 +104,7 @@ export function ProgressList({ list }: { list: Progress[] }) {
             <Line p={p} />
             {kids.length > 0 && (
               <ul className="flex flex-col gap-1 ps-6">
-                {/* A line left running under a finished connection stopped there. */}
+                {}
                 {kids.map((c) => <li key={c.id}><Line p={c.state === 'running' && p.state !== 'running' ? { ...c, state: 'skipped', detail: 'Stopped' } : c} small /></li>)}
               </ul>
             )}
@@ -124,7 +117,6 @@ export function ProgressList({ list }: { list: Progress[] }) {
 
 function Line({ p, small }: { p: Progress; small?: boolean }) {
   return (
-    // A long detail (an error) wraps to its own line instead of squeezing the label.
     <div className={`flex min-w-0 flex-wrap items-start gap-x-2 gap-y-0.5 ${small ? 'text-xs' : 'text-sm'}`}>
       <span className="mt-0.5"><StateIcon state={p.state} /></span>
       <span className={`min-w-32 flex-1 ${small ? 'text-muted-foreground' : 'font-medium'}`}>{p.label}</span>
@@ -135,7 +127,6 @@ function Line({ p, small }: { p: Progress; small?: boolean }) {
 
 export type SaveState = 'idle' | 'saving' | 'saved';
 
-/** Changes save at once. The control shows it (SaveMark); a failure is a toast, so nothing is added beside it. */
 export function useSave() {
   const [s, setS] = useState<SaveState>('idle');
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -155,7 +146,6 @@ export function useSave() {
   return { status: s, save };
 }
 
-/** The save result on the control itself (D57): the control fades into a green ✓ for a moment, in its own space. */
 export function SaveMark({ status, children }: { status: SaveState; children: ReactNode }) {
   const done = status === 'saved';
   return (
@@ -170,14 +160,11 @@ export function SaveMark({ status, children }: { status: SaveState; children: Re
   );
 }
 
-/** A control with its own save state, for rows of controls that each show their own result. */
 export function WithSave({ children }: { children: (save: (fn: () => Promise<unknown>) => void) => ReactNode }) {
   const { status, save } = useSave();
   return <SaveMark status={status}>{children(save)}</SaveMark>;
 }
 
-/** A success shown on the button that caused it, for a moment, so nothing next to the button moves (D57).
- * Give the button a min width that fits both labels. */
 export function useFlash(ms = 2500): [boolean, () => void] {
   const [on, setOn] = useState(false);
   useEffect(() => {
@@ -203,12 +190,10 @@ export const ago = (iso?: string) => {
   return h < 24 ? `${h} h ago` : `${Math.round(h / 24)} d ago`;
 };
 
-/** A slice of the engine that re-renders the screen when it changes. pick must return a kept object, not a new one. */
 export function useEngine<T>(engine: Engine, pick: (e: Engine) => T): T {
   return useSyncExternalStore(engine.subscribe, () => pick(engine));
 }
 
-/** The task under key: it keeps running, and keeps its progress, when the user leaves the screen. */
 export function useTask(engine: Engine, key: string) {
   const task = useEngine(engine, (e) => e.tasks[key]) as Task | undefined;
   const start = useCallback(<T,>(label: string, fn: Parameters<Engine['task']>[2]) =>

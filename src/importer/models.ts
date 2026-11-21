@@ -1,14 +1,13 @@
 import { type Dec, ZERO } from "./dec";
 
-// Types that move a security position, with direction.
 export const POSITION_SIGN: Record<string, number> = { BUY: 1, TRANSFER_IN: 1, SELL: -1, TRANSFER_OUT: -1 };
 export const CASH_IN = new Set(["DEPOSIT", "TRANSFER_IN", "DIVIDEND", "INTEREST", "CREDIT"]);
 export const CASH_OUT = new Set(["WITHDRAWAL", "TRANSFER_OUT", "FEE", "TAX"]);
 
 export interface ActivityInit {
-  accountId: string; // Plaid account_id
-  plaidId: string; // source id; synthetic for opening rows
-  date: string; // YYYY-MM-DD
+  accountId: string;
+  plaidId: string;
+  date: string;
   activityType: string;
   currency?: string;
   symbol?: string | null;
@@ -20,14 +19,14 @@ export interface ActivityInit {
   tax?: Dec | null;
   subtype?: string | null;
   description?: string;
-  category?: string | null; // Plaid personal_finance_category.detailed
-  transferHint?: boolean; // Plaid says this is a transfer/payment
-  splitDelta?: Dec | null; // raw Plaid quantity change for SPLIT
-  pairId?: string | null; // plaid_id of the other transfer leg
-  securityId?: string | null; // Plaid security_id, for securities settings
-  symbolName?: string | null; // security name, used for manual-price assets
-  quoteManual?: boolean; // symbol not in Wealthfolio market data: price from activities
-  marketPrice?: boolean; // Plaid sends no price: use the market close on its date (RSU vests)
+  category?: string | null;
+  transferHint?: boolean;
+  splitDelta?: Dec | null;
+  pairId?: string | null;
+  securityId?: string | null;
+  symbolName?: string | null;
+  quoteManual?: boolean;
+  marketPrice?: boolean;
 }
 
 export class Activity {
@@ -103,17 +102,15 @@ export interface MapResult {
   activities: Activity[];
   reviews: Review[];
   cancelledIds: Set<string>;
-  unmappedSecurities: Map<string, string>; // security_id -> name
+  unmappedSecurities: Map<string, string>;
 }
 
 export const mapResult = (): MapResult => ({
   activities: [], reviews: [], cancelledIds: new Set(), unmappedSecurities: new Map(),
 });
 
-/** A Plaid API row: snake_case keys as Plaid sends them. */
 export type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
-/** One line of the progress view. The same id again updates the line; parent nests it under another. */
 export interface Progress {
   id: string; label: string; parent?: string;
   state: "running" | "done" | "warn" | "error" | "skipped";
@@ -121,5 +118,4 @@ export interface Progress {
 }
 export type OnProgress = (p: Progress) => void;
 
-/** "1 account", "2 accounts". many: an irregular plural. */
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;

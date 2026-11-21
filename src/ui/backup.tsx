@@ -1,4 +1,3 @@
-// 6. Backup: a full backup (recommended) or a connections backup (connections and tokens only), and restore.
 import { Alert, AlertDescription, AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Icons } from '@wealthfolio/ui';
 import { type ChangeEvent, useRef, useState } from 'react';
 import type { BackupKind, Engine, Restored } from '../engine/engine';
@@ -14,14 +13,13 @@ export function Backup({ engine, env, ready, onChange }: { engine: Engine; env: 
   const [made, setMade] = useState<{ kind: BackupKind; text: string; copied?: boolean }>();
   const [saved, flashSaved] = useFlash();
   const [paste, setPaste] = useState('');
-  const [picked, setPicked] = useState<{ name: string; text: string }>(); // a chosen file, waiting for Restore
+  const [picked, setPicked] = useState<{ name: string; text: string }>();
   const [confirm, setConfirm] = useState(false);
-  const [overwrite, setOverwrite] = useState<string[]>(); // the second confirmation: connections an overwrite removes
+  const [overwrite, setOverwrite] = useState<string[]>();
   const source = picked?.text ?? paste;
   const file = useRef<HTMLInputElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
   const { busy, error, run } = useBusy();
-  // Restore is an engine task: its result is still shown after leaving the screen.
   const { task, busy: restoring, error: restoreError, start } = useTask(engine, 'restore');
   const restored = task && !task.running && !task.error ? task.result as Restored : undefined;
 
@@ -29,17 +27,15 @@ export function Backup({ engine, env, ready, onChange }: { engine: Engine; env: 
     const r = await engine.restore(text, mode);
     setPaste('');
     setPicked(undefined);
-    onChange(); // the page checks again whether every account is linked
+    onChange();
     return r;
   });
   const copy = async () => {
     if (made) setMade({ ...made, copied: await copyText(made.text, box.current) });
   };
-  // Wealthfolio's own file save works on every surface; a plain browser download does not reach the user in the app.
   const saveFile = () => run('save', async () => {
     if (!made) return;
     const name = `plaid-importer-${made.kind}-${env}-${new Date().toISOString().slice(0, 10)}.json`;
-    // The dialog returns only whether it saved, not the name the user chose.
     const ok = await host.ctx!.api.files.openSaveDialog(made.text, name);
     if (ok !== false) flashSaved();
   });
@@ -182,7 +178,6 @@ export function Backup({ engine, env, ready, onChange }: { engine: Engine; env: 
 
 const isFull = (text: string) => { try { return JSON.parse(text.trim()).kind === 'full'; } catch { return false; } };
 
-/** "this full backup (Sandbox, 3 connections)", from the backup's own fields; the restore checks it properly. */
 function describe(text: string): string {
   try {
     const d = JSON.parse(text.trim());

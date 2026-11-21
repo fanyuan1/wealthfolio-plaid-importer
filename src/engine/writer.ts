@@ -1,26 +1,20 @@
-// Writer for the addon: pushes a plan through the Wealthfolio addon SDK.
 import type { HostAPI } from "@wealthfolio/addon-sdk";
 import { chunks, IMPORT_CHUNK, type ImportRow, SMALL_CHUNK, type Update, WealthfolioError, type Writer } from "../importer";
 
-/** What an update needs besides the changed fields: the SDK replaces the whole activity. */
 export interface Base { accountId: string; activityType: string; date: string; currency: string }
 
-// Asset fields checkImport resolves; creates reuse them instead of resolving the symbol again.
 const IDENTITY = ["assetId", "symbol", "symbolName", "instrumentType", "exchangeMic", "quoteCcy", "quoteMode", "providerId", "providerSymbol"] as const;
 
 type Api = Pick<HostAPI, "activities" | "spending">;
 
 export class SdkWriter implements Writer {
-  private kinds = new Map<string, "expense" | "income" | "saving">(); // categoryId -> kind
+  private kinds = new Map<string, "expense" | "income" | "saving">();
 
-  /** base: the Wealthfolio activity's account, type and date, from the ledger. */
   constructor(private api: Api, private base: (activityId: string) => Base | null) {}
 
   async commitImport(rows: ImportRow[]): Promise<Map<number, [string, string | null, string?]>> {
     const out = new Map<number, [string, string | null, string?]>();
     for (const chunk of chunks(rows, IMPORT_CHUNK)) {
-      // Resolve each distinct security once. Only security rows go to checkImport: it requires a symbol, and
-      // cash rows need no asset.
       const key = (r: ImportRow) => [r.symbol, r.instrumentType, r.quoteMode, r.currency].join("|");
       const firsts = new Map<string, ImportRow>();
       for (const r of chunk) if (r.symbol && !firsts.has(key(r))) firsts.set(key(r), r);
@@ -36,9 +30,6 @@ export class SdkWriter implements Writer {
       for (const r of chunk) {
         const line = Number(r.lineNumber);
         const c = r.symbol ? byKey.get(key(r)) : undefined;
-        // The check ran on one row per security. Its verdict on that row's own date, amount or "duplicate of an
-        // existing activity" says nothing about the other rows, and the user already chose to add this one.
-        // Only a problem with the security itself fails every row of it.
         const errs = (c?.errors ?? {}) as Record<string, string[]>;
         const badSecurity = c && c.isValid === false && !c.duplicateOfId
           && (!Object.keys(errs).length || Object.keys(errs).some((f) => /symbol|asset|ticker|instrument|quote/i.test(f)));
@@ -79,7 +70,6 @@ export class SdkWriter implements Writer {
         const id = String(u.activityId);
         const b = this.base(id);
         if (!b) return errors.push({ index: i, message: "activity not in the ledger" });
-        // Wealthfolio's save_activities needs the currency on every update, changed or not.
         const req: Record<string, unknown> = { id, accountId: b.accountId, activityType: u.activityType ?? b.activityType,
           activityDate: u.date ?? b.date, currency: b.currency };
         for (const f of ["quantity", "unitPrice", "amount", "fee", "currency"]) if (f in u && u[f] != null) req[f] = u[f];

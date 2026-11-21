@@ -1,4 +1,3 @@
-// Browser tests against Wealthfolio in Docker: pnpm test:e2e. Without a running Docker they are skipped.
 import { defineConfig } from "@playwright/test";
 import { dockerRunning } from "./test/e2e/wealthfolio";
 
@@ -7,7 +6,7 @@ process.env.E2E_DOCKER ??= dockerRunning() ? "1" : "0";
 export default defineConfig({
   testDir: "test/e2e",
   globalSetup: "./test/e2e/global-setup.ts",
-  workers: 1, // one Wealthfolio container, reset for each test
+  workers: 1,
   timeout: 180_000,
   expect: { timeout: 15_000 },
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
