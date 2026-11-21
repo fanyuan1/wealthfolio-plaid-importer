@@ -33,10 +33,15 @@ export class Closes {
   constructor(public cache: CloseCache, private fetch: CloseFetch, private today: string,
     private save: (c: CloseCache) => void | Promise<void> = () => {}) {}
 
-  async load(needs: [string, string][]): Promise<void> {
+  private refreshed = new Set<string>();
+
+  async load(needs: [string, string][], { latest = false } = {}): Promise<void> {
     let changed = false;
     for (const [sym, day] of needs) {
-      if (!sym || this.failed.has(sym) || this.lookup(sym, day) !== null || this.covers(sym, day)) continue;
+      if (!sym || this.failed.has(sym)) continue;
+      const stale = latest && !this.refreshed.has(sym) && this.lastDay(sym) < day;
+      if (!stale && (this.lookup(sym, day) !== null || this.covers(sym, day))) continue;
+      this.refreshed.add(sym);
       try {
         this.cache[sym] = { ...this.cache[sym], ...(await this.fetch(sym, addDays(day, -800), this.today)) };
         changed = true;
@@ -53,10 +58,13 @@ export class Closes {
     return v ? D(v) : null;
   };
 
-  exact(sym: string | null, day: string): Dec | null {
+  closeOn(sym: string | null, day: string): { day: string; close: Dec } | null {
     if (!sym || this.failed.has(sym)) return null;
-    const v = this.cache[sym]?.[day];
-    return v ? D(v) : null;
+    for (let i = 0; i < LOOKBACK_DAYS; i++) {
+      const d = addDays(day, -i), v = this.cache[sym]?.[d];
+      if (v) return { day: d, close: D(v) };
+    }
+    return null;
   }
 
   nearest(sym: string | null, day: string): { day: string; close: Dec } | null {
@@ -75,12 +83,11 @@ export class Closes {
   }
 
   private lookup(sym: string, day: string): string | null {
-    const closes = this.cache[sym] ?? {};
-    for (let i = 0; i < LOOKBACK_DAYS; i++) {
-      const v = closes[addDays(day, -i)];
-      if (v) return v;
-    }
-    return null;
+    return this.closeOn(sym, day)?.close.toString() ?? null;
+  }
+
+  private lastDay(sym: string): string {
+    return Object.keys(this.cache[sym] ?? {}).sort().at(-1) ?? "";
   }
 
   private covers(sym: string, day: string): boolean {

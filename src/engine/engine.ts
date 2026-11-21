@@ -342,6 +342,7 @@ export class Engine {
       for (const r of d.ledger?.rows ?? []) if (!state.rows.has(r.plaid_id)) { state.rows.set(r.plaid_id, r); out.rows++; }
       for (const [k, v] of Object.entries(d.ledger?.cursors ?? {})) if (!state.cursors.has(k)) state.cursors.set(k, String(v));
       for (const [k, v] of Object.entries(d.ledger?.invSync ?? {})) if (!state.invSync.has(k)) state.invSync.set(k, String(v));
+      for (const a of d.ledger?.invFull ?? []) state.invFull.add(String(a));
       await this.store.saveLedger(env, state);
       const remap = await this.store.remap(env);
       const dropped = { ...remap.dropped };
@@ -811,7 +812,9 @@ export class Engine {
     const day = today();
     const [symbols, closes, remap] = await Promise.all([this.store.symbols(env), this.closes(day), this.store.remap(env)]);
     const start = addDays(day, -HISTORY_DAYS);
-    const backfill = new Set(remap.full.filter((a) => fetched.items.some((d) => d.invStart[a] !== undefined && d.invStart[a] <= start)));
+    const fullPull = (a: string) => fetched.items.some((d) => d.invStart[a] !== undefined && d.invStart[a] <= start);
+    const holdsTracked = new Set(fetched.items.flatMap((d) => (d.holdings?.holdings ?? []).filter((h: Row) => trackedIds(symbols).has(h.security_id)).map((h: Row) => String(h.account_id))));
+    const backfill = new Set([...remap.full, ...holdsTracked].filter(fullPull));
     const p = await withPrices(closes, (c) => plan(fetched.items, cfg, symbols, state, day, backfill, c));
     for (const [sym, accts] of Object.entries(remap.dropped)) {
       const live = new Set(state.live(sym).map((r) => r.account_id));
@@ -823,7 +826,7 @@ export class Engine {
       const got = reportedPrice(fetched.items, sid);
       if (got) asked.push([symbols[sid].track.symbol, got[1]]);
     }
-    await closes.load(asked);
+    await closes.load(asked, { latest: true });
     const proposals = rebases(fetched.items, symbols, closes).map((rb) => ({
       sid: rb.sid, name: rb.name, old: rb.old as Track, next: rb.next, day: rb.day, price: rb.price.toString(),
       change: rb.change?.toNumber() ?? null,

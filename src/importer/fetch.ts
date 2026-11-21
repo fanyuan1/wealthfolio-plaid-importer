@@ -70,7 +70,7 @@ async function fetchItem(plaid: Plaid, itemId: string, tok: Token, accts: Record
     d.holdings = await plaid.holdings(tok.access_token);
     const full = new Set([...fullAccts, ...(d.holdings.holdings ?? []).filter((h: Row) => tracked.has(h.security_id)).map((h: Row) => h.account_id)]);
     for (const aid of invIds) {
-      const last = state.invLastEnd(aid);
+      const last = state.hasAny(aid) && state.hasFullHistory(aid) ? state.invLastEnd(aid) : null;
       d.invStart[aid] = last && !full.has(aid) ? addDays(last, -OVERLAP_DAYS) : addDays(today, -HISTORY_DAYS);
     }
     const start = Object.values(d.invStart).reduce((m, s) => (s < m ? s : m));

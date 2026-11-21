@@ -60,6 +60,7 @@ export interface Plan {
   reviews: Review[];
   cursors: Record<string, string>;
   invLastEnd: Record<string, string>;
+  fullHistory: string[];
   unmapped: Map<string, string>;
   moved: Map<string, Set<string>>;
 }
@@ -75,7 +76,7 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
   state: Ledger, today: string, backfill: Set<string> = new Set(), closes?: ClosesFn): Plan {
   const p: Plan = {
     new: [], updates: [], voids: [], retype: [], pairs: [], categories: new Map(), reviews: [],
-    cursors: {}, invLastEnd: {}, unmapped: new Map(), moved: new Map(),
+    cursors: {}, invLastEnd: {}, fullHistory: [], unmapped: new Map(), moved: new Map(),
   };
   let batch: Activity[] = [];
   const cancelled = new Set<string>();
@@ -143,11 +144,11 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
       for (const aid of ids) {
         let acts = r.activities.filter((a) => a.accountId === aid);
         const cur = accts[aid].currency || "USD";
-        if (state.invLastEnd(aid) === null && !state.hasOpening(aid)) {
+        if (!state.hasAny(aid)) {
           const [op, rv] = openingActivities(aid, openingDay(state, d.invStart[aid]), hs, cash.get(aid) ?? null, acts, cur, priceOn);
           acts = [...op, ...acts];
           p.reviews.push(...rv);
-        } else if (backfill.has(aid)) {
+        } else if (backfill.has(aid) || hasLateRows(state, aid, acts) || !state.hasFullHistory(aid)) {
           const known = new Map<string, Activity>();
           for (const a of state.activities(new Set([aid]))) if (!a.plaidId.startsWith("opening:")) known.set(a.plaidId, a);
           for (const a of acts) known.set(a.plaidId, a);
@@ -158,6 +159,7 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
         }
         batch.push(...acts);
         p.invLastEnd[aid] = today;
+        if (d.invStart[aid] <= addDays(today, -HISTORY_DAYS)) p.fullHistory.push(aid);
       }
     }
     if (d.tx != null) {
@@ -235,13 +237,20 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
 
   if (holdingsAll.size) {
     const voidIds = new Set(p.voids.map((r) => r.plaid_id));
-    const pushed = state.activities(invAccounts).filter((a) => !voidIds.has(a.plaidId));
+    const updated = new Map(p.updates.map(([, a]) => [a.plaidId, a]));
+    const pushed = state.activities(invAccounts).filter((a) => !voidIds.has(a.plaidId)).map((a) => updated.get(a.plaidId) ?? a);
     const pushedIds = new Set(pushed.map((a) => a.plaidId));
     const pending = new Set([...invAccounts].filter((a) => !balanceOnly.has(a)));
-    p.reviews.push(...reconcile(pending, positions([...pushed, ...p.new.filter((a) => !pushedIds.has(a.plaidId))]), holdingsAll));
+    const fresh = p.new.filter((a) => !pushedIds.has(a.plaidId));
+    p.reviews.push(...reconcile(pending, positions([...pushed, ...fresh]), holdingsAll, fresh));
   }
   p.reviews = p.reviews.filter((r) => !(balanceOnly.has(r.accountId) && r.reason === "negative opening position"));
   return p;
+}
+
+function hasLateRows(state: Ledger, aid: string, acts: Activity[]): boolean {
+  const last = state.invLastEnd(aid);
+  return last !== null && acts.some((a) => a.date < last && state.get(a.plaidId) === null && !a.positionDelta().eq(0));
 }
 
 function categoryOf(kind: string | undefined, pfc: string | null | undefined, pairId: string | null, activityType: string): [string, string] | null {

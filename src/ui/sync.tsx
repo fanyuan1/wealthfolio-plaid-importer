@@ -422,11 +422,11 @@ function RatioProposal({ engine, p, onDone }: { engine: Engine; p: Proposal; onD
       <AlertDescription className="flex flex-col gap-2">
         {p.next ? (
           <span>
-            {p.price} on {p.day} vs {p.old.symbol} {p.next.close}: ratio {p.old.ratio} → {p.next.ratio}{pct}.
+            {p.price} on {p.day} vs {p.old.symbol} {p.next.close}{p.next.date !== p.day ? ` on ${p.next.date}` : ''}: ratio {p.old.ratio} → {p.next.ratio}{pct}.
           </span>
         ) : (
           <span>
-            {p.price} on {p.day}; no {p.old.symbol} close for that day yet. Set it in Securities, or wait.
+            {p.price} on {p.day}; Yahoo Finance has no {p.old.symbol} close in the week up to that day. Set it in Securities.
           </span>
         )}
         {p.next && (

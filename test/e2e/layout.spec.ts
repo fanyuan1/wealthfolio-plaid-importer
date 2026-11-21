@@ -102,3 +102,22 @@ test.describe("on a phone", () => {
     await fits("Backup");
   });
 });
+
+test("progress rows keep their height and the list scrolls when it is full", async ({ addon }) => {
+  await addon.open();
+  await addon.saveKeys();
+  await addon.connect();
+  await addon.createAccounts();
+  await addon.dryRun();
+  const list = addon.frame.locator("ul.max-h-72");
+  const overflows = await list.evaluate((ul) => {
+    const rows = [...ul.querySelectorAll(":scope > li")];
+    for (let i = 0; i < 4; i++) for (const li of rows) ul.append(li.cloneNode(true));
+    return ul.scrollHeight > ul.clientHeight;
+  });
+  expect(overflows).toBe(true);
+  const squeezed = await list.evaluate((ul) => [...ul.querySelectorAll(":scope > li")]
+    .filter((li) => li.scrollHeight > li.clientHeight + 1).map((li) => (li.textContent ?? "").slice(0, 40)));
+  expect(squeezed).toEqual([]);
+  await list.screenshot({ path: "test-results/progress-list.png" });
+});

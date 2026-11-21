@@ -342,6 +342,7 @@ describe("securities changes after a push", () => {
     const pushAll = async (d: Awaited<ReturnType<Engine["dryRun"]>>) => {
       for (const a of d.plan.new) d.state.record(a, `wf-${a.plaidId}`);
       for (const [aid, day] of Object.entries(d.plan.invLastEnd)) d.state.setInvLastEnd(aid, day);
+      for (const aid of d.plan.fullHistory) d.state.setFullHistory(aid);
       await e.store.saveLedger("sandbox", d.state);
     };
     const first = await e.dryRun(() => {}, () => {}, true);

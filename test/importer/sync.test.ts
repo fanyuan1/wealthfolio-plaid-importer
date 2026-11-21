@@ -130,6 +130,61 @@ describe("sync", () => {
     expect(p2.reviews).toEqual([]);
   });
 
+  test("an account with a sync date but no rows gets its opening position", () => {
+    const state = new MemoryLedger();
+    state.setInvLastEnd("brk", "2026-11-01");
+    const p = plan(items([invTx("t1", "buy", "buy", 600, 6, 100, "s_vti", "2026-11-03")],
+      [{ account_id: "brk", security_id: "s_vti", quantity: 3289, cost_basis: 1240 }], [], [], [], false), ACCOUNTS, {}, state, TODAY);
+    expect(p.new.find((a) => a.plaidId === "opening:brk:VTI")!.quantity!.toNumber()).toBe(3283);
+    expect(p.reviews.filter((r) => r.reason === "holdings mismatch")).toEqual([]);
+  });
+
+  test("the positions check counts the updated quantity of a pushed row", async () => {
+    const state = new MemoryLedger();
+    const buy = (qty: number) => invTx("t1", "buy", "buy", 1000, qty, 1000 / qty, "s_vti");
+    await run(plan(items([buy(10)], [{ account_id: "brk", security_id: "s_vti", quantity: 12, cost_basis: 1240 }], []),
+      ACCOUNTS, {}, state, TODAY), new FakeWF(), state);
+    const p = plan(items([buy(20)], [{ account_id: "brk", security_id: "s_vti", quantity: 22, cost_basis: 1240 }], [], [], [], false),
+      ACCOUNTS, {}, state, TODAY);
+    expect(p.updates.map(([r]) => r.plaid_id)).toEqual(["t1"]);
+    expect(p.reviews.filter((r) => r.reason === "holdings mismatch")).toEqual([]);
+  });
+
+  test("a mismatch lists the rows this pull adds", async () => {
+    const state = new MemoryLedger();
+    await run(plan(items([], [{ account_id: "brk", security_id: "s_vti", quantity: 12, cost_basis: 1240 }], []),
+      ACCOUNTS, {}, state, TODAY), new FakeWF(), state);
+    const p = plan(items([invTx("t9", "transfer", "transfer", 0, 5, 0, "s_vti", TODAY)],
+      [{ account_id: "brk", security_id: "s_vti", quantity: 12, cost_basis: 1240 }], [], [], [], false), ACCOUNTS, {}, state, TODAY);
+    expect(p.reviews.filter((r) => r.reason === "holdings mismatch").map((r) => r.detail))
+      .toEqual([`VTI: Plaid 12, computed 17, diff -5; this pull adds ${TODAY} TRANSFER_IN 5`]);
+  });
+
+  test("a trade reported after the opening was computed comes out of the opening", async () => {
+    const state = new MemoryLedger();
+    const holdings = [{ account_id: "brk", security_id: "s_vti", quantity: 12, cost_basis: 1200 },
+      { account_id: "brk", security_id: "s_cash", quantity: 300, institution_value: 300 }];
+    await run(plan(items([], holdings, []), ACCOUNTS, {}, state, TODAY), new FakeWF(), state);
+    const p = plan(items([invTx("late", "buy", "buy", 500, 5, 100, "s_vti", "2026-11-03")], holdings, [], [], [], false),
+      ACCOUNTS, {}, state, "2026-11-08");
+    const opening = (sym: string) => p.updates.find(([r]) => r.plaid_id === `opening:brk:${sym}`)![1];
+    expect([opening("VTI").quantity!.toNumber(), opening("cash").amount!.toNumber()]).toEqual([7, 800]);
+    expect(p.reviews.filter((r) => r.reason === "holdings mismatch")).toEqual([]);
+  });
+
+  test("an account pulled only recently gets its full history once", async () => {
+    const state = new MemoryLedger();
+    state.record(new Activity({ accountId: "brk", plaidId: "recent", date: "2026-10-30", activityType: "INTEREST", amount: D(1) }), "wf1");
+    state.setInvLastEnd("brk", "2026-11-01");
+    const holdings = [{ account_id: "brk", security_id: "s_vti", quantity: 2, cost_basis: 200 }];
+    const p = plan(items([invTx("old", "buy", "buy", 200, 2, 100, "s_vti", "2024-11-29")], holdings, [], [], [], false), ACCOUNTS, {}, state, TODAY);
+    expect(p.new.map((a) => a.plaidId)).toContain("old");
+    expect(p.reviews.filter((r) => r.reason === "holdings mismatch")).toEqual([]);
+    expect(p.fullHistory).toEqual(["brk"]);
+    await run(p, new FakeWF(), state);
+    expect(state.hasFullHistory("brk")).toBe(true);
+  });
+
   test("rebuilt account opens on the shared history start", () => {
     const state = new MemoryLedger();
     expect(openingDay(state, "2024-11-08")).toBe("2024-11-08");

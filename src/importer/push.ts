@@ -197,6 +197,7 @@ export async function push(p: Plan, wf: Writer, state: Ledger, accountsCfg: Reco
 
   for (const [itemId, cur] of Object.entries(p.cursors)) state.setCursor(itemId, cur);
   for (const [aid, d] of Object.entries(p.invLastEnd)) state.setInvLastEnd(aid, d);
+  for (const aid of p.fullHistory) state.setFullHistory(aid);
   state.commit();
   return stats;
 }

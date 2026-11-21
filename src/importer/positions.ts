@@ -169,7 +169,8 @@ export function positions(acts: Activity[]): Map<string, Dec> {
   return pos;
 }
 
-export function reconcile(accountIds: Set<string>, computed: Map<string, Dec>, holdings: HoldingMap, tol: Dec = D("0.001")): Review[] {
+export function reconcile(accountIds: Set<string>, computed: Map<string, Dec>, holdings: HoldingMap, fresh: Activity[] = [],
+  tol: Dec = D("0.001")): Review[] {
   const keys = new Set<string>();
   for (const k of [...computed.keys(), ...holdings.keys()]) if (accountIds.has(splitKey(k)[0])) keys.add(k);
   const reviews: Review[] = [];
@@ -178,7 +179,10 @@ export function reconcile(accountIds: Set<string>, computed: Map<string, Dec>, h
     const have = holdings.has(k) ? dec(holdings.get(k)!.quantity)! : ZERO;
     const calc = computed.get(k) ?? ZERO;
     if (have.minus(calc).abs().gt(tol)) {
-      reviews.push(review(acct, `reconcile:${sym}`, "", "holdings mismatch", `${sym}: Plaid ${have}, computed ${calc}, diff ${have.minus(calc)}`));
+      const added = fresh.filter((a) => a.symbol && hkey(a.accountId, a.symbol) === k && !a.positionDelta().eq(0))
+        .map((a) => `${a.date} ${a.activityType} ${a.positionDelta()}`);
+      const why = added.length ? `; this pull adds ${added.join(", ")}` : "";
+      reviews.push(review(acct, `reconcile:${sym}`, "", "holdings mismatch", `${sym}: Plaid ${have}, computed ${calc}, diff ${have.minus(calc)}${why}`));
     }
   }
   return reviews;

@@ -353,16 +353,23 @@ describe("tracking", () => {
 
   test("rebase from reported price", () => {
     const yahoo: Record<string, string> = { "2026-11-06": "600.00", "2026-11-09": "610.00" };
-    const closes = { exact: (_s: string, day: string) => (yahoo[day] ? D(yahoo[day]) : null) };
+    const closes = { closeOn: (_s: string, day: string) => {
+      const d = Object.keys(yahoo).filter((k) => k <= day).sort().at(-1);
+      return d ? { day: d, close: D(yahoo[d]) } : null;
+    } };
     const symbols = { s_cit: { name: "Trust", symbol: null, track: entry("VOO", "2026-11-06", D("100.00"), D("600.00")) } };
     const items = (price: number, day: string | null) => [{ holdings: { holdings: [{ security_id: "s_cit", account_id: "a1",
       institution_price: price, institution_price_as_of: day }] } }];
     expect(rebases(items(100.0, "2026-11-06"), symbols, closes)).toEqual([]);
     expect(rebases(items(101.0, null), symbols, closes)).toEqual([]);
     const [rb] = rebases(items(102.0, "2026-11-09"), symbols, closes);
-    expect([n(rb.close), rb.next!.ratio, rb.safe]).toEqual([610, 0.1672131148, true]);
+    expect([n(rb.close!.close), rb.next!.ratio, rb.safe]).toEqual([610, 0.1672131148, true]);
     expect(rebases(items(130, "2026-11-09"), symbols, closes)[0].safe).toBe(false);
-    const [none] = rebases(items(102.0, "2026-11-10"), symbols, closes);
+    const [weekend] = rebases(items(102.0, "2026-11-14"), symbols, closes);
+    expect([weekend.next!.date, weekend.next!.close]).toEqual(["2026-11-09", 610]);
+    const saved = { s_cit: { ...symbols.s_cit, track: weekend.next! } };
+    expect(rebases(items(102.0, "2026-11-14"), saved, closes)).toEqual([]);
+    const [none] = rebases(items(102.0, "2026-11-05"), { s_cit: { ...symbols.s_cit, track: entry("VOO", "2026-11-01", D("100"), D("600")) } }, closes);
     expect([none.close, none.next, none.safe]).toEqual([null, null, false]);
   });
 });
@@ -371,11 +378,16 @@ describe("prices and to-do", () => {
   test("closes cache and last trading day", async () => {
     const { Closes } = await import("../../src/importer");
     const calls: string[] = [];
-    const c = new Closes({}, async (sym) => { calls.push(sym); return { "2024-11-08": "100.5" }; }, "2026-11-07");
+    const fetch = async (sym: string) => { calls.push(sym); return { "2024-11-08": "100.5" }; };
+    const c = new Closes({}, fetch, "2026-11-07");
     await c.load([["GOOG", "2024-11-10"]]);
     expect(n(c.close("GOOG", "2024-11-10"))).toBe(100.5);
     await c.load([["GOOG", "2024-11-08"]]);
     expect(calls).toEqual(["GOOG"]);
+    const next = new Closes(c.cache, fetch, "2026-11-07");
+    await next.load([["GOOG", "2024-11-10"]], { latest: true });
+    await next.load([["GOOG", "2024-11-11"]], { latest: true });
+    expect(calls).toEqual(["GOOG", "GOOG"]);
   });
 
   test("to-do report groups reviews and warns on price failures", async () => {

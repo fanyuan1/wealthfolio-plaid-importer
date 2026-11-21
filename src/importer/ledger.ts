@@ -26,6 +26,8 @@ export interface Ledger {
   setCursor(itemId: string, cursor: string): void;
   invLastEnd(accountId: string): string | null;
   setInvLastEnd(accountId: string, day: string): void;
+  hasFullHistory(accountId: string): boolean;
+  setFullHistory(accountId: string): void;
   hasOpening(accountId: string): boolean;
   hasAny(accountId: string): boolean;
   historyStart(): string | null;
@@ -96,21 +98,25 @@ export class MemoryLedger implements Ledger {
   rows = new Map<string, LedgerRow>();
   cursors = new Map<string, string>();
   invSync = new Map<string, string>();
+  invFull = new Set<string>();
 
-  constructor(data?: { rows?: LedgerRow[]; cursors?: Record<string, string>; invSync?: Record<string, string> }) {
+  constructor(data?: { rows?: LedgerRow[]; cursors?: Record<string, string>; invSync?: Record<string, string>; invFull?: string[] }) {
     for (const r of data?.rows ?? []) this.rows.set(r.plaid_id, r);
     for (const [k, v] of Object.entries(data?.cursors ?? {})) this.cursors.set(k, v);
     for (const [k, v] of Object.entries(data?.invSync ?? {})) this.invSync.set(k, v);
+    for (const a of data?.invFull ?? []) this.invFull.add(a);
   }
 
   toJSON() {
-    return { rows: [...this.rows.values()], cursors: Object.fromEntries(this.cursors), invSync: Object.fromEntries(this.invSync) };
+    return { rows: [...this.rows.values()], cursors: Object.fromEntries(this.cursors), invSync: Object.fromEntries(this.invSync), invFull: [...this.invFull] };
   }
 
   cursor(itemId: string) { return this.cursors.get(itemId) ?? null; }
   setCursor(itemId: string, cursor: string) { this.cursors.set(itemId, cursor); }
   invLastEnd(accountId: string) { return this.invSync.get(accountId) ?? null; }
   setInvLastEnd(accountId: string, day: string) { this.invSync.set(accountId, day); }
+  hasFullHistory(accountId: string) { return this.invFull.has(accountId); }
+  setFullHistory(accountId: string) { this.invFull.add(accountId); }
   private openings(accountId?: string) {
     return [...this.rows.values()].filter((r) => r.plaid_id.startsWith("opening:") && (!accountId || r.account_id === accountId));
   }
@@ -136,7 +142,10 @@ export class MemoryLedger implements Ledger {
   }
   forget(plaidIds: string[], accountIds: Set<string>) {
     for (const p of plaidIds) this.rows.delete(p);
-    for (const a of accountIds) this.invSync.delete(a);
+    for (const a of accountIds) {
+      this.invSync.delete(a);
+      this.invFull.delete(a);
+    }
   }
   resetCursor(itemId: string) { this.cursors.delete(itemId); }
   setCategory(plaidId: string) {
