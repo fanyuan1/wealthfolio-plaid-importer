@@ -406,7 +406,7 @@ describe("prices and to-do", () => {
   test("closes cache and last trading day", async () => {
     const { Closes } = await import("../../src/importer");
     const calls: string[] = [];
-    const fetch = async (sym: string) => { calls.push(sym); return { "2024-11-08": "100.5" }; };
+    const fetch = (sym: string) => { calls.push(sym); return Promise.resolve({ "2024-11-08": "100.5" }); };
     const c = new Closes({}, fetch, "2026-11-07");
     await c.load([["GOOG", "2024-11-10"]]);
     expect(n(c.close("GOOG", "2024-11-10"))).toBe(100.5);
@@ -420,7 +420,7 @@ describe("prices and to-do", () => {
 
   test("to-do report groups reviews and warns on price failures", async () => {
     const { Closes, todoReport, review } = await import("../../src/importer");
-    const c = new Closes({}, async () => { throw new Error("offline"); }, "2026-11-07");
+    const c = new Closes({}, () => Promise.reject(new Error("offline")), "2026-11-07");
     await c.load([["GOOG", "2024-11-08"], ["GOOG", "2024-11-09"]]);
     expect(c.close("GOOG", "2024-11-08")).toBeNull();
     const reviews = [review("a1", "opening:a1:QQQ", "2024-11-07", "opening cost basis missing", "QQQ: priced at 1"),

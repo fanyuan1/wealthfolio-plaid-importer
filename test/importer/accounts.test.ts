@@ -76,7 +76,7 @@ test("suggestMatch picks the closest name or a shared mask", async () => {
 
 test("Closes.nearest takes the closest day, before or after", async () => {
   const { Closes } = await import("../../src/importer");
-  const c = new Closes({ VOO: { "2026-01-02": "500", "2026-01-20": "510" } }, async () => ({}), "2026-02-01");
+  const c = new Closes({ VOO: { "2026-01-02": "500", "2026-01-20": "510" } }, () => Promise.resolve(({})), "2026-02-01");
   expect(c.nearest("VOO", "2026-01-05")?.day).toBe("2026-01-02");
   expect(c.nearest("VOO", "2026-01-18")?.day).toBe("2026-01-20");
   expect(c.nearest("XYZ", "2026-01-18")).toBeNull();

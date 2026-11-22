@@ -11,13 +11,14 @@ function fakeApi(wfAccounts: string[] = []) {
   const kv = new Map<string, string>();
   const writes: string[] = [];
   const storage = {
-    get: async (k: string) => kv.get(k) ?? null,
-    set: async (k: string, v: string) => {
-      if (new TextEncoder().encode(v).length > LIMIT) throw new Error("Invalid storage value: too large");
+    get: (k: string) => Promise.resolve(kv.get(k) ?? null),
+    set: (k: string, v: string) => {
+      if (new TextEncoder().encode(v).length > LIMIT) return Promise.reject(new Error("Invalid storage value: too large"));
       writes.push(k);
       kv.set(k, v);
+      return Promise.resolve();
     },
-    delete: async (k: string) => { kv.delete(k); },
+    delete: (k: string) => { kv.delete(k); return Promise.resolve(); },
   };
   const secrets = new Map<string, string>();
   const deletedRef: string[][] = [];
@@ -26,12 +27,12 @@ function fakeApi(wfAccounts: string[] = []) {
     deleted: deletedRef,
     api: {
       accounts: {
-        getAll: async () => wfAccounts.map((id) => ({ id, name: id, accountType: "CASH" })),
-        create: async (a: { name: string }) => { wfAccounts.push(`new-${a.name}`); return { id: `new-${a.name}` }; },
+        getAll: () => Promise.resolve(wfAccounts.map((id) => ({ id, name: id, accountType: "CASH" }))),
+        create: (a: { name: string }) => { wfAccounts.push(`new-${a.name}`); return Promise.resolve({ id: `new-${a.name}` }); },
       },
-      activities: { getAll: async () => [], saveMany: async (r: { deleteIds?: string[] }) => { deletedRef.push(r.deleteIds ?? []); return {}; } },
+      activities: { getAll: () => Promise.resolve([]), saveMany: (r: { deleteIds?: string[] }) => { deletedRef.push(r.deleteIds ?? []); return Promise.resolve({}); } },
       storage,
-      secrets: { get: async (k: string) => secrets.get(k) ?? null, set: async (k: string, v: string) => { secrets.set(k, v); }, delete: async (k: string) => { secrets.delete(k); } },
+      secrets: { get: (k: string) => Promise.resolve(secrets.get(k) ?? null), set: (k: string, v: string) => { secrets.set(k, v); return Promise.resolve(); }, delete: (k: string) => { secrets.delete(k); return Promise.resolve(); } },
     } as never,
   };
 }
@@ -217,7 +218,7 @@ describe("tasks", () => {
       return 42;
     });
     expect(e.tasks.k?.running).toBe(true);
-    await expect(e.task("k", "work", async () => 1)).rejects.toThrow(/still running/);
+    await expect(e.task("k", "work", () => Promise.resolve(1))).rejects.toThrow(/still running/);
     release();
     expect(await run).toBe(42);
     expect(e.tasks.k).toMatchObject({ running: false, result: 42, progress: [{ id: "a", state: "done" }] });
@@ -254,8 +255,8 @@ describe("reconnect flag", () => {
   it("is cleared by a finished reconnect", async () => {
     const e = new Engine(fakeApi().api);
     await e.store.saveItems("sandbox", { i: { owner: "AB", institution_name: "Chase", reconnect: true } });
-    e.plaid = async () => ({ linkTokenGet: async () => [{ on_success: {} }] }) as never;
-    e.refreshAccounts = async () => [];
+    e.plaid = () => Promise.resolve(({ linkTokenGet: () => Promise.resolve([{ on_success: {} }]) }) as never);
+    e.refreshAccounts = () => Promise.resolve([]);
     expect((await e.checkReconnect("i", "t")).state).toBe("done");
     expect(valueAt(await e.store.items("sandbox"), "i").reconnect).toBe(false);
   });
@@ -280,18 +281,18 @@ describe("dry run", () => {
     await e.store.saveItems("sandbox", { i: { owner: "AB", institution_name: "Bank" } });
     await e.store.saveAccounts("sandbox", { A: { item_id: "i", kind: "cash", name: "AB · Bank", wealthfolio_account_id: "W", skip: false } } as never);
     let pulls = 0;
-    e.plaid = async () => ({
-      item: async () => ({}),
-      transactionsSync: async () => { pulls++; return { added: [], modified: [], removed: [], next_cursor: "c" }; },
-      accounts: async () => [],
-    }) as never;
+    e.plaid = () => Promise.resolve(({
+      item: () => Promise.resolve(({})),
+      transactionsSync: () => { pulls++; return Promise.resolve({ added: [], modified: [], removed: [], next_cursor: "c" }); },
+      accounts: () => Promise.resolve([]),
+    }) as never);
     return { e, pulls: () => pulls };
   }
   it("after a push, plans what is left from the same pull, without what was pushed", async () => {
     const { e, pulls } = await setup();
     const tx = { transaction_id: "t1", account_id: "A", amount: 10, date: "2026-11-01", name: "Coffee", iso_currency_code: "USD", pending: false };
-    e.plaid = async () => ({ item: async () => ({}), accounts: async () => [],
-      transactionsSync: async () => ({ added: [tx, { ...tx, transaction_id: "t2", name: "Tea" }], modified: [], removed: [], next_cursor: "c" }) }) as never;
+    e.plaid = () => Promise.resolve(({ item: () => Promise.resolve(({})), accounts: () => Promise.resolve([]),
+      transactionsSync: () => Promise.resolve(({ added: [tx, { ...tx, transaction_id: "t2", name: "Tea" }], modified: [], removed: [], next_cursor: "c" })) }) as never);
     const d = await e.dryRun(() => {});
     const ids = d.plan.new.map((x) => x.plaidId);
     expect(ids).toEqual(expect.arrayContaining(["t1", "t2"]));
@@ -331,15 +332,15 @@ describe("securities changes after a push", () => {
       { investment_transaction_id: "f1", account_id: "B", security_id: "f", type: "buy", subtype: "buy", date: "2025-06-03", amount: 50, quantity: 5, price: 10, iso_currency_code: "USD", name: "Buy fund" },
     ];
     const starts: string[] = [];
-    e.plaid = async () => ({
-      item: async () => ({}),
-      holdings: async () => ({ accounts: [], securities: Object.values(secs),
-        holdings: [{ account_id: "B", security_id: "v", quantity: 10, cost_basis: 1000 }, { account_id: "B", security_id: "f", quantity: 5, cost_basis: 50 }] }),
-      investmentTransactions: async (_t: string, start: string) => {
+    e.plaid = () => Promise.resolve(({
+      item: () => Promise.resolve(({})),
+      holdings: () => Promise.resolve(({ accounts: [], securities: Object.values(secs),
+        holdings: [{ account_id: "B", security_id: "v", quantity: 10, cost_basis: 1000 }, { account_id: "B", security_id: "f", quantity: 5, cost_basis: 50 }] })),
+      investmentTransactions: (_t: string, start: string) => {
         starts.push(start);
-        return { securities: secs, investment_transactions: txns.filter((t) => t.date >= start) };
+        return Promise.resolve({ securities: secs, investment_transactions: txns.filter((t) => t.date >= start) });
       },
-    }) as never;
+    }) as never);
     const pushAll = async (d: Awaited<ReturnType<Engine["dryRun"]>>) => {
       for (const a of d.plan.new) d.state.record(a, `wf-${a.plaidId}`);
       for (const [aid, day] of Object.entries(d.plan.invLastEnd)) d.state.setInvLastEnd(aid, day);
@@ -349,7 +350,7 @@ describe("securities changes after a push", () => {
     const first = await e.dryRun(() => {}, () => {}, true);
     await e.setSecurity("f", "Plan Fund", { mode: "exclude" });
     await pushAll(await e.replan(first));
-    (e as unknown as { api: { activities: { getAll: () => Promise<unknown[]> } } }).api.activities.getAll = async () => [{ id: "wf-t1" }];
+    (e as unknown as { api: { activities: { getAll: () => Promise<unknown[]> } } }).api.activities.getAll = () => Promise.resolve([{ id: "wf-t1" }]);
     return { e, starts };
   }
 
@@ -411,7 +412,7 @@ describe("setOwner", () => {
 describe("hosted link", () => {
   const withSessions = (sessions: unknown[]) => {
     const e = new Engine(fakeApi().api);
-    e.plaid = async () => ({ linkTokenGet: async () => sessions }) as never;
+    e.plaid = () => Promise.resolve(({ linkTokenGet: () => Promise.resolve(sessions) }) as never);
     return e;
   };
   it("waits while the login page is open, and reports a closed one", async () => {
@@ -432,7 +433,7 @@ describe("refreshStale", () => {
       old: { owner: "AB", institution_name: "B", products: ["identity"], checked: new Date(now - 2 * 86400_000).toISOString() },
     });
     const calls: [string, boolean][] = [];
-    e.refreshAccounts = async (id, identity = true) => { calls.push([id, identity]); return ["x"]; };
+    e.refreshAccounts = (id, identity = true) => { calls.push([id, identity]); return Promise.resolve(["x"]); };
     expect(await e.refreshStale(() => {}, now)).toEqual({ added: 1, failed: [] });
     expect(calls).toEqual([["old", false]]);
   });
@@ -474,8 +475,8 @@ describe("autoSync", () => {
     const tab = () => {
       const e = new Engine(api);
       e.lockSettleMs = 20;
-      e.dryRun = async () => fakeDry();
-      e.push = async () => { pushes++; return { imported: 0, updated: 0, linked: 0 } as never; };
+      e.dryRun = () => Promise.resolve(fakeDry());
+      e.push = () => { pushes++; return Promise.resolve({ imported: 0, updated: 0, linked: 0 } as never); };
       return e;
     };
     const tabs = [tab(), tab(), tab()];
@@ -494,8 +495,8 @@ describe("autoSync", () => {
   it("runs once a day after the set time, and not while another task runs", async () => {
     const e = engine();
     let pushes = 0;
-    e.dryRun = async () => fakeDry();
-    e.push = async () => { pushes++; return { imported: 0, updated: 0, linked: 0 } as never; };
+    e.dryRun = () => Promise.resolve(fakeDry());
+    e.push = () => { pushes++; return Promise.resolve({ imported: 0, updated: 0, linked: 0 } as never); };
     expect(await e.autoSync(at(9))).toBeNull();
     await e.store.saveDaily({ on: true, time: "08:30" });
     expect(await e.autoSync(at(8, 29))).toBeNull();
@@ -503,7 +504,7 @@ describe("autoSync", () => {
     expect(await e.autoSync(at(9))).toBeNull();
     e.tasks.sync = undefined;
     e.tasks.daily = { label: "run", running: true, progress: [], log: [] };
-    await expect(e.task("dry", "dry", async () => 1)).rejects.toThrow(/daily sync is running/);
+    await expect(e.task("dry", "dry", () => Promise.resolve(1))).rejects.toThrow(/daily sync is running/);
     e.tasks.daily = undefined;
     expect((await e.autoSync(at(8, 30)))?.status).toBe("ok");
     expect(await e.autoSync(at(12))).toBeNull();
@@ -547,9 +548,9 @@ describe("autoSync", () => {
     const e = engine();
     const d = fakeDry() as unknown as { plan: { reviews: unknown[] } };
     d.plan.reviews = [{}, {}, {}];
-    e.dryRun = async () => d as never;
-    e.push = async () => ({ imported: 0, updated: 0, linked: 0 }) as never;
-    e.afterPush = async () => ({ ...(fakeDry() as object), securities: [] }) as never;
+    e.dryRun = () => Promise.resolve(d as never);
+    e.push = () => Promise.resolve(({ imported: 0, updated: 0, linked: 0 }) as never);
+    e.afterPush = () => Promise.resolve(({ ...(fakeDry() as object), securities: [] }) as never);
     const r = await e.runDaily(at(9));
     expect(r?.status).toBe("ok");
     expect(r?.goto).toBe("sync");
@@ -559,7 +560,7 @@ describe("autoSync", () => {
 
   it("keeps the last 7 runs, newest first", async () => {
     const e = engine();
-    e.dryRun = async () => { throw new Error("offline"); };
+    e.dryRun = () => Promise.reject(new Error("offline"));
     for (let i = 0; i < 9; i++) await e.runDaily(at(9, i));
     const runs = required((await e.store.autoRun("sandbox")).runs, "runs");
     expect(runs.length).toBe(7);
@@ -570,8 +571,8 @@ describe("autoSync", () => {
   it("does not push while a security needs review", async () => {
     const e = engine();
     await e.store.saveDaily({ on: true, time: "00:00" });
-    e.dryRun = async () => fakeDry(false, [{ sid: "s", name: "Fund", result: "unmapped", review: true }]);
-    e.push = async () => { throw new Error("must not push"); };
+    e.dryRun = () => Promise.resolve(fakeDry(false, [{ sid: "s", name: "Fund", result: "unmapped", review: true }]));
+    e.push = () => Promise.reject(new Error("must not push"));
     const r = await e.autoSync(at(9));
     expect(r?.status).toBe("stopped");
     expect(r?.message).toMatch(/1 securities need review/);
@@ -580,8 +581,8 @@ describe("autoSync", () => {
   it("does not push when pushed activities moved to another symbol", async () => {
     const e = engine();
     await e.store.saveDaily({ on: true, time: "00:00" });
-    e.dryRun = async () => fakeDry(true);
-    e.push = async () => { throw new Error("must not push"); };
+    e.dryRun = () => Promise.resolve(fakeDry(true));
+    e.push = () => Promise.reject(new Error("must not push"));
     const r = await e.autoSync(at(9));
     expect(r?.status).toBe("stopped");
     expect(r?.goto).toBe("sync");
@@ -606,8 +607,8 @@ describe("adoptions", () => {
 describe("rows the importer pushed before", () => {
   it("are linked back as its own on a first push, not offered for review", async () => {
     const f = fakeApi(), e = new Engine(f.api);
-    (f.api as never as { activities: { getAll: () => Promise<unknown[]> } }).activities.getAll = async () => [
-      { id: "wf1", accountId: "W", activityType: "BUY", assetSymbol: "VTI", date: "2026-01-02", quantity: "2", amount: "100", comment: "plaid:p1" }];
+    (f.api as never as { activities: { getAll: () => Promise<unknown[]> } }).activities.getAll = () => Promise.resolve([
+      { id: "wf1", accountId: "W", activityType: "BUY", assetSymbol: "VTI", date: "2026-01-02", quantity: "2", amount: "100", comment: "plaid:p1" }]);
     const act = (pid: string) => new Activity({ accountId: "A", plaidId: pid, date: "2026-01-02", activityType: "BUY", symbol: "VTI", quantity: D(2), amount: D(100) } as never);
     const p = { new: [act("p1"), act("p2")], categories: new Map() } as never as Plan;
     const state = new MemoryLedger({});
@@ -644,8 +645,8 @@ describe("categorize", () => {
     const { api } = fakeApi();
     const assigned: unknown[][] = [];
     Object.assign(api, { spending: {
-      getCategories: async () => [{ kind: "expense", taxonomyId: "spending_categories", categoryId: "c1", key: "food", name: "Food", path: "Food" }],
-      assignCategory: async (...a: unknown[]) => { assigned.push(a); },
+      getCategories: () => Promise.resolve([{ kind: "expense", taxonomyId: "spending_categories", categoryId: "c1", key: "food", name: "Food", path: "Food" }]),
+      assignCategory: (...a: unknown[]) => { assigned.push(a); return Promise.resolve(); },
     } });
     const e = new Engine(api);
     await e.store.saveAccounts("sandbox", { card: { item_id: "i", kind: "credit", name: "AB · Card", wealthfolio_account_id: "W" },
@@ -657,7 +658,7 @@ describe("categorize", () => {
   it("uses the Plaid category kept with each row, with no Plaid call", async () => {
     const { e, assigned } = await setup([card("a"), card("set", { category_set: 1 }), card("leg", { pair_plaid_id: "x" }),
       card("refund", { activity_type: "DEPOSIT" }), card("inv", { account_id: "brk" }), card("gone", { voided: 1 })]);
-    e.plaid = async () => { throw new Error("must not call Plaid"); };
+    e.plaid = () => Promise.reject(new Error("must not call Plaid"));
     expect(await e.categorize()).toBe("Categorized 1 of 1 rows.");
     expect(assigned).toEqual([["wf-a", "expense", "c1"]]);
     expect((await e.store.ledger("sandbox")).get("a")?.category_set).toBe(1);
@@ -669,16 +670,16 @@ describe("categorize", () => {
     await e.store.saveToken("i", "tok");
     let pulls = 0;
     const { Plaid } = await import("../../src/importer");
-    e.plaid = async () => new Plaid("id", "secret", "sandbox", async (url) => {
+    e.plaid = () => Promise.resolve(new Plaid("id", "secret", "sandbox", (url) => {
       const ep = url.replace(/^https:\/\/[^/]+/, "");
       if (ep === "/transactions/sync") {
         pulls++;
-        return { status: 200, body: JSON.stringify({ added: [{ transaction_id: "old", account_id: "card", amount: 5, date: "2026-10-02", pending: false,
+        return Promise.resolve({ status: 200, body: JSON.stringify({ added: [{ transaction_id: "old", account_id: "card", amount: 5, date: "2026-10-02", pending: false,
           name: "Coffee", iso_currency_code: "USD", personal_finance_category: { primary: "FOOD_AND_DRINK", detailed: "FOOD_AND_DRINK_COFFEE" } }],
-          modified: [], removed: [], next_cursor: "c", has_more: false }) };
+          modified: [], removed: [], next_cursor: "c", has_more: false }) });
       }
-      return { status: 200, body: JSON.stringify(ep === "/item/get" ? { item: {} } : { accounts: [] }) };
-    });
+      return Promise.resolve({ status: 200, body: JSON.stringify(ep === "/item/get" ? { item: {} } : { accounts: [] }) });
+    }));
     expect(await e.categorize()).toBe("Categorized 1 of 1 rows.");
     expect(assigned.map((a) => itemAt(a, 0))).toEqual(["wf-old"]);
     const state = await e.store.ledger("sandbox");

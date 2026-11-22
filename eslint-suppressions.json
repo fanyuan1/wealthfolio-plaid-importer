@@ -291,24 +291,13 @@
     },
     "lints/no-useless-default-assignment": {
       "count": 1
-    },
-    "lints/require-await": {
-      "count": 49
     }
   },
   "test/engine/writer.test.ts": {
     "lints/no-base-to-string": {
       "count": 1
     },
-    "lints/require-await": {
-      "count": 7
-    },
     "lints/restrict-template-expressions": {
-      "count": 1
-    }
-  },
-  "test/importer/accounts.test.ts": {
-    "lints/require-await": {
       "count": 1
     }
   },
@@ -323,9 +312,6 @@
     },
     "lints/prefer-const": {
       "count": 1
-    },
-    "lints/require-await": {
-      "count": 2
     }
   },
   "test/importer/sync.test.ts": {
@@ -337,9 +323,6 @@
     },
     "lints/no-unsafe-member-access": {
       "count": 1
-    },
-    "lints/require-await": {
-      "count": 8
     }
   }
 }

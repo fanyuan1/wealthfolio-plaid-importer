@@ -6,23 +6,23 @@ function fakeApi() {
   const calls: { saveMany: unknown[]; assign: unknown[]; link: unknown[]; checked: number[] } = { saveMany: [], assign: [], link: [], checked: [] };
   const api = {
     activities: {
-      checkImport: async (rows: Record<string, unknown>[]) => {
-        if (rows.some((r) => !r.symbol)) throw new Error("invalid args `activities`: missing field `symbol`");
+      checkImport: (rows: Record<string, unknown>[]) => {
+        if (rows.some((r) => !r.symbol)) return Promise.reject(new Error("invalid args `activities`: missing field `symbol`"));
         calls.checked.push(rows.length);
-        return rows.map((r) => ({ ...r, isValid: r.symbol !== "BAD",
-        assetId: r.symbol ? `asset-${r.symbol}` : undefined, exchangeMic: r.symbol ? "XNAS" : undefined }));
+        return Promise.resolve(rows.map((r) => ({ ...r, isValid: r.symbol !== "BAD",
+        assetId: r.symbol ? `asset-${r.symbol}` : undefined, exchangeMic: r.symbol ? "XNAS" : undefined })));
       },
-      saveMany: async (req: { creates?: { id: string }[]; updates?: { id: string }[] }) => {
+      saveMany: (req: { creates?: { id: string }[]; updates?: { id: string }[] }) => {
         calls.saveMany.push(req);
-        return { created: [], updated: [], deleted: [], errors: (req.updates ?? []).filter((u) => u.id === "wf-x").map((u) => ({ id: u.id, action: "update", message: "nope" })),
-          createdMappings: (req.creates ?? []).map((c) => ({ tempId: c.id, activityId: `wf-${c.id}` })) };
+        return Promise.resolve({ created: [], updated: [], deleted: [], errors: (req.updates ?? []).filter((u) => u.id === "wf-x").map((u) => ({ id: u.id, action: "update", message: "nope" })),
+          createdMappings: (req.creates ?? []).map((c) => ({ tempId: c.id, activityId: `wf-${c.id}` })) });
       },
-      linkTransfer: async (a: string, b: string) => { calls.link.push([a, b]); },
+      linkTransfer: (a: string, b: string) => { calls.link.push([a, b]); return Promise.resolve(); },
     },
     spending: {
-      getCategories: async () => [{ kind: "expense", taxonomyId: "spending_categories", categoryId: "c1", key: "food", name: "Food", path: "Food" }],
-      assignCategory: async (...a: unknown[]) => { calls.assign.push(a); },
-      rerunRules: async () => 3,
+      getCategories: () => Promise.resolve([{ kind: "expense", taxonomyId: "spending_categories", categoryId: "c1", key: "food", name: "Food", path: "Food" }]),
+      assignCategory: (...a: unknown[]) => { calls.assign.push(a); return Promise.resolve(); },
+      rerunRules: () => Promise.resolve(3),
     },
   };
   return { api: api as never, calls };
@@ -80,7 +80,7 @@ test("a duplicate flag on the checked row does not fail the security's rows", as
 
 test("a security error fails its rows, with the reason", async () => {
   const api = fakeApi().api as { activities: { checkImport: (r: Record<string, unknown>[]) => Promise<Record<string, unknown>[]> } };
-  api.activities.checkImport = async (rows) => rows.map((r) => ({ ...r, isValid: false, errors: { symbol: ["not found"] } }));
+  api.activities.checkImport = (rows) => Promise.resolve(rows.map((r) => ({ ...r, isValid: false, errors: { symbol: ["not found"] } })));
   const out = await new SdkWriter(api as never, () => null).commitImport([
     { lineNumber: 1, accountId: "A", date: "2026-01-02", activityType: "BUY", currency: "USD", symbol: "TTTXX", quantity: 1 }]);
   expect(out.get(1)).toEqual(["failed", null, "symbol: not found"]);

@@ -44,21 +44,21 @@ function items(invTxns: PlaidInvestmentTransaction[], holdings: PlaidHolding[], 
 class FakeWF implements Writer {
   n = 0; imported: ImportRow[] = []; updates: Update[] = []; links: [string, string][] = []; reruns = 0;
   cats: { activityId: string; taxonomyId: string; categoryId: string }[] = []; deleted: string[] = [];
-  async delete(ids: string[]) { this.deleted.push(...ids); }
-  async commitImport(rows: ImportRow[]) {
+  delete(ids: string[]) { this.deleted.push(...ids); return Promise.resolve(); }
+  commitImport(rows: ImportRow[]) {
     const out = new Map<number, [string, string | null]>();
     for (const r of rows) {
       this.n += 1;
       this.imported.push(r);
       out.set(Number(r.lineNumber), ["imported", `wf${this.n}`]);
     }
-    return out;
+    return Promise.resolve(out);
   }
-  async update(updates: Update[]) { this.updates.push(...updates); return [{ errors: [] }]; }
-  async linkTransfers(pairs: [string, string][]) { this.links.push(...pairs); }
-  async categoryIds() { return new Map([["spending_categories|food", "cat_food"], ["spending_categories|shopping", "cat_shopping"]]); }
-  async setCategories(a: FakeWF["cats"]) { this.cats.push(...a); }
-  async rerunRules() { this.reruns += 1; return 0; }
+  update(updates: Update[]) { this.updates.push(...updates); return Promise.resolve([{ errors: [] }]); }
+  linkTransfers(pairs: [string, string][]) { this.links.push(...pairs); return Promise.resolve(); }
+  categoryIds() { return Promise.resolve(new Map([["spending_categories|food", "cat_food"], ["spending_categories|shopping", "cat_shopping"]])); }
+  setCategories(a: FakeWF["cats"]) { this.cats.push(...a); return Promise.resolve(); }
+  rerunRules() { this.reruns += 1; return Promise.resolve(0); }
 }
 
 const run = (p: ReturnType<typeof plan>, wf: Writer, state: MemoryLedger) => push(p, wf, state, ACCOUNTS, () => {});
@@ -213,15 +213,15 @@ describe("fetch", () => {
   test("skips investments without the product and isolates errors", async () => {
     const { fetchItems, Plaid, PlaidError } = await import("../../src/importer");
     const calls: string[] = [];
-    const plaidStub = new Plaid("id", "secret", "sandbox", async (url, body) => {
+    const plaidStub = new Plaid("id", "secret", "sandbox", (url, body) => {
       const ep = url.replace(/^https:\/\/[^/]+/, "");
       const tok = JSON.parse(body).access_token;
       calls.push(ep);
-      if (ep.startsWith("/investments")) throw new Error("must not call investments");
-      if (ep === "/item/get") return { status: 200, body: JSON.stringify({ item: tok === "exp" ? { consent_expiration_time: "2026-11-10T00:00:00Z" } : {} }) };
-      if (ep === "/transactions/sync" && tok === "bad") return { status: 500, body: JSON.stringify({ error_code: "INTERNAL_SERVER_ERROR", error_message: "boom" }) };
-      if (ep === "/transactions/sync") return { status: 200, body: JSON.stringify({ added: [], modified: [], removed: [], next_cursor: "c", has_more: false }) };
-      return { status: 200, body: JSON.stringify({ accounts: [] }) };
+      if (ep.startsWith("/investments")) return Promise.reject(new Error("must not call investments"));
+      if (ep === "/item/get") return Promise.resolve({ status: 200, body: JSON.stringify({ item: tok === "exp" ? { consent_expiration_time: "2026-11-10T00:00:00Z" } : {} }) });
+      if (ep === "/transactions/sync" && tok === "bad") return Promise.resolve({ status: 500, body: JSON.stringify({ error_code: "INTERNAL_SERVER_ERROR", error_message: "boom" }) });
+      if (ep === "/transactions/sync") return Promise.resolve({ status: 200, body: JSON.stringify({ added: [], modified: [], removed: [], next_cursor: "c", has_more: false }) });
+      return Promise.resolve({ status: 200, body: JSON.stringify({ accounts: [] }) });
     });
     const tokens = {
       i1: { owner: "AB", institution_name: "Amex", access_token: "ok", products: ["transactions"] },
