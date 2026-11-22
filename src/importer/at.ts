@@ -9,3 +9,14 @@ export function valueAt<T>(record: Readonly<Record<string, T>>, key: string): T 
   if (value === undefined) throw new RangeError(`no entry for ${key}`);
   return value;
 }
+
+export function entryAt<K, V>(map: ReadonlyMap<K, V>, key: K): V {
+  const value = map.get(key);
+  if (value === undefined) throw new RangeError(`no entry for ${String(key)}`);
+  return value;
+}
+
+export function required<T>(value: T | null | undefined, what: string): T {
+  if (value === null || value === undefined) throw new RangeError(`${what} is missing`);
+  return value;
+}

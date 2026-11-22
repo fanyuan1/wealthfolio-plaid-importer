@@ -1,4 +1,4 @@
-import { itemAt, valueAt } from "../../src/importer";
+import { entryAt, itemAt, required, valueAt } from "../../src/importer";
 import { describe, expect, it } from "vitest";
 import { Activity, D, MemoryLedger, type PlaidEnv } from "../../src/importer";
 import type { DryRun } from "../../src/engine/engine";
@@ -61,7 +61,7 @@ describe("Store parts", () => {
     const l = bigLedger(5000);
     await s.saveLedger("sandbox", l);
     const before = f.writes.length;
-    l.rows.set("new", { ...l.rows.get("p0")!, plaid_id: "new" });
+    l.rows.set("new", { ...entryAt(l.rows, "p0"), plaid_id: "new" });
     await s.saveLedger("sandbox", l);
     expect(f.writes.length - before).toBeLessThanOrEqual(3);
     await s.saveLedger("sandbox", new MemoryLedger({}));
@@ -72,7 +72,7 @@ describe("Store parts", () => {
   it("keeps surrogate pairs whole", () => {
     const parts = split("a𝄞b𝄞", 2);
     expect(parts.join("")).toBe("a𝄞b𝄞");
-    for (const p of parts) expect(p).toBe(String.fromCodePoint(...[...p].map((c) => c.codePointAt(0)!)));
+    for (const p of parts) expect(p).toBe(String.fromCodePoint(...Array.from(p, (c) => c.codePointAt(0) ?? 0)));
   });
 });
 
@@ -296,7 +296,7 @@ describe("dry run", () => {
     const ids = d.plan.new.map((x) => x.plaidId);
     expect(ids).toEqual(expect.arrayContaining(["t1", "t2"]));
     const state = await e.store.ledger("sandbox");
-    state.record(d.plan.new.find((x) => x.plaidId === "t1")!, "wf1");
+    state.record(required(d.plan.new.find((x) => x.plaidId === "t1"), "t1"), "wf1");
     await e.store.saveLedger("sandbox", state);
     const left = await e.afterPush(d);
     expect(left.plan.new.map((x) => x.plaidId)).toContain("t2");
@@ -356,11 +356,11 @@ describe("securities changes after a push", () => {
   it("a security that starts to be imported gets its older rows and opening position", async () => {
     const { e, starts } = await setup();
     const quick = await e.dryRun(() => {}, () => {}, true);
-    expect(starts.at(-1)! > "2025-06-03").toBe(true);
+    expect(required(starts.at(-1), "start") > "2025-06-03").toBe(true);
     await e.setSecurity("f", "Plan Fund", { mode: "manual", symbol: "PLANFUND" });
     expect((await e.store.remap("sandbox")).full).toEqual(["B"]);
     const d = await e.replan(quick);
-    expect(starts.at(-1)! <= "2025-06-03").toBe(true);
+    expect(required(starts.at(-1), "start") <= "2025-06-03").toBe(true);
     expect(d.backfill).toEqual(new Set(["B"]));
     expect(d.plan.new.map((a) => a.plaidId)).toContain("f1");
   });
@@ -513,7 +513,7 @@ describe("autoSync", () => {
     expect(await e.autoSync(at(13))).toBeNull();
     expect(reads).toBe(0);
     expect(pushes).toBe(1);
-    const runs = (await e.store.autoRun("sandbox")).runs!;
+    const runs = required((await e.store.autoRun("sandbox")).runs, "runs");
     expect(runs.length).toBe(1);
     expect(itemAt(runs, 0).totals).toBeTruthy();
     expect((await e.nextDaily(at(12)))?.getDate()).toBe(8);
@@ -561,7 +561,7 @@ describe("autoSync", () => {
     const e = engine();
     e.dryRun = async () => { throw new Error("offline"); };
     for (let i = 0; i < 9; i++) await e.runDaily(at(9, i));
-    const runs = (await e.store.autoRun("sandbox")).runs!;
+    const runs = required((await e.store.autoRun("sandbox")).runs, "runs");
     expect(runs.length).toBe(7);
     expect(itemAt(runs, 0).status).toBe("failed");
     expect(itemAt(runs, 0).time).toBe(at(9, 8).toISOString());

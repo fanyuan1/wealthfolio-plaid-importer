@@ -1,3 +1,4 @@
+import { entryAt, required } from "./at";
 import type { Dec } from "./dec";
 import type { Ledger, LedgerRow } from "./ledger";
 import { Activity, type OnProgress } from "./models";
@@ -95,7 +96,7 @@ export async function push(p: Plan, wf: Writer, state: Ledger, accountsCfg: Reco
     step("add", "Add new activities", true, `${rows.length} rows`);
     const results = await wf.commitImport(rows);
     for (const [line, [status, wfId, why]] of results) {
-      const a = byLine.get(line)!;
+      const a = entryAt(byLine, line);
       if ((status === "imported" || status === "duplicate_skipped") && wfId) {
         state.record(a, wfId);
         stats[status === "imported" ? "imported" : "duplicates"] += 1;
@@ -131,7 +132,7 @@ export async function push(p: Plan, wf: Writer, state: Ledger, accountsCfg: Reco
   const gone = p.voids.filter((r) => !r.pair_plaid_id && r.wf_activity_id);
   if (gone.length) {
     step("delete", "Delete rows removed at Plaid", true, `${gone.length} rows`);
-    await wf.delete(gone.map((r) => r.wf_activity_id!));
+    await wf.delete(gone.flatMap((r) => (r.wf_activity_id ? [r.wf_activity_id] : [])));
     for (const r of gone) state.setVoided(r.plaid_id, true);
     stats.voided += gone.length;
     state.commit();
@@ -140,7 +141,7 @@ export async function push(p: Plan, wf: Writer, state: Ledger, accountsCfg: Reco
   const deleted = new Set(gone);
   for (const row of p.voids) if (!deleted.has(row)) updates.push([{ activityId: row.wf_activity_id, void: true }, row]);
   for (const [pid, atype, pair] of p.retype) {
-    updates.push([{ activityId: state.get(pid)!.wf_activity_id, activityType: atype }, [pid, atype, pair]]);
+    updates.push([{ activityId: required(state.get(pid), `ledger row ${pid}`).wf_activity_id, activityType: atype }, [pid, atype, pair]]);
   }
   if (updates.length) {
     step("update", "Update changed activities", true, `${updates.length} rows`);

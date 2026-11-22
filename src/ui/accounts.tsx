@@ -92,7 +92,7 @@ export function Accounts({ engine, env, version, onChange, onSpendingOff }: { en
   };
 
   const spendingOff = rows.filter(([id, c]) => !c.skip && (c.kind === 'cash' || c.kind === 'credit')
-    && !(spending && targetOf(id, c) && spending.has(targetOf(id, c)!))).map(([, c]) => String(c.name));
+    && !(spending && spending.has(targetOf(id, c) ?? ''))).map(([, c]) => String(c.name));
   const toCreate = rows.filter(([id, c]) => !c.skip && c.kind !== 'unsupported' && !targetOf(id, c)).length;
   const offKey = spendingOff.join('\n');
   useEffect(() => { onSpendingOff({ names: spendingOff, available: Boolean(spending?.size) }); }, [offKey, spending?.size]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -177,7 +177,7 @@ export function Accounts({ engine, env, version, onChange, onSpendingOff }: { en
                   <TableCell className="pe-6">
                     {!targetOf(id, c) || spending === null || (c.kind !== 'cash' && c.kind !== 'credit')
                       ? <span className="text-muted-foreground text-sm">—</span>
-                      : spending.has(targetOf(id, c)!) ? <Badge variant="success-subtle">On</Badge>
+                      : spending.has(targetOf(id, c) ?? '') ? <Badge variant="success-subtle">On</Badge>
                       : <Badge variant="warning-subtle">Off</Badge>}
                   </TableCell>
                 </TableRow>

@@ -3,7 +3,7 @@ import type { Activity } from "./models";
 export const MAX_DAYS = 3;
 const REF = /\d{6,}/g;
 
-const refs = (a: Activity): Set<string> => new Set(a.description?.match(REF) ?? []);
+const refs = (a: Activity): Set<string> => new Set(a.description.match(REF) ?? []);
 export const daysBetween = (a: string, b: string): number =>
   Math.abs(Math.round((Date.parse(a) - Date.parse(b)) / 86_400_000));
 

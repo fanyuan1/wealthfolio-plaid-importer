@@ -3,7 +3,7 @@ import type { AddonContext } from '@wealthfolio/addon-sdk';
 import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Icons, Page, PageContent, PageHeader, Tabs, TabsContent, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@wealthfolio/ui';
 import { useEffect, useState } from 'react';
 import { Engine } from '../engine/engine';
-import type { PlaidEnv } from '../importer';
+import { type PlaidEnv, required } from '../importer';
 import { host, msg, Problem, type Step, TITLE } from './common';
 import { Setup } from './setup';
 import { Connections } from './connections';
@@ -145,8 +145,11 @@ function Stepper({ step, done, locked, onStep }: { step: Step; done: Partial<Rec
   );
 }
 
-export const AddonRoute = () => (
-  <QueryClientProvider client={host.ctx!.api.query.getClient() as QueryClient}>
-    <PlaidImporter ctx={host.ctx!} />
-  </QueryClientProvider>
-);
+export const AddonRoute = () => {
+  const ctx = required(host.ctx, 'addon context');
+  return (
+    <QueryClientProvider client={ctx.api.query.getClient() as QueryClient}>
+      <PlaidImporter ctx={ctx} />
+    </QueryClientProvider>
+  );
+};

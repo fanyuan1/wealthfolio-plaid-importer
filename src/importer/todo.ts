@@ -59,7 +59,7 @@ export function todoReport(reviews: Review[], names: Record<string, string>, pri
     groups.set(g, [...(groups.get(g) ?? []), r]);
   }
   const sections: [string, string, string][] = [
-    ...SECTIONS.filter(([, h]) => h).map(([r, h, t]) => [r, h!, t!] as [string, string, string]),
+    ...SECTIONS.flatMap(([r, h, t]): [string, string, string][] => (h ? [[r, h, t ?? ""]] : [])),
     ["other", ...OTHER],
   ];
   const name = (id: string) => names[id] ?? id;

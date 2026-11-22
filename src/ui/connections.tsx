@@ -167,7 +167,7 @@ export function Connections({ engine, env, onChange, onStep }: { engine: Engine;
           <AlertDialogFooter>
             <AlertDialogCancel>Keep it</AlertDialogCancel>
             <AlertDialogAction variant="destructive"
-                               onClick={() => { const id = removing!; void run('remove', async () => { await engine.removeItem(id); await done(); }); }}>
+                               onClick={() => { if (removing) void run('remove', async () => { await engine.removeItem(removing); await done(); }); }}>
               Remove
             </AlertDialogAction>
           </AlertDialogFooter>

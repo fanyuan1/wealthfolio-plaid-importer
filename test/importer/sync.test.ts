@@ -1,4 +1,7 @@
-import { itemAt } from "../../src/importer";
+import { itemAt, required } from "../../src/importer";
+import type { Ledger } from "../../src/importer";
+
+const ledgerRow = (state: Ledger, id: string) => required(state.get(id), id);
 import { describe, expect, test } from "vitest";
 import {
   Activity, D, type ImportRow, type ItemData, MemoryLedger, openingDay, plan, push, type PlaidHolding,
@@ -100,7 +103,7 @@ describe("sync", () => {
     await run(p2, wf, state);
     expect(wf.updates).toContainEqual({ activityId: "wf_old", activityType: "TRANSFER_OUT" });
     expect(wf.deleted.length > 0 && !wf.updates.some((u) => u.void)).toBe(true);
-    expect([state.get("t1")!.voided, state.get("t1")!.wf_activity_id, state.get("b4")!.pair_plaid_id]).toEqual([1, null, "b5"]);
+    expect([ledgerRow(state, "t1").voided, ledgerRow(state, "t1").wf_activity_id, ledgerRow(state, "b4").pair_plaid_id]).toEqual([1, null, "b5"]);
 
     const p3 = plan(items([invTx("t1", "buy", "buy", 1000, 10, 100, "s_vti")], [{ account_id: "brk", security_id: "s_vti", quantity: 2, institution_value: 0, institution_price: 0 }],
       [], [], [], false, "2026-09-17"), ACCOUNTS, {}, state, TODAY);
@@ -119,16 +122,16 @@ describe("sync", () => {
     const p1 = plan(items(txns, holdings, [], [], [], true, "2024-11-06", secs), ACCOUNTS, {}, state, TODAY);
     expect(new Set(p1.reviews.map((r) => r.reason))).toEqual(new Set(["unmapped security"]));
     await run(p1, wf, state);
-    const cashBefore = state.get("opening:brk:cash")!.amount!;
+    const cashBefore = required(ledgerRow(state, "opening:brk:cash").amount, "amount");
 
     const symbols = { s_fund: { manual: true } };
     const p2 = plan(items(txns, holdings, [], [], [], false, "2024-11-06", secs), ACCOUNTS, symbols, state, TODAY, new Set(["brk"]));
     expect(p2.new.map((a) => a.plaidId).sort()).toEqual(["f1", "f2", "opening:brk:PLANFUND-S_FU"]);
-    expect(p2.new.filter((a) => a.plaidId.startsWith("opening:")).map((a) => a.quantity!.toNumber())).toEqual([2]);
+    expect(p2.new.filter((a) => a.plaidId.startsWith("opening:")).map((a) => required(a.quantity, "quantity").toNumber())).toEqual([2]);
     expect(p2.updates.length).toBe(1);
     const [row, a, fields] = itemAt(p2.updates, 0);
     expect([row.plaid_id, fields]).toEqual(["opening:brk:cash", ["amount"]]);
-    expect(a.amount!.eq(D(cashBefore).plus(100))).toBe(true);
+    expect(required(a.amount, "amount").eq(D(cashBefore).plus(100))).toBe(true);
     expect(p2.reviews).toEqual([]);
   });
 
@@ -137,7 +140,7 @@ describe("sync", () => {
     state.setInvLastEnd("brk", "2026-11-01");
     const p = plan(items([invTx("t1", "buy", "buy", 600, 6, 100, "s_vti", "2026-11-03")],
       [{ account_id: "brk", security_id: "s_vti", quantity: 3289, cost_basis: 1240, institution_value: 0, institution_price: 0 }], [], [], [], false), ACCOUNTS, {}, state, TODAY);
-    expect(p.new.find((a) => a.plaidId === "opening:brk:VTI")!.quantity!.toNumber()).toBe(3283);
+    expect(required(required(p.new.find((a) => a.plaidId === "opening:brk:VTI"), "opening").quantity, "quantity").toNumber()).toBe(3283);
     expect(p.reviews.filter((r) => r.reason === "holdings mismatch")).toEqual([]);
   });
 
@@ -169,8 +172,8 @@ describe("sync", () => {
     await run(plan(items([], holdings, []), ACCOUNTS, {}, state, TODAY), new FakeWF(), state);
     const p = plan(items([invTx("late", "buy", "buy", 500, 5, 100, "s_vti", "2026-11-03")], holdings, [], [], [], false),
       ACCOUNTS, {}, state, "2026-11-08");
-    const opening = (sym: string) => p.updates.find(([r]) => r.plaid_id === `opening:brk:${sym}`)![1];
-    expect([opening("VTI").quantity!.toNumber(), opening("cash").amount!.toNumber()]).toEqual([7, 800]);
+    const opening = (sym: string) => required(p.updates.find(([r]) => r.plaid_id === `opening:brk:${sym}`), sym)[1];
+    expect([required(opening("VTI").quantity, "quantity").toNumber(), required(opening("cash").amount, "amount").toNumber()]).toEqual([7, 800]);
     expect(p.reviews.filter((r) => r.reason === "holdings mismatch")).toEqual([]);
   });
 

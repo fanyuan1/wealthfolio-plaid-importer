@@ -1,4 +1,4 @@
-import { valueAt, accountLabel, accountNames, plural, cryptoSymbol, isCrypto, isCurrency, type AccountCfg, BLOCKING_ITEM_ERRORS, PlaidError, RECONNECT_DETAIL, accountName, type OnProgress, type Progress, assignCategories, Closes, D, discoverAccounts, entry, fetchItems, type FetchResult, type Adoption, type Existing, findAdoptions, forgetEmptied, matchById, holdsSecurities, jointCopies, planLinks, type HttpGet, jointOwners, addDays, HISTORY_DAYS, MemoryLedger, Plaid, type PlaidEnv, plan, type Plan, push, type PushStats, rebases, reportedPrice, resolve, type SecurityOverride, type HoldingsData, type InvestmentData, type LinkSession, type PlaidInstitution, type PlaidSecurity, type HoldingsItem, todoReport, type Token, type Track, trackedIds, type Transport, uncategorized, WF_TYPE, withPrices, yahooFetch } from '../importer';
+import { required, valueAt, accountLabel, accountNames, plural, cryptoSymbol, isCrypto, isCurrency, type AccountCfg, BLOCKING_ITEM_ERRORS, PlaidError, RECONNECT_DETAIL, accountName, type OnProgress, type Progress, assignCategories, Closes, D, discoverAccounts, entry, fetchItems, type FetchResult, type Adoption, type Existing, findAdoptions, forgetEmptied, matchById, holdsSecurities, jointCopies, planLinks, type HttpGet, jointOwners, addDays, HISTORY_DAYS, MemoryLedger, Plaid, type PlaidEnv, plan, type Plan, push, type PushStats, rebases, reportedPrice, resolve, type SecurityOverride, type HoldingsData, type InvestmentData, type LinkSession, type PlaidInstitution, type PlaidSecurity, type HoldingsItem, todoReport, type Token, type Track, trackedIds, type Transport, uncategorized, WF_TYPE, withPrices, yahooFetch } from '../importer';
 import { type Api, type AutoRun, type Daily, type ItemMeta, type RunRecord, Store } from './store';
 import { type Backup, type BackupItem, type BackupKind, isBackup } from './backup';
 import { SdkWriter } from './writer';
@@ -368,7 +368,7 @@ export class Engine {
       const plaid = await this.plaid();
       const { env } = await this.store.settings();
       const meta = valueAt(await this.store.items(env), itemId);
-      const tok = (await this.store.token(itemId))!;
+      const tok = required(await this.store.token(itemId), `access token for ${itemId}`);
       const products = meta.products ?? [];
       const [accts, holdings, ident] = await Promise.all([
         plaid.accounts(tok),
@@ -753,7 +753,7 @@ export class Engine {
     if (missing.length) throw new Error(`Create the Wealthfolio accounts first (${missing.length} missing).`);
     const counts = new Map<string, number>();
     const seen = state.accountIds();
-    const check = new Set(Object.entries(cfg).filter(([aid, c]) => c.wealthfolio_account_id && seen.has(aid)).map(([, c]) => c.wealthfolio_account_id!));
+    const check = new Set(Object.entries(cfg).flatMap(([aid, c]) => (c.wealthfolio_account_id && seen.has(aid) ? [c.wealthfolio_account_id] : [])));
     await Promise.all([...check].map(async (w) => {
       try { counts.set(w, (await this.api.activities.getAll(w)).length); } catch {  }
     }));
@@ -766,12 +766,14 @@ export class Engine {
     const tracked = trackedIds(symbols);
     const full = new Set(remap.full);
     const key = JSON.stringify([env, Object.keys(tokens).sort(), Object.entries(cfg).filter(([, c]) => !c.skip).map(([a]) => a).sort(), [...tracked].sort(), [...full].sort()]);
-    const reuse = !fresh && !wiped.accounts.length && this.pulled?.key === key && Date.now() - (this.pulled.fetched.pulledAt ?? 0) < PULL_REUSE_MS;
+    const prior = this.pulled;
+    const reuse = !fresh && !wiped.accounts.length && prior?.key === key && Date.now() - (prior.fetched.pulledAt ?? 0) < PULL_REUSE_MS;
     let fetched: FetchResult;
     if (reuse) {
-      fetched = this.pulled!.fetched;
-      log(`  using the Plaid pull from ${new Date(fetched.pulledAt!).toLocaleTimeString()}`);
-      progress({ id: "pull", label: "Plaid data", state: "done", detail: `Reused the pull from ${new Date(fetched.pulledAt!).toLocaleTimeString()}` });
+      fetched = prior.fetched;
+      const at = new Date(fetched.pulledAt ?? 0).toLocaleTimeString();
+      log(`  using the Plaid pull from ${at}`);
+      progress({ id: "pull", label: "Plaid data", state: "done", detail: `Reused the pull from ${at}` });
     } else {
       fetched = await fetchItems(plaid, tokens, cfg, state, today(),
         { log, tracked, full, progress });
@@ -881,7 +883,10 @@ export class Engine {
     const taken = new Set([...state.rows.values()].map((r) => r.wf_activity_id).filter((x): x is string => Boolean(x)));
     const known = matchById(p.new, existing.filter((e) => !taken.has(e.id)), wfOf);
     if (known.size) {
-      for (const a of p.new) if (known.has(a.plaidId)) state.record(a, known.get(a.plaidId)!.id);
+      for (const a of p.new) {
+        const hit = known.get(a.plaidId);
+        if (hit) state.record(a, hit.id);
+      }
       ({ new: p.new, categories: p.categories } = withoutRows(p, new Set(known.keys())));
     }
     const acts = p.new.filter((a) => !synced.has(a.accountId));
@@ -905,16 +910,16 @@ export class Engine {
       return Boolean(r && (r.adopted || (r.wf_activity_id && modified.has(r.wf_activity_id))));
     };
     const lines: string[] = [];
-    const keep = <T,>(list: T[], row: (x: T) => { plaid_id: string; account_id: string; date: string; activity_type: string }, what: (x: T) => string) =>
+    const keep = <T,>(list: T[], row: (x: T) => { plaid_id: string; account_id: string; date: string; activity_type: string } | null, what: (x: T) => string) =>
       list.filter((x) => {
         const r = row(x);
-        if (!mine(r.plaid_id)) return true;
+        if (!r || !mine(r.plaid_id)) return true;
         lines.push(`  - ${accountLabel(cfg, r.account_id)}: ${r.date} ${r.activity_type} ${what(x)}`);
         return false;
       });
     p.updates = keep(p.updates, ([r]) => r, ([, , f]) => `changed at Plaid (${f.join(", ")})`);
     p.voids = keep(p.voids, (r) => r, () => "removed at Plaid");
-    p.retype = keep(p.retype, ([pid]) => state.get(pid)!,([, t]) => `would become ${t}`);
+    p.retype = keep(p.retype, ([pid]) => state.get(pid), ([, t]) => `would become ${t}`);
     p.pairs = p.pairs.filter(([o, i]) => !(mine(o) || mine(i)));
     return lines.length ? [`Kept as they are in Wealthfolio (${lines.length})`,
       "  These were in Wealthfolio before the importer, or you edited them. The importer does not change or delete them. Edit or delete them in Wealthfolio if Plaid is right.", ...lines] : [];
@@ -928,7 +933,8 @@ export class Engine {
       if (!act || a.decision !== "discard") continue;
       skip.add(a.plaidId);
       d.state.record(act, a.existing?.id ?? null, true);
-      d.state.rows.get(a.plaidId)!.adopted = 1;
+      const row = d.state.rows.get(a.plaidId);
+      if (row) row.adopted = 1;
     }
     return skip.size ? withoutRows(d.plan, skip) : d.plan;
   }
@@ -936,8 +942,8 @@ export class Engine {
   async push(d: DryRun, log: (m: string) => void, progress: OnProgress = () => {}): Promise<PushStats> {
     const plan = this.applyAdoptions(d);
     const wfAccount = Object.fromEntries(Object.entries(d.cfg).map(([id, c]) => [id, c.wealthfolio_account_id ?? ""]));
-    const byWfId = () => new Map([...d.state.rows.values()].filter((r) => r.wf_activity_id)
-      .map((r) => [r.wf_activity_id!, { accountId: wfAccount[r.account_id] ?? "", activityType: r.activity_type, date: r.date, currency: r.currency || "USD" }]));
+    const byWfId = () => new Map([...d.state.rows.values()]
+      .flatMap((r) => (r.wf_activity_id ? [[r.wf_activity_id, { accountId: wfAccount[r.account_id] ?? "", activityType: r.activity_type, date: r.date, currency: r.currency || "USD" }] as const] : [])));
     let index = byWfId();
     const writer = new SdkWriter(this.api, (id) => (index.get(id) ?? (index = byWfId()).get(id)) ?? null);
     try {
@@ -1071,8 +1077,9 @@ function exited(sessions: LinkSession[]): LinkCheck {
 function perAccount(p: Plan, cfg: Record<string, AccountCfg>): NonNullable<RunRecord["accounts"]> {
   const by = new Map<string, { name: string; new: number; updated: number; removed: number }>();
   const at = (aid: string) => {
-    if (!by.has(aid)) by.set(aid, { name: accountLabel(cfg, aid), new: 0, updated: 0, removed: 0 });
-    return by.get(aid)!;
+    const row = by.get(aid) ?? { name: accountLabel(cfg, aid), new: 0, updated: 0, removed: 0 };
+    by.set(aid, row);
+    return row;
   };
   for (const a of p.new) at(a.accountId).new++;
   for (const [r] of p.updates) at(r.account_id).updated++;

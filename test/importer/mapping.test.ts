@@ -1,5 +1,5 @@
 import { take } from "../take";
-import { itemAt, valueAt } from "../../src/importer";
+import { entryAt, itemAt, required, valueAt } from "../../src/importer";
 import { describe, expect, test } from "vitest";
 import {
   Activity, D, type Dec, INCOME, SPENDING, biltPassthrough, convert, entry, fixSplitPrices, holdingsBySymbol, hkey, mapBankTransaction,
@@ -158,15 +158,15 @@ describe("bank and transfers", () => {
       bank("h1", "card", 2500.0, "RENT_AND_UTILITIES", "RENT_AND_UTILITIES_RENT", { date: "2026-11-02", name: "Bilt Housing Payment", merchant_name: "Bilt Housing Payment" }),
       bank("h2", "card", 40, "RENT_AND_UTILITIES", "RENT_AND_UTILITIES_RENT", { name: "Bilt Rewards", merchant_name: "Bilt Rewards" })];
     expect([...biltPassthrough(rows)].sort()).toEqual(["c1", "h1"]);
-    const a = mapBankTransaction(bank("p1", "chk", 2540.0, "RENT_AND_UTILITIES", "RENT_AND_UTILITIES_RENT", { name: "BILT CARD PMT PPD ID: 1" }), "cash")!;
+    const a = required(mapBankTransaction(bank("p1", "chk", 2540.0, "RENT_AND_UTILITIES", "RENT_AND_UTILITIES_RENT", { name: "BILT CARD PMT PPD ID: 1" }), "cash"), "mapped row");
     expect([a.transferHint, a.category]).toEqual([true, null]);
   });
 
   test("card statement credit is credit", () => {
     const paze = bank("p", "card", -10, "TRANSFER_IN", "TRANSFER_IN_ACCOUNT_TRANSFER", { name: "$10 PAZE CREDIT THANK YOU" });
     const pay = bank("q", "card", -500, "TRANSFER_IN", "TRANSFER_IN_ACCOUNT_TRANSFER", { name: "AUTOMATIC PAYMENT - THANK" });
-    expect(mapBankTransaction(paze, "credit")!.activityType).toBe("CREDIT");
-    expect(mapBankTransaction(pay, "credit")!.activityType).toBe("TRANSFER_IN");
+    expect(required(mapBankTransaction(paze, "credit"), "paze").activityType).toBe("CREDIT");
+    expect(required(mapBankTransaction(pay, "credit"), "pay").activityType).toBe("TRANSFER_IN");
   });
 });
 
@@ -176,7 +176,7 @@ describe("positions", () => {
       { account_id: "a1", security_id: "s_vti", quantity: 15, cost_basis: 1500, institution_price: 250, institution_value: 3750 },
       { account_id: "a1", security_id: "s_spaxx", quantity: 400, institution_value: 400, institution_price: 1 }], SECS, {});
     const acts = one([tx("t1", "buy", "buy", 1000, 10, 100, "s_vti"), tx("t2", "cash", "deposit", -1200)]).activities;
-    const [opening, reviews] = openingActivities("a1", "2024-11-05", hs, cash.get("a1")!, acts);
+    const [opening, reviews] = openingActivities("a1", "2024-11-05", hs, entryAt(cash, "a1"), acts);
     expect(reviews).toEqual([]);
     const [pos, c] = take(opening, 2);
     expect([pos.activityType, pos.symbol, n(pos.quantity), n(pos.unitPrice)]).toEqual(["TRANSFER_IN", "VTI", 5, 100]);
@@ -188,7 +188,7 @@ describe("positions", () => {
     const split = new Activity({ accountId: "a1", plaidId: "sp", date: "2026-04-21", activityType: "SPLIT", symbol: "VTI", splitDelta: D(70) });
     let [opening] = openingActivities("a1", "2024-11-05", hs, null, [split]);
     expect([n(itemAt(opening, 0).quantity), n(itemAt(opening, 0).unitPrice)]).toEqual([10, 400]);
-    [opening] = openingActivities("a1", "2024-11-05", new Map([[hkey("a1", "VTI"), { ...hs.get(hkey("a1", "VTI"))!, cost_basis: null }]]), null, [split], "USD", () => D(75));
+    [opening] = openingActivities("a1", "2024-11-05", new Map([[hkey("a1", "VTI"), { ...entryAt(hs, hkey("a1", "VTI")), cost_basis: null }]]), null, [split], "USD", () => D(75));
     expect(n(itemAt(opening, 0).unitPrice)).toBe(600);
   });
 
@@ -287,7 +287,7 @@ describe("options and plans", () => {
     const [hs, cash] = holdingsBySymbol([
       { account_id: "a1", security_id: "ant", quantity: 2, cost_basis: 166, institution_price: 88.91, institution_value: 177.82 },
       { account_id: "a1", security_id: "s_spaxx", quantity: 0, institution_value: 0, institution_price: 1 }], { ...SECS, ...secs }, {});
-    const [opening] = openingActivities("a1", "2024-11-09", hs, cash.get("a1")!, [buy]);
+    const [opening] = openingActivities("a1", "2024-11-09", hs, entryAt(cash, "a1"), [buy]);
     expect(opening.map((a) => [a.symbol, a.activityType, n(a.amount)])).toEqual([[null, "TRANSFER_IN", 166]]);
   });
 
@@ -304,7 +304,7 @@ describe("options and plans", () => {
 
   test("option holdings scaled and opening price per share", () => {
     const [hs] = holdingsBySymbol([{ account_id: "a1", security_id: "o_occ", quantity: 10000, cost_basis: 100, institution_price: 0.011, institution_value: 110 }], OPT_SECS, {});
-    expect(n(hs.get(hkey("a1", "NFLX180201C00355000"))!.quantity)).toBe(100);
+    expect(n(entryAt(hs, hkey("a1", "NFLX180201C00355000")).quantity)).toBe(100);
     const [opening, reviews] = openingActivities("a1", "2024-11-05", hs, null, []);
     expect(reviews).toEqual([]);
     expect([n(itemAt(opening, 0).quantity), n(itemAt(opening, 0).unitPrice), itemAt(opening, 0).instrumentType]).toEqual([100, 0.01, "OPTION"]);
@@ -391,11 +391,11 @@ describe("tracking", () => {
     expect(rebases(items(100.0, "2026-11-06"), symbols, closes)).toEqual([]);
     expect(rebases(items(101.0, null), symbols, closes)).toEqual([]);
     const [rb] = take(rebases(items(102.0, "2026-11-09"), symbols, closes), 1);
-    expect([n(rb.close!.close), rb.next!.ratio, rb.safe]).toEqual([610, 0.1672131148, true]);
+    expect([n(required(rb.close, "close").close), required(rb.next, "next").ratio, rb.safe]).toEqual([610, 0.1672131148, true]);
     expect(itemAt(rebases(items(130, "2026-11-09"), symbols, closes), 0).safe).toBe(false);
     const [weekend] = take(rebases(items(102.0, "2026-11-14"), symbols, closes), 1);
-    expect([weekend.next!.date, weekend.next!.close]).toEqual(["2026-11-09", 610]);
-    const saved = { s_cit: { ...symbols.s_cit, track: weekend.next! } };
+    expect([required(weekend.next, "next").date, required(weekend.next, "next").close]).toEqual(["2026-11-09", 610]);
+    const saved = { s_cit: { ...symbols.s_cit, track: required(weekend.next, "next") } };
     expect(rebases(items(102.0, "2026-11-14"), saved, closes)).toEqual([]);
     const [none] = take(rebases(items(102.0, "2026-11-05"), { s_cit: { ...symbols.s_cit, track: entry("VOO", "2026-11-01", D("100"), D("600")) } }, closes), 1);
     expect([none.close, none.next, none.safe]).toEqual([null, null, false]);

@@ -1,7 +1,7 @@
 import { Alert, AlertDescription, AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Icons, Input, Label, Progress as Bar, Switch, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@wealthfolio/ui';
 import { useEffect, useState } from 'react';
 import { type AutoRun, DEFAULT_DAILY, nextRun, type SyncView, type Daily as DailyCfg, type Engine, type Proposal, type RunRecord, summary } from '../engine/engine';
-import { accountNames, type PlaidEnv, type TodoGroup as Group, todoGroups } from '../importer';
+import { accountNames, type PlaidEnv, required, type TodoGroup as Group, todoGroups } from '../importer';
 import { ACTIONS, host, Problem, ProgressList, SaveMark, Spin, StateIcon, type Step, SWITCH_ROW, useBusy, useEngine, useSave, useTask } from './common';
 import { Matches } from './matches';
 import { Securities } from './securities';
@@ -36,7 +36,7 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
     set({ dry: d, stale: false });
   });
   const push = () => start('push', async (io) => {
-    const d = dry!;
+    const d = required(dry, 'dry run');
     const s = await engine.pushAndCategorize(d, io.log, io.progress);
     io.progress({ id: 'push:left', label: 'Plan what is left', state: 'running' });
     const next = await engine.afterPush(d);
@@ -128,7 +128,7 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
             <span>When you finish, update the preview. Push is off until then.</span>
             <div>
               <Button size="sm" disabled={!dry || !!busy}
-                      onClick={() => void start('replan', async () => { const d = await engine.replan(dry!); set({ dry: d, stale: false }); })}>
+                      onClick={() => void start('replan', async () => { const d = await engine.replan(required(dry, 'dry run')); set({ dry: d, stale: false }); })}>
                 <Spin on={busy === 'replan'} /><Icons.RefreshCw className="h-3 w-3" />Update preview
               </Button>
             </div>
@@ -140,7 +140,8 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
         <div id={SECURITIES_ID}>
           <Securities engine={engine} list={secs} refused={refused} onAttention={setAttention}
                       onSaved={(sid, override, label) => {
-                        const d = engine.view.dry!;
+                        const d = engine.view.dry;
+                        if (!d) return;
                         set({ stale: true, dry: { ...d, securities: d.securities.map((s) => (s.sid === sid ? { ...s, override, pending: label } : s)) } });
                       }} />
         </div>
@@ -182,7 +183,8 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction variant="destructive" onClick={() => {
-              const [sym, accts] = moving!;
+              if (!moving) return;
+              const [sym, accts] = moving;
               void start('retrack', async () => {
                 const n = await engine.retrack(sym, accts);
                 set({ dry: undefined, result: `Deleted ${n} ${sym} activities. Click Dry run.` });
@@ -381,7 +383,7 @@ function LastRun({ r, onStep }: { r: RunRecord; onStep: (s: Step) => void }) {
         <Badge variant={tone}>{label}</Badge>
         <span className="text-muted-foreground text-sm">{new Date(r.time).toLocaleString()}</span>
         {r.goto && (
-          <Button size="sm" variant="outline" className="ms-auto" onClick={() => onStep(r.goto!)}>
+          <Button size="sm" variant="outline" className="ms-auto" onClick={() => { if (r.goto) onStep(r.goto); }}>
             Go to {r.goto === 'connections' ? 'Connections' : 'Sync'}<Icons.ArrowRight className="h-3 w-3" />
           </Button>
         )}
@@ -416,6 +418,7 @@ function LastRun({ r, onStep }: { r: RunRecord; onStep: (s: Step) => void }) {
 }
 
 function RatioProposal({ engine, p, onDone }: { engine: Engine; p: Proposal; onDone: () => void }) {
+  const next = p.next;
   const { busy, error, run } = useBusy();
   const pct = p.change === null ? '' : ` (${p.change >= 0 ? '+' : ''}${(p.change * 100).toFixed(2)}%)`;
   return (
@@ -431,10 +434,10 @@ function RatioProposal({ engine, p, onDone }: { engine: Engine; p: Proposal; onD
             {p.price} on {p.day}; Yahoo Finance has no {p.old.symbol} close in the week up to that day. Set it in Securities.
           </span>
         )}
-        {p.next && (
+        {next && (
           <div className="flex gap-2">
             <Button size="sm" disabled={!!busy}
-                    onClick={() => void run('ratio', async () => { await engine.setSecurity(p.sid, p.name, { mode: 'track', track: p.next! }); onDone(); })}>
+                    onClick={() => void run('ratio', async () => { await engine.setSecurity(p.sid, p.name, { mode: 'track', track: next }); onDone(); })}>
               <Spin on={busy === 'ratio'} />Use the new ratio
             </Button>
           </div>

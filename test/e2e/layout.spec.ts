@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import type { Frame } from "@playwright/test";
+import { required } from "../../src/importer/at";
 import { expect, test } from "./fixtures";
 
 function uiClasses(): string[] {
@@ -16,7 +17,7 @@ function uiClasses(): string[] {
   return [...out];
 }
 
-const addonFrame = (page: import("@playwright/test").Page): Frame => page.frames().find((f) => f !== page.mainFrame())!;
+const addonFrame = (page: import("@playwright/test").Page): Frame => required(page.frames().find((f) => f !== page.mainFrame()), "addon frame");
 
 test("every class the addon uses is in Wealthfolio's stylesheet", async ({ addon }) => {
   await addon.open();
@@ -73,7 +74,7 @@ test.describe("on a phone", () => {
 
     await go("Connections");
     await fits("Connections");
-    expect((await addon.frame.locator("#tok").boundingBox())!.width).toBeGreaterThan(250);
+    expect(required(await addon.frame.locator("#tok").boundingBox(), "token box").width).toBeGreaterThan(250);
 
     await go("Accounts");
     await expect(addon.frame.getByRole("button", { name: "Clear all" })).toBeVisible();
@@ -90,11 +91,11 @@ test.describe("on a phone", () => {
     for (let i = 0; i < 2; i++) {
       const before = await last.textContent();
       await addon.frame.getByRole("button", { name: "Run now" }).click();
-      await expect(last).not.toHaveText(before!, { timeout: 60_000 });
+      await expect(last).not.toHaveText(required(before, "last run text"), { timeout: 60_000 });
     }
     await fits("Daily sync");
     const message = addon.frame.locator("div[data-slot=card]", { hasText: "Recent runs" }).locator("td").last();
-    expect((await message.boundingBox())!.width).toBeGreaterThan(200);
+    expect(required(await message.boundingBox(), "message box").width).toBeGreaterThan(200);
 
     await go("Backup");
     await addon.frame.getByRole("button", { name: /Make full backup/ }).click();

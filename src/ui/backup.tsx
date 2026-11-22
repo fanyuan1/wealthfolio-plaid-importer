@@ -1,7 +1,7 @@
 import { Alert, AlertDescription, AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Icons } from '@wealthfolio/ui';
 import { type ChangeEvent, useRef, useState } from 'react';
 import type { BackupKind, Engine, Restored } from '../engine/engine';
-import { isRecord, type PlaidEnv, plural } from '../importer';
+import { isRecord, type PlaidEnv, plural, required } from '../importer';
 import { copyText, FlashLabel, host, msg, Problem, Spin, useBusy, useFlash, useTask } from './common';
 
 const KINDS: [BackupKind, string, string][] = [
@@ -36,7 +36,7 @@ export function Backup({ engine, env, ready, onChange }: { engine: Engine; env: 
   const saveFile = () => run('save', async () => {
     if (!made) return;
     const name = `plaid-importer-${made.kind}-${env}-${new Date().toISOString().slice(0, 10)}.json`;
-    const ok = await host.ctx!.api.files.openSaveDialog(made.text, name);
+    const ok = await required(host.ctx, 'addon context').api.files.openSaveDialog(made.text, name);
     if (ok !== false) flashSaved();
   });
 

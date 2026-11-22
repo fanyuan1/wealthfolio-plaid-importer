@@ -1,7 +1,7 @@
 import { Badge, Button, Card, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, CardContent, CardDescription, CardHeader, CardTitle, Input, Label, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@wealthfolio/ui';
 import { Fragment, useEffect, useState } from 'react';
 import { type Engine, modeOf, type Security, type SecurityMode } from '../engine/engine';
-import type { SecurityOverride, Track } from '../importer';
+import { required, type SecurityOverride, type Track } from '../importer';
 import { Problem, Spin, useBusy } from './common';
 
 const MODES: [SecurityMode, string, string][] = [
@@ -14,12 +14,14 @@ const MODES: [SecurityMode, string, string][] = [
   ['exclude', 'Leave out', 'Drops it and its activities. Use it for a duplicate from another account.'],
 ];
 
+const modeInfo = (mode: SecurityMode) => required(MODES.find(([m]) => m === mode), `mode ${mode}`);
+
 type Tone = 'success-subtle' | 'destructive';
 
 function sourceOf(s: Security, refused: Record<string, string> = {}): { label: string; tone: Tone } | null {
   const mode = modeOf(s);
   if (s.pending || s.review || (mode === 'auto' && refused[s.result])) return null;
-  const label = MODES.find(([m]) => m === mode)![1];
+  const label = modeInfo(mode)[1];
   return { label, tone: mode === 'exclude' ? 'destructive' : 'success-subtle' };
 }
 
@@ -152,7 +154,7 @@ function SecurityEditor({ engine, s, onSaved }: { engine: Engine; s: Security; o
               ))}
             </div>
           </TooltipProvider>
-          <span className="text-muted-foreground text-xs">{MODES.find(([v]) => v === mode)![2]}</span>
+          <span className="text-muted-foreground text-xs">{modeInfo(mode)[2]}</span>
         </div>
       </div>
       {(mode === 'ticker' || mode === 'manual' || mode === 'holding') &&
@@ -198,8 +200,8 @@ function SecurityEditor({ engine, s, onSaved }: { engine: Engine; s: Security; o
         <Button size="sm" disabled={!!busy || (mode === 'track' && !track) || ((mode === 'track' || mode === 'ticker') && valid.state === 'bad')}
                 onClick={() => void run('save', async () => {
                   const o = await engine.setSecurity(s.sid, s.name, { mode, symbol, track });
-                  const name = MODES.find(([m]) => m === mode)![1];
-                  onSaved(o, mode === 'ticker' || (mode === 'holding' && o.symbol) ? String(o.symbol) : mode === 'track' ? `${track!.symbol} × ${track!.ratio}` : name);
+                  const name = modeInfo(mode)[1];
+                  onSaved(o, mode === 'ticker' || (mode === 'holding' && o.symbol) ? String(o.symbol) : mode === 'track' && track ? `${track.symbol} × ${track.ratio}` : name);
                 })}>
           <Spin on={busy === 'save'} />Save
         </Button>

@@ -6,9 +6,6 @@
     "lints/max-params": {
       "count": 2
     },
-    "lints/no-non-null-assertion": {
-      "count": 10
-    },
     "lints/no-unnecessary-condition": {
       "count": 1
     },
@@ -141,9 +138,6 @@
     "lints/no-console": {
       "count": 2
     },
-    "lints/no-non-null-assertion": {
-      "count": 3
-    },
     "lints/no-unnecessary-condition": {
       "count": 3
     },
@@ -165,18 +159,10 @@
   "src/importer/todo.ts": {
     "lints/cognitive-complexity": {
       "count": 1
-    },
-    "lints/no-non-null-assertion": {
-      "count": 2
     }
   },
   "src/importer/tracking.ts": {
     "lints/max-params": {
-      "count": 1
-    }
-  },
-  "src/importer/transfers.ts": {
-    "lints/no-unnecessary-condition": {
       "count": 1
     }
   },
@@ -190,9 +176,6 @@
     "lints/no-implicit-coercion": {
       "count": 5
     },
-    "lints/no-non-null-assertion": {
-      "count": 2
-    },
     "react-hooks/exhaustive-deps": {
       "count": 4
     }
@@ -203,9 +186,6 @@
     },
     "lints/no-implicit-coercion": {
       "count": 7
-    },
-    "lints/no-non-null-assertion": {
-      "count": 1
     }
   },
   "src/ui/common.tsx": {
@@ -231,9 +211,6 @@
     },
     "lints/no-implicit-coercion": {
       "count": 7
-    },
-    "lints/no-non-null-assertion": {
-      "count": 1
     }
   },
   "src/ui/matches.tsx": {
@@ -247,9 +224,6 @@
     },
     "lints/no-implicit-coercion": {
       "count": 1
-    },
-    "lints/no-non-null-assertion": {
-      "count": 2
     }
   },
   "src/ui/securities.tsx": {
@@ -261,9 +235,6 @@
     },
     "lints/no-implicit-coercion": {
       "count": 3
-    },
-    "lints/no-non-null-assertion": {
-      "count": 5
     }
   },
   "src/ui/setup.tsx": {
@@ -277,9 +248,6 @@
     },
     "lints/no-implicit-coercion": {
       "count": 7
-    },
-    "lints/no-non-null-assertion": {
-      "count": 6
     }
   },
   "test/e2e/fake-plaid.ts": {
@@ -302,9 +270,6 @@
     "lints/cognitive-complexity": {
       "count": 1
     },
-    "lints/no-non-null-assertion": {
-      "count": 4
-    },
     "lints/no-unnecessary-condition": {
       "count": 4
     },
@@ -318,12 +283,6 @@
     }
   },
   "test/engine/store.test.ts": {
-    "lints/no-misused-spread": {
-      "count": 1
-    },
-    "lints/no-non-null-assertion": {
-      "count": 7
-    },
     "lints/no-unnecessary-type-assertion": {
       "count": 16
     },
@@ -362,9 +321,6 @@
     "lints/max-params": {
       "count": 3
     },
-    "lints/no-non-null-assertion": {
-      "count": 12
-    },
     "lints/prefer-const": {
       "count": 1
     },
@@ -375,9 +331,6 @@
   "test/importer/sync.test.ts": {
     "lints/max-params": {
       "count": 3
-    },
-    "lints/no-non-null-assertion": {
-      "count": 12
     },
     "lints/no-unsafe-assignment": {
       "count": 1
