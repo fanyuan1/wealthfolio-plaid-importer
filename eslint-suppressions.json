@@ -5,12 +5,6 @@
     },
     "lints/max-params": {
       "count": 2
-    },
-    "lints/no-unnecessary-type-conversion": {
-      "count": 1
-    },
-    "lints/no-unused-vars": {
-      "count": 1
     }
   },
   "src/engine/writer.ts": {
@@ -135,9 +129,6 @@
     },
     "lints/no-unnecessary-type-assertion": {
       "count": 1
-    },
-    "lints/no-unnecessary-type-parameters": {
-      "count": 1
     }
   },
   "src/ui/connections.tsx": {
@@ -185,26 +176,12 @@
     "lints/cognitive-complexity": {
       "count": 1
     },
-    "lints/no-unnecessary-condition": {
-      "count": 4
-    },
     "lints/no-unnecessary-type-conversion": {
       "count": 1
     }
   },
   "test/engine/store.test.ts": {
-    "lints/no-unsafe-argument": {
-      "count": 1
-    },
     "lints/no-useless-default-assignment": {
-      "count": 1
-    }
-  },
-  "test/engine/writer.test.ts": {
-    "lints/no-base-to-string": {
-      "count": 1
-    },
-    "lints/restrict-template-expressions": {
       "count": 1
     }
   },
@@ -216,12 +193,6 @@
   "test/importer/sync.test.ts": {
     "lints/max-params": {
       "count": 3
-    },
-    "lints/no-unsafe-assignment": {
-      "count": 1
-    },
-    "lints/no-unsafe-member-access": {
-      "count": 1
     }
   }
 }

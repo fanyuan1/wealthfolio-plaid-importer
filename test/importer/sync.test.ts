@@ -1,4 +1,4 @@
-import { itemAt, required } from "../../src/importer";
+import { isRecord, itemAt, required } from "../../src/importer";
 import type { Ledger } from "../../src/importer";
 
 const ledgerRow = (state: Ledger, id: string) => required(state.get(id), id);
@@ -215,7 +215,8 @@ describe("fetch", () => {
     const calls: string[] = [];
     const plaidStub = new Plaid("id", "secret", "sandbox", (url, body) => {
       const ep = url.replace(/^https:\/\/[^/]+/, "");
-      const tok = JSON.parse(body).access_token;
+      const request: unknown = JSON.parse(body);
+      const tok = isRecord(request) ? request.access_token : undefined;
       calls.push(ep);
       if (ep.startsWith("/investments")) return Promise.reject(new Error("must not call investments"));
       if (ep === "/item/get") return Promise.resolve({ status: 200, body: JSON.stringify({ item: tok === "exp" ? { consent_expiration_time: "2026-11-10T00:00:00Z" } : {} }) });

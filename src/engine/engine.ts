@@ -276,8 +276,9 @@ export class Engine {
     for (const [id, m] of Object.entries(await this.store.items(env))) {
       const t = await this.store.token(id);
       if (!t) continue;
-      const { checked, ...meta } = m;
-      items[id] = { ...(kind === "full" ? m : meta), env, access_token: t };
+      const meta = { ...m };
+      if (kind !== "full") delete meta.checked;
+      items[id] = { ...meta, env, access_token: t };
     }
     const out: Backup = { format: BACKUP_FORMAT, kind, env, items };
     if (kind === "full") {
@@ -501,7 +502,7 @@ export class Engine {
             continue;
           }
           const made = await this.api.accounts.create({
-            name: c.name, accountType: WF_TYPE[c.kind], group: String(c.owner ?? "") || null, currency: c.currency || "USD",
+            name: c.name, accountType: WF_TYPE[c.kind], group: c.owner || null, currency: c.currency || "USD",
             accountNumber: (c.mask as string) || undefined, isDefault: false, isActive: true, trackingMode: "TRANSACTIONS",
           });
           c.wealthfolio_account_id = made.id;

@@ -1,4 +1,4 @@
-import { itemAt } from "../../src/importer";
+import { isString, itemAt } from "../../src/importer";
 import { expect, test } from "vitest";
 import { SdkWriter } from "../../src/engine/writer";
 
@@ -10,7 +10,7 @@ function fakeApi() {
         if (rows.some((r) => !r.symbol)) return Promise.reject(new Error("invalid args `activities`: missing field `symbol`"));
         calls.checked.push(rows.length);
         return Promise.resolve(rows.map((r) => ({ ...r, isValid: r.symbol !== "BAD",
-        assetId: r.symbol ? `asset-${r.symbol}` : undefined, exchangeMic: r.symbol ? "XNAS" : undefined })));
+        assetId: isString(r.symbol) && r.symbol ? `asset-${r.symbol}` : undefined, exchangeMic: r.symbol ? "XNAS" : undefined })));
       },
       saveMany: (req: { creates?: { id: string }[]; updates?: { id: string }[] }) => {
         calls.saveMany.push(req);

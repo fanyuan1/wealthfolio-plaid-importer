@@ -196,9 +196,11 @@ export function useEngine<T>(engine: Engine, pick: (e: Engine) => T): T {
   return useSyncExternalStore(engine.subscribe, () => pick(engine));
 }
 
+type TaskIO = Parameters<Parameters<Engine['task']>[2]>[0];
+
 export function useTask(engine: Engine, key: string) {
   const task = useEngine(engine, (e) => e.tasks[key]) as Task | undefined;
-  const start = useCallback(<T,>(label: string, fn: Parameters<Engine['task']>[2]) =>
-    engine.task(key, label, fn as never).catch((e: unknown) => { host.ctx?.api.logger.error(`plaid-importer: ${key}: ${msg(e)}`); return undefined as T | undefined; }), [engine, key]);
+  const start = useCallback(<T,>(label: string, fn: (io: TaskIO) => Promise<T>) =>
+    engine.task(key, label, fn).catch((e: unknown): undefined => { host.ctx?.api.logger.error(`plaid-importer: ${key}: ${msg(e)}`); return undefined; }), [engine, key]);
   return { task, busy: task?.running ? task.label : undefined, error: task?.error, start };
 }

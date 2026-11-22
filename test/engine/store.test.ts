@@ -1,4 +1,4 @@
-import { entryAt, itemAt, required, valueAt } from "../../src/importer";
+import { entryAt, isRecord, itemAt, required, valueAt } from "../../src/importer";
 import { describe, expect, it } from "vitest";
 import { Activity, D, MemoryLedger, type PlaidEnv } from "../../src/importer";
 import type { DryRun } from "../../src/engine/engine";
@@ -121,7 +121,8 @@ describe("backup", () => {
     const a = await source();
     await a.store.saveItems("sandbox", { item1: { owner: "AB", institution_name: "Test Bank", checked: "2026-11-08T00:00:00Z" } });
     const text = await a.backup("connections");
-    expect(Object.keys(JSON.parse(text)).sort()).toEqual(["env", "format", "items", "kind"]);
+    const backup: unknown = JSON.parse(text);
+    expect(isRecord(backup) ? Object.keys(backup).sort() : backup).toEqual(["env", "format", "items", "kind"]);
     const b = new Engine(fakeApi(["wf1"]).api);
     expect(await b.restore(text)).toEqual({ kind: "connections", items: 1, accounts: 0, rows: 0, ledger: "none", removed: 0 });
     expect(await b.store.accounts("sandbox")).toEqual({});

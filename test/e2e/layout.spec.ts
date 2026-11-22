@@ -25,8 +25,8 @@ test("every class the addon uses is in Wealthfolio's stylesheet", async ({ addon
     const selectors: string[] = [];
     const walk = (rules: CSSRuleList) => {
       for (const r of Array.from(rules)) {
-        if ((r as CSSStyleRule).selectorText) selectors.push((r as CSSStyleRule).selectorText);
-        if ((r as CSSGroupingRule).cssRules) walk((r as CSSGroupingRule).cssRules);
+        if (r instanceof CSSStyleRule) selectors.push(r.selectorText);
+        if (r instanceof CSSGroupingRule) walk(r.cssRules);
       }
     };
     for (const s of Array.from(document.styleSheets)) walk(s.cssRules);
@@ -45,7 +45,7 @@ test.describe("on a phone", () => {
     const x = /(auto|scroll)/.test(cs.overflowX) && el.scrollWidth > el.clientWidth + 1;
     const y = /(auto|scroll)/.test(cs.overflowY) && el.scrollHeight > el.clientHeight + 1;
     return (x || y) && !(x && !y && el.querySelector(":scope > table"));
-  }).map((el) => `${el.tagName}.${el.className}: ${(el.textContent ?? "").slice(0, 40)}`));
+  }).map((el) => `${el.tagName}.${el.className}: ${el.textContent.slice(0, 40)}`));
 
   const clippedButtons = (frame: Frame) => frame.evaluate(() => [...document.querySelectorAll("button")].filter((b) => {
     const r = b.getBoundingClientRect();
@@ -54,7 +54,7 @@ test.describe("on a phone", () => {
     while (p && getComputedStyle(p).overflowX === "visible") p = p.parentElement;
     const box = p?.getBoundingClientRect();
     return b.scrollWidth > b.clientWidth + 1 || (box && (r.right > box.right + 1 || r.left < box.left - 1));
-  }).map((b) => (b.textContent ?? "").trim()));
+  }).map((b) => b.textContent.trim()));
 
   test("every step fits: no stray scrolling, no clipped buttons, nothing squeezed", async ({ addon }) => {
     await addon.firstPush();
@@ -118,7 +118,7 @@ test("progress rows keep their height and the list scrolls when it is full", asy
   });
   expect(overflows).toBe(true);
   const squeezed = await list.evaluate((ul) => [...ul.querySelectorAll(":scope > li")]
-    .filter((li) => li.scrollHeight > li.clientHeight + 1).map((li) => (li.textContent ?? "").slice(0, 40)));
+    .filter((li) => li.scrollHeight > li.clientHeight + 1).map((li) => li.textContent.slice(0, 40)));
   expect(squeezed).toEqual([]);
   await list.screenshot({ path: "test-results/progress-list.png" });
 });
