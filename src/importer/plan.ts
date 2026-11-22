@@ -75,157 +75,235 @@ function earliest(acts: Activity[], aid: string, today: string): string {
   return ds.length ? ds.reduce((m, d) => (d < m ? d : m)) : today;
 }
 
-export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>, symbols: Record<string, SecurityOverride>,
-  state: Ledger, today: string, backfill: Set<string> = new Set(), closes?: ClosesFn): Plan {
-  const p: Plan = {
+export interface PlanConfig {
+  accounts: Record<string, AccountCfg>;
+  symbols: Record<string, SecurityOverride>;
+}
+
+export interface PlanRun {
+  today: string;
+  backfill?: Set<string>;
+  closes?: ClosesFn | undefined;
+}
+
+export function plan(items: ItemData[], config: PlanConfig, state: Ledger, run: PlanRun): Plan {
+  const planner = new Planner(config, state, run);
+  for (const d of items) planner.addItem(d);
+  return planner.finish();
+}
+
+type PriceOn = (sid: string, day: string) => Dec | null;
+type MappedInvestments = ReturnType<typeof mapInvestmentTransactions>;
+
+interface InvestmentItem {
+  d: ItemData;
+  inv: InvestmentData;
+  accts: Record<string, AccountCfg>;
+  ids: Set<string>;
+}
+
+class Planner {
+  readonly p: Plan = {
     new: [], updates: [], voids: [], retype: [], pairs: [], categories: new Map(), reviews: [],
     cursors: {}, invLastEnd: {}, fullHistory: [], unmapped: new Map(), moved: new Map(),
   };
-  const batch: Activity[] = [];
-  const cancelled = new Set<string>();
-  const removed = new Set<string>();
-  const holdingsAll: HoldingMap = new Map();
-  const invAccounts = new Set<string>();
-  const balanceOnly = new Set<string>();
+  private readonly batch: Activity[] = [];
+  private readonly cancelled = new Set<string>();
+  private readonly removed = new Set<string>();
+  private readonly holdingsAll: HoldingMap = new Map();
+  private readonly invAccounts = new Set<string>();
+  private readonly balanceOnly = new Set<string>();
+  private readonly backfill: Set<string>;
 
-  for (const d of items) {
-    const accts = activeAccounts(accountsCfg, d.itemId);
+  constructor(private readonly config: PlanConfig, private readonly state: Ledger, private readonly run: PlanRun) {
+    this.backfill = run.backfill ?? new Set();
+  }
+
+  addItem(d: ItemData): void {
+    const accts = activeAccounts(this.config.accounts, d.itemId);
     if (d.inv != null) {
       const ids = new Set(Object.keys(accts).filter((a) => valueAt(accts, a).kind === "investment"));
-      for (const a of ids) invAccounts.add(a);
-      let secs: Record<string, PlaidSecurity> = { ...d.inv.securities };
-      for (const s of d.holdings?.securities ?? []) secs[s.security_id] = s;
-      let rows = d.inv.investment_transactions.filter((t) => ids.has(t.account_id)
-        && t.date >= valueAt(d.invStart, t.account_id));
-      let allHoldings = d.holdings?.holdings ?? [];
-      [rows, allHoldings, secs] = convert(rows, allHoldings, secs, symbols);
-      const plans = new Set([...ids].filter((a) => valueAt(accts, a).plaid_subtype === "stock plan"));
-      const r = mapInvestmentTransactions(rows, secs, symbols, "USD", plans);
-
-      const s = secs;
-      const priceOn = (sid: string, day: string): Dec | null => {
-        if (!closes) return null;
-        const o = symbols[sid] ?? {};
-        return closes(yahooSymbol(s[sid]) || (o.manual ? null : o.symbol ?? null), day);
-      };
-      for (const a of r.activities) {
-        if (a.marketPrice && a.securityId !== null) {
-          const px = priceOn(a.securityId, a.date);
-          a.unitPrice = px && !px.eq(0) ? px : ZERO;
-          if (a.unitPrice.eq(0)) {
-            p.reviews.push(review(a.accountId, a.plaidId, a.date, "vest price unknown",
-              `${a.symbol}: no market close found; set the price in Wealthfolio`));
-          }
-        }
-      }
-      for (const c of r.cancelledIds) cancelled.add(c);
-      p.reviews.push(...r.reviews);
-      for (const [k, v] of r.unmappedSecurities) p.unmapped.set(k, v);
-      const holdings = allHoldings.filter((h) => ids.has(h.account_id));
-      const seen = new Set([...holdings.map((h) => h.account_id),
-        ...d.inv.investment_transactions.map((t) => t.account_id)]);
-      for (const a of d.holdings?.accounts ?? []) {
-        const bal = dec(a.balances.current) ?? ZERO;
-        if (ids.has(a.account_id) && !seen.has(a.account_id) && bal.gt(1)) {
-          balanceOnly.add(a.account_id);
-          if (!state.hasAny(a.account_id)) {
-            p.reviews.push(review(a.account_id, a.account_id, "", "no holdings from Plaid",
-              `balance ${String(bal)}, but Plaid sends no holdings or activity`));
-          }
-        }
-      }
-      const [hs, cash, unmappedH] = holdingsBySymbol(holdings, secs, symbols);
-      for (const [k, v] of hs) holdingsAll.set(k, v);
-      for (const h of unmappedH) {
-        const secName = secs[h.security_id]?.name || "";
-        if (!p.unmapped.has(h.security_id)) p.unmapped.set(h.security_id, secName);
-        if (BROKERAGE_WINDOW.test(secName)) {
-          p.reviews.push(review(h.account_id, h.security_id, "", "possible brokerage window",
-            `${secName}: if this mirrors another linked account, choose Leave out in Securities`));
-        }
-      }
-      for (const aid of ids) {
-        let acts = r.activities.filter((a) => a.accountId === aid);
-        const cur = valueAt(accts, aid).currency || "USD";
-        if (!state.hasAny(aid)) {
-          const [op, rv] = openingActivities(aid, openingDay(state, valueAt(d.invStart, aid)), hs, cash.get(aid) ?? null, acts, cur, priceOn);
-          acts = [...op, ...acts];
-          p.reviews.push(...rv);
-        } else if (backfill.has(aid) || hasLateRows(state, aid, acts) || !state.hasFullHistory(aid)) {
-          const known = new Map<string, Activity>();
-          for (const a of state.activities(new Set([aid]))) if (!a.plaidId.startsWith("opening:")) known.set(a.plaidId, a);
-          for (const a of acts) known.set(a.plaidId, a);
-          const [op, rv] = openingActivities(aid, state.openingDate(aid) || openingDay(state, valueAt(d.invStart, aid)), hs,
-            cash.get(aid) ?? null, [...known.values()], cur, priceOn);
-          acts = [...op, ...acts];
-          p.reviews.push(...rv);
-        }
-        batch.push(...acts);
-        p.invLastEnd[aid] = today;
-        if (valueAt(d.invStart, aid) <= addDays(today, -HISTORY_DAYS)) p.fullHistory.push(aid);
-      }
+      this.addInvestments({ d, inv: d.inv, accts, ids });
     }
-    if (d.tx != null) {
-      const kinds: Record<string, string> = {};
-      for (const [a, c] of Object.entries(accts)) if (c.kind === "cash" || c.kind === "credit") kinds[a] = c.kind;
-      const rows = [...d.tx.added, ...d.tx.modified];
-      const drop = biltPassthrough(rows);
-      let acts: Activity[] = [];
-      for (const t of rows) {
-        if (!(t.account_id in kinds) || drop.has(t.transaction_id)) continue;
-        const x = mapBankTransaction(t, valueAt(kinds, t.account_id));
-        if (x) acts.push(x);
-      }
-      for (const t of d.tx.removed) removed.add(t.transaction_id);
-      if (d.firstTxSync) {
-        for (const [aid, kind] of Object.entries(kinds)) {
-          if (state.hasOpening(aid)) continue;
-          let current = dec((d.balances ?? {})[aid]?.current);
-          if (current === null) continue;
-          if (kind === "credit") current = current.neg();
-          const [op, rv] = openingActivities(aid, earliest(acts, aid, today), new Map(), current,
-            acts.filter((a) => a.accountId === aid), valueAt(accts, aid).currency || "USD");
-          acts = [...op, ...acts];
-          p.reviews.push(...rv);
-        }
-      }
-      batch.push(...acts);
-      p.cursors[d.itemId] = d.tx.next_cursor;
+    if (d.tx != null) this.addTransactions(d, d.tx, accts);
+  }
+
+  private addInvestments(item: InvestmentItem): void {
+    const { d, inv, accts, ids } = item;
+    for (const a of ids) this.invAccounts.add(a);
+    let secs: Record<string, PlaidSecurity> = { ...inv.securities };
+    for (const s of d.holdings?.securities ?? []) secs[s.security_id] = s;
+    let rows = inv.investment_transactions.filter((t) => ids.has(t.account_id)
+      && t.date >= valueAt(d.invStart, t.account_id));
+    let allHoldings = d.holdings?.holdings ?? [];
+    [rows, allHoldings, secs] = convert(rows, allHoldings, secs, this.config.symbols);
+    const plans = new Set([...ids].filter((a) => valueAt(accts, a).plaid_subtype === "stock plan"));
+    const r = mapInvestmentTransactions(rows, secs, this.config.symbols, { currency: "USD", stockPlan: plans });
+    const priceOn = this.priceLookup(secs);
+
+    this.priceVests(r, priceOn);
+    for (const c of r.cancelledIds) this.cancelled.add(c);
+    this.p.reviews.push(...r.reviews);
+    for (const [k, v] of r.unmappedSecurities) this.p.unmapped.set(k, v);
+
+    const holdings = allHoldings.filter((h) => ids.has(h.account_id));
+    const seen = new Set([...holdings.map((h) => h.account_id), ...inv.investment_transactions.map((t) => t.account_id)]);
+    this.noteBalanceOnly(d, ids, seen);
+
+    const [hs, cash, unmappedH] = holdingsBySymbol(holdings, secs, this.config.symbols);
+    for (const [k, v] of hs) this.holdingsAll.set(k, v);
+    this.noteUnmappedHoldings(unmappedH, secs);
+
+    for (const aid of ids) {
+      const acts = this.withOpenings(item, aid, r.activities.filter((a) => a.accountId === aid), { hs, cash: cash.get(aid) ?? null, priceOn });
+      this.batch.push(...acts);
+      this.p.invLastEnd[aid] = this.run.today;
+      if (valueAt(d.invStart, aid) <= addDays(this.run.today, -HISTORY_DAYS)) this.p.fullHistory.push(aid);
     }
   }
 
-  const touched = new Set(batch.map((a) => a.accountId));
-  const ledgerActs = state.activities(touched);
-  const batchIds = new Set(batch.map((a) => a.plaidId));
-  const everything = [...ledgerActs.filter((a) => !batchIds.has(a.plaidId)), ...batch];
-  p.reviews.push(...resolveSplits(everything));
-  if (closes) p.reviews.push(...fixSplitPrices(batch, everything, closes));
+  private priceLookup(secs: Record<string, PlaidSecurity>): PriceOn {
+    const { closes } = this.run;
+    const { symbols } = this.config;
+    return (sid, day) => {
+      if (!closes) return null;
+      const o = symbols[sid] ?? {};
+      return closes(yahooSymbol(secs[sid]) || (o.manual ? null : o.symbol ?? null), day);
+    };
+  }
 
-  for (const a of batch) {
-    const row = state.get(a.plaidId);
+  private priceVests(r: MappedInvestments, priceOn: PriceOn): void {
+    for (const a of r.activities) {
+      if (!a.marketPrice || a.securityId === null) continue;
+      const px = priceOn(a.securityId, a.date);
+      a.unitPrice = px && !px.eq(0) ? px : ZERO;
+      if (a.unitPrice.eq(0)) {
+        this.p.reviews.push(review(a.accountId, a.plaidId, a.date, "vest price unknown",
+          `${a.symbol}: no market close found; set the price in Wealthfolio`));
+      }
+    }
+  }
+
+  private noteBalanceOnly(d: ItemData, ids: Set<string>, seen: Set<string>): void {
+    for (const a of d.holdings?.accounts ?? []) {
+      const bal = dec(a.balances.current) ?? ZERO;
+      if (!ids.has(a.account_id) || seen.has(a.account_id) || !bal.gt(1)) continue;
+      this.balanceOnly.add(a.account_id);
+      if (!this.state.hasAny(a.account_id)) {
+        this.p.reviews.push(review(a.account_id, a.account_id, "", "no holdings from Plaid",
+          `balance ${String(bal)}, but Plaid sends no holdings or activity`));
+      }
+    }
+  }
+
+  private noteUnmappedHoldings(unmapped: { account_id: string; security_id: string }[], secs: Record<string, PlaidSecurity>): void {
+    for (const h of unmapped) {
+      const secName = secs[h.security_id]?.name || "";
+      if (!this.p.unmapped.has(h.security_id)) this.p.unmapped.set(h.security_id, secName);
+      if (BROKERAGE_WINDOW.test(secName)) {
+        this.p.reviews.push(review(h.account_id, h.security_id, "", "possible brokerage window",
+          `${secName}: if this mirrors another linked account, choose Leave out in Securities`));
+      }
+    }
+  }
+
+  private withOpenings(item: InvestmentItem, aid: string, acts: Activity[],
+    held: { hs: HoldingMap; cash: Dec | null; priceOn: PriceOn }): Activity[] {
+    const { state } = this;
+    const cur = valueAt(item.accts, aid).currency || "USD";
+    const windowStart = openingDay(state, valueAt(item.d.invStart, aid));
+    if (!state.hasAny(aid)) {
+      const [op, rv] = openingActivities({ accountId: aid, date: windowStart, cash: held.cash, currency: cur }, held.hs, acts, held.priceOn);
+      this.p.reviews.push(...rv);
+      return [...op, ...acts];
+    }
+    if (!this.backfill.has(aid) && !hasLateRows(state, aid, acts) && state.hasFullHistory(aid)) return acts;
+    const known = new Map<string, Activity>();
+    for (const a of state.activities(new Set([aid]))) if (!a.plaidId.startsWith("opening:")) known.set(a.plaidId, a);
+    for (const a of acts) known.set(a.plaidId, a);
+    const [op, rv] = openingActivities({ accountId: aid, date: state.openingDate(aid) || windowStart, cash: held.cash, currency: cur },
+      held.hs, [...known.values()], held.priceOn);
+    this.p.reviews.push(...rv);
+    return [...op, ...acts];
+  }
+
+  private addTransactions(d: ItemData, tx: TransactionsData, accts: Record<string, AccountCfg>): void {
+    const kinds: Record<string, string> = {};
+    for (const [a, c] of Object.entries(accts)) if (c.kind === "cash" || c.kind === "credit") kinds[a] = c.kind;
+    const rows = [...tx.added, ...tx.modified];
+    const drop = biltPassthrough(rows);
+    let acts: Activity[] = [];
+    for (const t of rows) {
+      if (!(t.account_id in kinds) || drop.has(t.transaction_id)) continue;
+      const x = mapBankTransaction(t, valueAt(kinds, t.account_id));
+      if (x) acts.push(x);
+    }
+    for (const t of tx.removed) this.removed.add(t.transaction_id);
+    if (d.firstTxSync) acts = this.withCashOpenings(d, kinds, acts, accts);
+    this.batch.push(...acts);
+    this.p.cursors[d.itemId] = tx.next_cursor;
+  }
+
+  private withCashOpenings(d: ItemData, kinds: Record<string, string>, acts: Activity[], accts: Record<string, AccountCfg>): Activity[] {
+    for (const [aid, kind] of Object.entries(kinds)) {
+      if (this.state.hasOpening(aid)) continue;
+      let current = dec((d.balances ?? {})[aid]?.current);
+      if (current === null) continue;
+      if (kind === "credit") current = current.neg();
+      const at = { accountId: aid, date: earliest(acts, aid, this.run.today), cash: current, currency: valueAt(accts, aid).currency || "USD" };
+      const [op, rv] = openingActivities(at, new Map(), acts.filter((a) => a.accountId === aid));
+      acts = [...op, ...acts];
+      this.p.reviews.push(...rv);
+    }
+    return acts;
+  }
+
+  finish(): Plan {
+    const { p, batch, state } = this;
+    const batchIds = new Set(batch.map((a) => a.plaidId));
+    const ledgerActs = state.activities(new Set(batch.map((a) => a.accountId)));
+    const everything = [...ledgerActs.filter((a) => !batchIds.has(a.plaidId)), ...batch];
+    p.reviews.push(...resolveSplits(everything));
+    if (this.run.closes) p.reviews.push(...fixSplitPrices(batch, everything, this.run.closes));
+
+    for (const a of batch) this.classify(a);
+    for (const pid of new Set([...this.cancelled, ...this.removed])) {
+      const row = state.get(pid);
+      if (row !== null && !row.voided) p.voids.push(row);
+    }
+    if (p.new.length) this.pairTransfers(batchIds);
+    for (const a of p.new) {
+      const c = categoryOf(this.config.accounts[a.accountId]?.kind, a.category, a.pairId, a.activityType);
+      if (c) p.categories.set(a.plaidId, c);
+    }
+    if (this.holdingsAll.size) this.reconcileHoldings();
+    p.reviews = p.reviews.filter((r) => !(this.balanceOnly.has(r.accountId) && r.reason === "negative opening position"));
+    return p;
+  }
+
+  private classify(a: Activity): void {
+    const row = this.state.get(a.plaidId);
     if (row === null) {
-      p.new.push(a);
-    } else if (!row.voided) {
-      a.pairId = row.pair_plaid_id;
-      if (row.pair_plaid_id) a.activityType = row.activity_type;
-      const fields = differs(row, a);
-      if (fields.includes("symbol") && row.symbol) {
-        const moved = p.moved.get(row.symbol) ?? new Set<string>();
-        p.moved.set(row.symbol, moved.add(a.accountId));
-      } else if (fields.length) {
-        p.updates.push([row, a, fields]);
-      }
+      this.p.new.push(a);
+      return;
+    }
+    if (row.voided) return;
+    a.pairId = row.pair_plaid_id;
+    if (row.pair_plaid_id) a.activityType = row.activity_type;
+    const fields = differs(row, a);
+    if (fields.includes("symbol") && row.symbol) {
+      const moved = this.p.moved.get(row.symbol) ?? new Set<string>();
+      this.p.moved.set(row.symbol, moved.add(a.accountId));
+    } else if (fields.length) {
+      this.p.updates.push([row, a, fields]);
     }
   }
-  for (const pid of new Set([...cancelled, ...removed])) {
-    const row = state.get(pid);
-    if (row !== null && !row.voided) p.voids.push(row);
-  }
 
-  if (p.new.length) {
+  private pairTransfers(batchIds: Set<string>): void {
+    const { p } = this;
     const since = addDays(p.new.map((a) => a.date).reduce((m, d) => (d < m ? d : m)), -MAX_DAYS);
     const voidedIds = new Set(p.voids.map((r) => r.plaid_id));
-    const existing = state.activities(null, since).filter((a) => !batchIds.has(a.plaidId) && !voidedIds.has(a.plaidId));
+    const existing = this.state.activities(null, since).filter((a) => !batchIds.has(a.plaidId) && !voidedIds.has(a.plaidId));
     const newIds = new Set(p.new.map((a) => a.plaidId));
     for (const [o, i] of matchTransfers([...p.new, ...existing])) {
       p.pairs.push([o.plaidId, i.plaidId]);
@@ -233,22 +311,16 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
     }
   }
 
-  for (const a of p.new) {
-    const c = categoryOf(accountsCfg[a.accountId]?.kind, a.category, a.pairId, a.activityType);
-    if (c) p.categories.set(a.plaidId, c);
-  }
-
-  if (holdingsAll.size) {
+  private reconcileHoldings(): void {
+    const { p } = this;
     const voidIds = new Set(p.voids.map((r) => r.plaid_id));
     const updated = new Map(p.updates.map(([, a]) => [a.plaidId, a]));
-    const pushed = state.activities(invAccounts).filter((a) => !voidIds.has(a.plaidId)).map((a) => updated.get(a.plaidId) ?? a);
+    const pushed = this.state.activities(this.invAccounts).filter((a) => !voidIds.has(a.plaidId)).map((a) => updated.get(a.plaidId) ?? a);
     const pushedIds = new Set(pushed.map((a) => a.plaidId));
-    const pending = new Set([...invAccounts].filter((a) => !balanceOnly.has(a)));
+    const pending = new Set([...this.invAccounts].filter((a) => !this.balanceOnly.has(a)));
     const fresh = p.new.filter((a) => !pushedIds.has(a.plaidId));
-    p.reviews.push(...reconcile(pending, positions([...pushed, ...fresh]), holdingsAll, fresh));
+    p.reviews.push(...reconcile(pending, positions([...pushed, ...fresh]), this.holdingsAll, fresh));
   }
-  p.reviews = p.reviews.filter((r) => !(balanceOnly.has(r.accountId) && r.reason === "negative opening position"));
-  return p;
 }
 
 function hasLateRows(state: Ledger, aid: string, acts: Activity[]): boolean {

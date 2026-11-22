@@ -30,17 +30,6 @@
       "count": 2
     }
   },
-  "src/importer/mapInvestments.ts": {
-    "lints/cognitive-complexity": {
-      "count": 1
-    },
-    "lints/max-lines-per-function": {
-      "count": 1
-    },
-    "lints/max-params": {
-      "count": 2
-    }
-  },
   "src/importer/mapTransactions.ts": {
     "lints/cognitive-complexity": {
       "count": 1
@@ -54,28 +43,6 @@
   "src/importer/plaid.ts": {
     "lints/max-params": {
       "count": 2
-    }
-  },
-  "src/importer/plan.ts": {
-    "lints/cognitive-complexity": {
-      "count": 1
-    },
-    "lints/max-depth": {
-      "count": 8
-    },
-    "lints/max-lines-per-function": {
-      "count": 1
-    },
-    "lints/max-params": {
-      "count": 1
-    }
-  },
-  "src/importer/positions.ts": {
-    "lints/cognitive-complexity": {
-      "count": 1
-    },
-    "lints/max-params": {
-      "count": 3
     }
   },
   "src/importer/push.ts": {

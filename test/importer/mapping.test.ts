@@ -176,7 +176,7 @@ describe("positions", () => {
       { account_id: "a1", security_id: "s_vti", quantity: 15, cost_basis: 1500, institution_price: 250, institution_value: 3750 },
       { account_id: "a1", security_id: "s_spaxx", quantity: 400, institution_value: 400, institution_price: 1 }], SECS, {});
     const acts = one([tx("t1", "buy", "buy", 1000, 10, 100, "s_vti"), tx("t2", "cash", "deposit", -1200)]).activities;
-    const [opening, reviews] = openingActivities("a1", "2024-11-05", hs, entryAt(cash, "a1"), acts);
+    const [opening, reviews] = openingActivities({ accountId: "a1", date: "2024-11-05", cash: entryAt(cash, "a1") }, hs, acts);
     expect(reviews).toEqual([]);
     const [pos, c] = take(opening, 2);
     expect([pos.activityType, pos.symbol, n(pos.quantity), n(pos.unitPrice)]).toEqual(["TRANSFER_IN", "VTI", 5, 100]);
@@ -186,9 +186,9 @@ describe("positions", () => {
   test("opening price is per share held at the opening, across a later split", () => {
     const [hs] = holdingsBySymbol([{ account_id: "a1", security_id: "s_vti", quantity: 80, cost_basis: 4000, institution_price: 60, institution_value: 4800 }], SECS, {});
     const split = new Activity({ accountId: "a1", plaidId: "sp", date: "2026-04-21", activityType: "SPLIT", symbol: "VTI", splitDelta: D(70) });
-    let [opening] = openingActivities("a1", "2024-11-05", hs, null, [split]);
+    let [opening] = openingActivities({ accountId: "a1", date: "2024-11-05", cash: null }, hs, [split]);
     expect([n(itemAt(opening, 0).quantity), n(itemAt(opening, 0).unitPrice)]).toEqual([10, 400]);
-    [opening] = openingActivities("a1", "2024-11-05", new Map([[hkey("a1", "VTI"), { ...entryAt(hs, hkey("a1", "VTI")), cost_basis: null }]]), null, [split], "USD", () => D(75));
+    [opening] = openingActivities({ accountId: "a1", date: "2024-11-05", cash: null }, new Map([[hkey("a1", "VTI"), { ...entryAt(hs, hkey("a1", "VTI")), cost_basis: null }]]), [split], () => D(75));
     expect(n(itemAt(opening, 0).unitPrice)).toBe(600);
   });
 
@@ -207,10 +207,10 @@ describe("positions", () => {
     const [hs] = holdingsBySymbol([{ account_id: "a1", security_id: "s_vti", quantity: 2, cost_basis: null, institution_price: 250, institution_value: 500 }], SECS, {});
     const acts = one([tx("t1", "buy", "buy", 1, 3, 100, "s_td"), tx("t2", "sell", "sell", 1, -3, 100, "s_td"),
       tx("t3", "sell", "sell", 1, -1, 100, "s_td")]).activities;
-    const [opening, reviews] = openingActivities("a1", "2024-11-05", hs, null, acts);
+    const [opening, reviews] = openingActivities({ accountId: "a1", date: "2024-11-05", cash: null }, hs, acts);
     expect(opening.map((o) => [o.symbol, n(o.quantity), n(o.unitPrice)])).toEqual([["TD.TO", 1, 100], ["VTI", 2, 250]]);
     expect(new Set(reviews.map((r) => r.reason))).toEqual(new Set(["opening cost basis missing"]));
-    const [priced] = openingActivities("a1", "2024-11-05", hs, null, acts, "USD", () => D(7));
+    const [priced] = openingActivities({ accountId: "a1", date: "2024-11-05", cash: null }, hs, acts, () => D(7));
     expect(priced.map((o) => n(o.unitPrice))).toEqual([7, 7]);
   });
 
@@ -287,7 +287,7 @@ describe("options and plans", () => {
     const [hs, cash] = holdingsBySymbol([
       { account_id: "a1", security_id: "ant", quantity: 2, cost_basis: 166, institution_price: 88.91, institution_value: 177.82 },
       { account_id: "a1", security_id: "s_spaxx", quantity: 0, institution_value: 0, institution_price: 1 }], { ...SECS, ...secs }, {});
-    const [opening] = openingActivities("a1", "2024-11-09", hs, entryAt(cash, "a1"), [buy]);
+    const [opening] = openingActivities({ accountId: "a1", date: "2024-11-09", cash: entryAt(cash, "a1") }, hs, [buy]);
     expect(opening.map((a) => [a.symbol, a.activityType, n(a.amount)])).toEqual([[null, "TRANSFER_IN", 166]]);
   });
 
@@ -305,7 +305,7 @@ describe("options and plans", () => {
   test("option holdings scaled and opening price per share", () => {
     const [hs] = holdingsBySymbol([{ account_id: "a1", security_id: "o_occ", quantity: 10000, cost_basis: 100, institution_price: 0.011, institution_value: 110 }], OPT_SECS, {});
     expect(n(entryAt(hs, hkey("a1", "NFLX180201C00355000")).quantity)).toBe(100);
-    const [opening, reviews] = openingActivities("a1", "2024-11-05", hs, null, []);
+    const [opening, reviews] = openingActivities({ accountId: "a1", date: "2024-11-05", cash: null }, hs, []);
     expect(reviews).toEqual([]);
     expect([n(itemAt(opening, 0).quantity), n(itemAt(opening, 0).unitPrice), itemAt(opening, 0).instrumentType]).toEqual([100, 0.01, "OPTION"]);
   });
@@ -314,7 +314,7 @@ describe("options and plans", () => {
     const rows = [tx("v1", "cash", "withdrawal", 0, 10.956, 1, "s_vti", null, { name: "RESTRICTED STOCK DEPOSIT" }),
       tx("j1", "transfer", "transfer", 0, 1551.191, 0, "s_vti", null, { name: "JOURNAL - TRANSFER" }),
       tx("j2", "transfer", "transfer", 571.38, 0, 0, "s_vti", null, { name: "Journal To Account 07E3 - JRNLFUND" })];
-    const [v, j, c] = take(mapInvestmentTransactions(rows, SECS, {}, "USD", new Set(["a1"])).activities, 3);
+    const [v, j, c] = take(mapInvestmentTransactions(rows, SECS, {}, { stockPlan: new Set(["a1"]) }).activities, 3);
     expect([v.activityType, v.symbol, n(v.quantity), n(v.unitPrice)]).toEqual(["TRANSFER_IN", "VTI", 10.956, 0]);
     expect([j.activityType, n(j.quantity)]).toEqual(["TRANSFER_OUT", 1551.191]);
     expect([c.activityType, c.symbol, n(c.amount)]).toEqual(["WITHDRAWAL", null, 571.38]);
@@ -358,7 +358,7 @@ describe("options and plans", () => {
   });
 
   test("vest stays a vest in a stock plan", () => {
-    const [a] = take(mapInvestmentTransactions([tx("v", "cash", "withdrawal", 0, 10, 0, "s_vti")], SECS, {}, "USD", new Set(["a1"])).activities, 1);
+    const [a] = take(mapInvestmentTransactions([tx("v", "cash", "withdrawal", 0, 10, 0, "s_vti")], SECS, {}, { stockPlan: new Set(["a1"]) }).activities, 1);
     expect([a.activityType, a.marketPrice]).toEqual(["TRANSFER_IN", true]);
   });
 });

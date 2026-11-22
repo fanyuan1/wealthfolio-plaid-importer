@@ -537,7 +537,7 @@ export class Engine {
     const scratch = new MemoryLedger({});
     const fetched = await fetchItems(await this.plaid(), await this.tokens(env), bank, scratch, today(),
       { log: (m) => { if (!m.includes("no active accounts")) log(m); } });
-    const pfc = new Map(plan(fetched.items, bank, {}, scratch, today(), undefined, () => null).new.map((a) => [a.plaidId, a.category ?? null]));
+    const pfc = new Map(plan(fetched.items, { accounts: bank, symbols: {} }, scratch, { today: today(), closes: () => null }).new.map((a) => [a.plaidId, a.category ?? null]));
     const pulled = new Set(fetched.items.map((d) => d.itemId));
     for (const r of unlearned(state, cfg)) if (pulled.has(valueAt(cfg, r.account_id).item_id)) r.category = pfc.get(r.plaid_id) ?? null;
   }
@@ -830,7 +830,7 @@ export class Engine {
     const fullPull = (a: string) => fetched.items.some((d) => d.invStart[a] !== undefined && d.invStart[a] <= start);
     const holdsTracked = new Set(fetched.items.flatMap((d) => (d.holdings?.holdings ?? []).filter((h) => trackedIds(symbols).has(h.security_id)).map((h) => h.account_id)));
     const backfill = new Set([...remap.full, ...holdsTracked].filter(fullPull));
-    const p = await withPrices(closes, (c) => plan(fetched.items, cfg, symbols, state, day, backfill, c));
+    const p = await withPrices(closes, (c) => plan(fetched.items, { accounts: cfg, symbols }, state, { today: day, backfill, closes: c }));
     for (const [sym, accts] of Object.entries(remap.dropped)) {
       const live = new Set(state.live(sym).map((r) => r.account_id));
       const left = new Set(accts.filter((a) => live.has(a)));

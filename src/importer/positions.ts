@@ -55,70 +55,106 @@ function splitFactor(opening: Dec, acts: Activity[]): Dec {
   return factor.round(6, 2);
 }
 
-export function openingActivities(accountId: string, startDate: string, holdings: HoldingMap, currentCash: Dec | null,
-  acts: Activity[], currency = "USD", priceOn?: PriceOn): [Activity[], Review[]] {
+export interface OpeningAt {
+  accountId: string;
+  date: string;
+  cash: Dec | null;
+  currency?: string;
+}
+
+interface OpeningContext {
+  at: OpeningAt;
+  holdings: HoldingMap;
+  acts: Activity[];
+  priceOn: PriceOn | undefined;
+  currency: string;
+}
+
+export function openingActivities(at: OpeningAt, holdings: HoldingMap, acts: Activity[], priceOn?: PriceOn): [Activity[], Review[]] {
+  const ctx: OpeningContext = { at, holdings, acts, priceOn, currency: at.currency ?? "USD" };
+  const own = acts.filter((a) => a.accountId === at.accountId);
   const deltas = new Map<string, Dec>();
-  let cashDelta = ZERO;
-  for (const a of acts) {
-    if (a.accountId !== accountId) continue;
-    if (a.symbol) add(deltas, a.symbol, a.positionDelta());
-    cashDelta = cashDelta.plus(a.cashDelta());
-  }
+  for (const a of own) if (a.symbol) add(deltas, a.symbol, a.positionDelta());
+  const cashDelta = own.reduce((sum, a) => sum.plus(a.cashDelta()), ZERO);
+
   const out: Activity[] = [];
   const reviews: Review[] = [];
+  for (const sym of openingSymbols(at.accountId, holdings, deltas)) {
+    const { activity, note } = openingPosition(ctx, sym, deltas.get(sym) ?? ZERO);
+    if (activity) out.push(activity);
+    if (note) reviews.push(note);
+  }
+  const cash = openingCash(ctx, cashDelta);
+  if (cash) out.push(cash);
+  return [out, reviews];
+}
+
+function openingSymbols(accountId: string, holdings: HoldingMap, deltas: Map<string, Dec>): string[] {
   const symbols = new Set<string>(deltas.keys());
   for (const k of holdings.keys()) {
     const [acct, s] = splitKey(k);
     if (acct === accountId) symbols.add(s);
   }
-  for (const sym of [...symbols].sort()) {
-    const h = holdings.get(hkey(accountId, sym));
-    const current = h ? h.quantity : ZERO;
-    const delta = deltas.get(sym) ?? ZERO;
-    const opening = current.minus(delta);
-    if (opening.abs().lt(EPS)) continue;
-    const pid = `opening:${accountId}:${sym}`;
-    if (opening.lt(0)) {
-      reviews.push(review(accountId, pid, startDate, "negative opening position", `${sym}: holdings ${String(current)}, pulled net ${String(delta)}`));
-      continue;
-    }
-    let price: Dec | null = null;
-    const grown = splitFactor(opening, acts.filter((a) => a.accountId === accountId && a.symbol === sym));
-    if (h && h.cost_basis != null && nz(current)) {
-      price = D(h.cost_basis).abs().div(current.times(h.multiplier)).times(grown);
-    } else {
-      const sid = h ? h.security_id : acts.find((a) => a.symbol === sym)?.securityId ?? null;
-      let source: string | null;
-      [price, source] = acquisitionPrice(sym, sid, startDate, acts, priceOn, grown);
-      if (price === null && h) [price, source] = [dec(h.institution_price)?.times(grown) ?? null, "today's price; fix in Wealthfolio"];
-      reviews.push(review(accountId, pid, startDate, "opening cost basis missing",
-        `${sym}: priced at ${String(price)} (${source || "no price found; set it in Wealthfolio"})`));
-    }
-    out.push(new Activity({
-      accountId, plaidId: pid, date: startDate, activityType: "TRANSFER_IN", currency, symbol: sym,
-      instrumentType: h ? h.instrumentType : null, securityId: h ? h.security_id : null,
-      symbolName: h ? h.name : null, quoteManual: Boolean(h?.manual),
-      quantity: opening, unitPrice: nz(price) ? price : ZERO, description: "Opening position",
-    }));
-  }
-  if (currentCash !== null) {
-    const openingCash = currentCash.minus(cashDelta);
-    if (openingCash.abs().gte("0.01")) {
-      out.push(new Activity({
-        accountId, plaidId: `opening:${accountId}:cash`, date: startDate,
-        activityType: openingCash.gt(0) ? "TRANSFER_IN" : "TRANSFER_OUT", currency,
-        amount: openingCash.abs().round(2, 2), description: "Opening cash balance",
-      }));
-    }
-  }
-  return [out, reviews];
+  return [...symbols].sort();
 }
 
-function acquisitionPrice(sym: string, sid: string | null, day: string, acts: Activity[], priceOn?: PriceOn, grown: Dec = D(1)):
-  [Dec | null, string | null] {
-  const p = priceOn && sid ? priceOn(sid, day) : null;
+function openingPosition(ctx: OpeningContext, sym: string, delta: Dec): { activity?: Activity; note?: Review } {
+  const { accountId, date } = ctx.at;
+  const h = ctx.holdings.get(hkey(accountId, sym));
+  const current = h ? h.quantity : ZERO;
+  const opening = current.minus(delta);
+  if (opening.abs().lt(EPS)) return {};
+  const pid = `opening:${accountId}:${sym}`;
+  if (opening.lt(0)) {
+    return { note: review(accountId, pid, date, "negative opening position", `${sym}: holdings ${String(current)}, pulled net ${String(delta)}`) };
+  }
+  const grown = splitFactor(opening, ctx.acts.filter((a) => a.accountId === accountId && a.symbol === sym));
+  const { price, note } = openingPrice(ctx, { sym, pid, holding: h, current }, grown);
+  const activity = new Activity({
+    accountId, plaidId: pid, date, activityType: "TRANSFER_IN", currency: ctx.currency, symbol: sym,
+    instrumentType: h ? h.instrumentType : null, securityId: h ? h.security_id : null,
+    symbolName: h ? h.name : null, quoteManual: Boolean(h?.manual),
+    quantity: opening, unitPrice: nz(price) ? price : ZERO, description: "Opening position",
+  });
+  return note ? { activity, note } : { activity };
+}
+
+interface OpeningHolding {
+  sym: string;
+  pid: string;
+  holding: Position | undefined;
+  current: Dec;
+}
+
+function openingPrice(ctx: OpeningContext, { sym, pid, holding: h, current }: OpeningHolding, grown: Dec): { price: Dec | null; note?: Review } {
+  if (h && h.cost_basis != null && nz(current)) {
+    return { price: D(h.cost_basis).abs().div(current.times(h.multiplier)).times(grown) };
+  }
+  const sid = h ? h.security_id : ctx.acts.find((a) => a.symbol === sym)?.securityId ?? null;
+  let [price, source] = acquisitionPrice(sym, sid, ctx, grown);
+  if (price === null && h) [price, source] = [dec(h.institution_price)?.times(grown) ?? null, "today's price; fix in Wealthfolio"];
+  const note = review(ctx.at.accountId, pid, ctx.at.date, "opening cost basis missing",
+    `${sym}: priced at ${String(price)} (${source || "no price found; set it in Wealthfolio"})`);
+  return { price, note };
+}
+
+function openingCash(ctx: OpeningContext, cashDelta: Dec): Activity | null {
+  const { accountId, date, cash } = ctx.at;
+  if (cash === null) return null;
+  const openingBalance = cash.minus(cashDelta);
+  if (!openingBalance.abs().gte("0.01")) return null;
+  return new Activity({
+    accountId, plaidId: `opening:${accountId}:cash`, date,
+    activityType: openingBalance.gt(0) ? "TRANSFER_IN" : "TRANSFER_OUT", currency: ctx.currency,
+    amount: openingBalance.abs().round(2, 2), description: "Opening cash balance",
+  });
+}
+
+function acquisitionPrice(sym: string, sid: string | null, ctx: OpeningContext, grown: Dec): [Dec | null, string | null] {
+  const day = ctx.at.date;
+  const p = ctx.priceOn && sid ? ctx.priceOn(sid, day) : null;
   if (nz(p)) return [p.times(grown), `market price on ${day}${grown.eq(1) ? "" : `, times ${String(grown)} for later splits`}`];
-  const priced = acts.filter((a) => a.symbol === sym && nz(a.unitPrice)).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const priced = ctx.acts.filter((a) => a.symbol === sym && nz(a.unitPrice)).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   const first = priced[0];
   if (first) return [first.unitPrice, `Plaid price on ${first.date}, the earliest it shows`];
   return [null, null];
@@ -175,8 +211,9 @@ export function positions(acts: Activity[]): Map<string, Dec> {
   return pos;
 }
 
-export function reconcile(accountIds: Set<string>, computed: Map<string, Dec>, holdings: Map<string, Pick<Position, "quantity">>, fresh: Activity[] = [],
-  tol: Dec = D("0.001")): Review[] {
+const RECONCILE_TOLERANCE = D("0.001");
+
+export function reconcile(accountIds: Set<string>, computed: Map<string, Dec>, holdings: Map<string, Pick<Position, "quantity">>, fresh: Activity[] = []): Review[] {
   const keys = new Set<string>();
   for (const k of [...computed.keys(), ...holdings.keys()]) if (accountIds.has(splitKey(k)[0])) keys.add(k);
   const reviews: Review[] = [];
@@ -184,7 +221,7 @@ export function reconcile(accountIds: Set<string>, computed: Map<string, Dec>, h
     const [acct, sym] = splitKey(k);
     const have = holdings.get(k)?.quantity ?? ZERO;
     const calc = computed.get(k) ?? ZERO;
-    if (have.minus(calc).abs().gt(tol)) {
+    if (have.minus(calc).abs().gt(RECONCILE_TOLERANCE)) {
       const added = fresh.filter((a) => a.symbol && hkey(a.accountId, a.symbol) === k && !a.positionDelta().eq(0))
         .map((a) => `${a.date} ${a.activityType} ${String(a.positionDelta())}`);
       const why = added.length ? `; this pull adds ${added.join(", ")}` : "";

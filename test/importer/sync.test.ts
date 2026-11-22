@@ -74,7 +74,7 @@ describe("sync", () => {
         { account_id: "brk", security_id: "s_cash", quantity: 300, institution_value: 300, institution_price: 1 }],
       [bank("b1", "chk", 500, "TRANSFER_OUT", "TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS"),
         bank("b2", "card", 25, "FOOD_AND_DRINK", "FOOD_AND_DRINK_COFFEE"), bank("b3", "old", 1)]);
-    const p = plan(first, ACCOUNTS, {}, state, TODAY);
+    const p = plan(first, { accounts: ACCOUNTS, symbols: {} }, state, { today: TODAY });
     expect(p.new.map((a) => [a.plaidId, a.activityType]).sort()).toEqual([["b1", "TRANSFER_OUT"], ["b2", "WITHDRAWAL"],
       ["opening:brk:VTI", "TRANSFER_IN"], ["opening:brk:cash", "TRANSFER_IN"], ["opening:card:cash", "TRANSFER_OUT"],
       ["opening:chk:cash", "TRANSFER_IN"], ["t1", "BUY"], ["t2", "TRANSFER_IN"]]);
@@ -94,7 +94,7 @@ describe("sync", () => {
       [bank("b5", "card", -30, "LOAN_PAYMENTS", "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT", "2026-10-21")],
       [bank("b2", "card", 26, "FOOD_AND_DRINK", "FOOD_AND_DRINK_COFFEE")], [], false, "2026-09-17");
     state.record(new Activity({ accountId: "chk", plaidId: "b4", date: "2026-10-20", activityType: "WITHDRAWAL", amount: D(30), transferHint: true }), "wf_old");
-    const p2 = plan(second, ACCOUNTS, {}, state, TODAY);
+    const p2 = plan(second, { accounts: ACCOUNTS, symbols: {} }, state, { today: TODAY });
     expect(p2.new.map((a) => a.plaidId)).toEqual(["b5"]);
     expect(p2.voids.map((r) => r.plaid_id)).toEqual(["t1"]);
     expect(p2.updates.map(([, a, f]) => [a.plaidId, f])).toEqual([["b2", ["amount"]]]);
@@ -106,7 +106,7 @@ describe("sync", () => {
     expect([ledgerRow(state, "t1").voided, ledgerRow(state, "t1").wf_activity_id, ledgerRow(state, "b4").pair_plaid_id]).toEqual([1, null, "b5"]);
 
     const p3 = plan(items([invTx("t1", "buy", "buy", 1000, 10, 100, "s_vti")], [{ account_id: "brk", security_id: "s_vti", quantity: 2, institution_value: 0, institution_price: 0 }],
-      [], [], [], false, "2026-09-17"), ACCOUNTS, {}, state, TODAY);
+      [], [], [], false, "2026-09-17"), { accounts: ACCOUNTS, symbols: {} }, state, { today: TODAY });
     expect([p3.new, p3.updates, p3.voids, p3.pairs]).toEqual([[], [], [], []]);
   });
 
@@ -119,13 +119,13 @@ describe("sync", () => {
     const holdings = [{ account_id: "brk", security_id: "s_vti", quantity: 10, cost_basis: 1000, institution_value: 0, institution_price: 0 },
       { account_id: "brk", security_id: "s_fund", quantity: 12, cost_basis: 120, institution_value: 0, institution_price: 0 },
       { account_id: "brk", security_id: "s_cash", quantity: 500, institution_value: 500, institution_price: 1 }];
-    const p1 = plan(items(txns, holdings, [], [], [], true, "2024-11-06", secs), ACCOUNTS, {}, state, TODAY);
+    const p1 = plan(items(txns, holdings, [], [], [], true, "2024-11-06", secs), { accounts: ACCOUNTS, symbols: {} }, state, { today: TODAY });
     expect(new Set(p1.reviews.map((r) => r.reason))).toEqual(new Set(["unmapped security"]));
     await run(p1, wf, state);
     const cashBefore = required(ledgerRow(state, "opening:brk:cash").amount, "amount");
 
     const symbols = { s_fund: { manual: true } };
-    const p2 = plan(items(txns, holdings, [], [], [], false, "2024-11-06", secs), ACCOUNTS, symbols, state, TODAY, new Set(["brk"]));
+    const p2 = plan(items(txns, holdings, [], [], [], false, "2024-11-06", secs), { accounts: ACCOUNTS, symbols }, state, { today: TODAY, backfill: new Set(["brk"]) });
     expect(p2.new.map((a) => a.plaidId).sort()).toEqual(["f1", "f2", "opening:brk:PLANFUND-S_FU"]);
     expect(p2.new.filter((a) => a.plaidId.startsWith("opening:")).map((a) => required(a.quantity, "quantity").toNumber())).toEqual([2]);
     expect(p2.updates.length).toBe(1);
@@ -139,7 +139,7 @@ describe("sync", () => {
     const state = new MemoryLedger();
     state.setInvLastEnd("brk", "2026-11-01");
     const p = plan(items([invTx("t1", "buy", "buy", 600, 6, 100, "s_vti", "2026-11-03")],
-      [{ account_id: "brk", security_id: "s_vti", quantity: 3289, cost_basis: 1240, institution_value: 0, institution_price: 0 }], [], [], [], false), ACCOUNTS, {}, state, TODAY);
+      [{ account_id: "brk", security_id: "s_vti", quantity: 3289, cost_basis: 1240, institution_value: 0, institution_price: 0 }], [], [], [], false), { accounts: ACCOUNTS, symbols: {} }, state, { today: TODAY });
     expect(required(required(p.new.find((a) => a.plaidId === "opening:brk:VTI"), "opening").quantity, "quantity").toNumber()).toBe(3283);
     expect(p.reviews.filter((r) => r.reason === "holdings mismatch")).toEqual([]);
   });
@@ -148,9 +148,9 @@ describe("sync", () => {
     const state = new MemoryLedger();
     const buy = (qty: number) => invTx("t1", "buy", "buy", 1000, qty, 1000 / qty, "s_vti");
     await run(plan(items([buy(10)], [{ account_id: "brk", security_id: "s_vti", quantity: 12, cost_basis: 1240, institution_value: 0, institution_price: 0 }], []),
-      ACCOUNTS, {}, state, TODAY), new FakeWF(), state);
+      { accounts: ACCOUNTS, symbols: {} }, state, { today: TODAY }), new FakeWF(), state);
     const p = plan(items([buy(20)], [{ account_id: "brk", security_id: "s_vti", quantity: 22, cost_basis: 1240, institution_value: 0, institution_price: 0 }], [], [], [], false),
-      ACCOUNTS, {}, state, TODAY);
+      { accounts: ACCOUNTS, symbols: {} }, state, { today: TODAY });
     expect(p.updates.map(([r]) => r.plaid_id)).toEqual(["t1"]);
     expect(p.reviews.filter((r) => r.reason === "holdings mismatch")).toEqual([]);
   });
@@ -158,9 +158,9 @@ describe("sync", () => {
   test("a mismatch lists the rows this pull adds", async () => {
     const state = new MemoryLedger();
     await run(plan(items([], [{ account_id: "brk", security_id: "s_vti", quantity: 12, cost_basis: 1240, institution_value: 0, institution_price: 0 }], []),
-      ACCOUNTS, {}, state, TODAY), new FakeWF(), state);
+      { accounts: ACCOUNTS, symbols: {} }, state, { today: TODAY }), new FakeWF(), state);
     const p = plan(items([invTx("t9", "transfer", "transfer", 0, 5, 0, "s_vti", TODAY)],
-      [{ account_id: "brk", security_id: "s_vti", quantity: 12, cost_basis: 1240, institution_value: 0, institution_price: 0 }], [], [], [], false), ACCOUNTS, {}, state, TODAY);
+      [{ account_id: "brk", security_id: "s_vti", quantity: 12, cost_basis: 1240, institution_value: 0, institution_price: 0 }], [], [], [], false), { accounts: ACCOUNTS, symbols: {} }, state, { today: TODAY });
     expect(p.reviews.filter((r) => r.reason === "holdings mismatch").map((r) => r.detail))
       .toEqual([`VTI: Plaid 12, computed 17, diff -5; this pull adds ${TODAY} TRANSFER_IN 5`]);
   });
@@ -169,9 +169,9 @@ describe("sync", () => {
     const state = new MemoryLedger();
     const holdings = [{ account_id: "brk", security_id: "s_vti", quantity: 12, cost_basis: 1200, institution_value: 0, institution_price: 0 },
       { account_id: "brk", security_id: "s_cash", quantity: 300, institution_value: 300, institution_price: 1 }];
-    await run(plan(items([], holdings, []), ACCOUNTS, {}, state, TODAY), new FakeWF(), state);
+    await run(plan(items([], holdings, []), { accounts: ACCOUNTS, symbols: {} }, state, { today: TODAY }), new FakeWF(), state);
     const p = plan(items([invTx("late", "buy", "buy", 500, 5, 100, "s_vti", "2026-11-03")], holdings, [], [], [], false),
-      ACCOUNTS, {}, state, "2026-11-08");
+      { accounts: ACCOUNTS, symbols: {} }, state, { today: "2026-11-08" });
     const opening = (sym: string) => required(p.updates.find(([r]) => r.plaid_id === `opening:brk:${sym}`), sym)[1];
     expect([required(opening("VTI").quantity, "quantity").toNumber(), required(opening("cash").amount, "amount").toNumber()]).toEqual([7, 800]);
     expect(p.reviews.filter((r) => r.reason === "holdings mismatch")).toEqual([]);
@@ -182,7 +182,7 @@ describe("sync", () => {
     state.record(new Activity({ accountId: "brk", plaidId: "recent", date: "2026-10-30", activityType: "INTEREST", amount: D(1) }), "wf1");
     state.setInvLastEnd("brk", "2026-11-01");
     const holdings = [{ account_id: "brk", security_id: "s_vti", quantity: 2, cost_basis: 200, institution_value: 0, institution_price: 0 }];
-    const p = plan(items([invTx("old", "buy", "buy", 200, 2, 100, "s_vti", "2024-11-29")], holdings, [], [], [], false), ACCOUNTS, {}, state, TODAY);
+    const p = plan(items([invTx("old", "buy", "buy", 200, 2, 100, "s_vti", "2024-11-29")], holdings, [], [], [], false), { accounts: ACCOUNTS, symbols: {} }, state, { today: TODAY });
     expect(p.new.map((a) => a.plaidId)).toContain("old");
     expect(p.reviews.filter((r) => r.reason === "holdings mismatch")).toEqual([]);
     expect(p.fullHistory).toEqual(["brk"]);
@@ -195,7 +195,7 @@ describe("sync", () => {
     expect(openingDay(state, "2024-11-08")).toBe("2024-11-08");
     state.record(new Activity({ accountId: "chk", plaidId: "opening:chk:cash", date: "2024-11-07", activityType: "TRANSFER_IN", amount: D(1) }), "wf1");
     const p = plan(items([invTx("t1", "buy", "buy", 1000, 10, 100, "s_vti")], [{ account_id: "brk", security_id: "s_vti", quantity: 12, cost_basis: 1240, institution_value: 0, institution_price: 0 }],
-      [], [], [], false, "2024-11-08"), ACCOUNTS, {}, state, TODAY);
+      [], [], [], false, "2024-11-08"), { accounts: ACCOUNTS, symbols: {} }, state, { today: TODAY });
     expect(p.new.filter((a) => a.plaidId.startsWith("opening:")).map((a) => [a.plaidId, a.date])).toEqual([["opening:brk:VTI", "2024-11-07"]]);
     expect(openingDay(state, "2025-06-01")).toBe("2025-06-01");
   });
