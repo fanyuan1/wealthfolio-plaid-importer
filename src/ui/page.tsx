@@ -78,7 +78,7 @@ function PlaidImporter({ ctx }: { ctx: AddonContext }) {
               <Backup engine={engine} env={env} ready={ready} onChange={() => setVersion((v) => v + 1)} />
             </TabsContent>
           </Tabs>
-          <Dialog open={!!leaving} onOpenChange={(o) => { if (!o) setLeaving(undefined); }}>
+          <Dialog open={Boolean(leaving)} onOpenChange={(o) => { if (!o) setLeaving(undefined); }}>
             <DialogContent>
               <DialogHeader>
                 <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-amber-500/15">

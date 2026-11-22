@@ -23,7 +23,7 @@ export interface Adoption {
 const TOL = D("0.01");
 
 const norm = (s: string | null | undefined) => {
-  const t = String(s ?? "").toUpperCase();
+  const t = (s ?? "").toUpperCase();
   return !t || t.startsWith("$CASH") ? null : t.split(/[-.]/)[0];
 };
 const near = (a: Dec | null, b: Dec | null, tol: Dec) => a !== null && b !== null && a.abs().minus(b.abs()).abs().lte(tol);

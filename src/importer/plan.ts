@@ -81,7 +81,7 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
     new: [], updates: [], voids: [], retype: [], pairs: [], categories: new Map(), reviews: [],
     cursors: {}, invLastEnd: {}, fullHistory: [], unmapped: new Map(), moved: new Map(),
   };
-  let batch: Activity[] = [];
+  const batch: Activity[] = [];
   const cancelled = new Set<string>();
   const removed = new Set<string>();
   const holdingsAll: HoldingMap = new Map();
@@ -130,7 +130,7 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
           balanceOnly.add(a.account_id);
           if (!state.hasAny(a.account_id)) {
             p.reviews.push(review(a.account_id, a.account_id, "", "no holdings from Plaid",
-              `balance ${bal}, but Plaid sends no holdings or activity`));
+              `balance ${String(bal)}, but Plaid sends no holdings or activity`));
           }
         }
       }

@@ -3,7 +3,7 @@ import { expect, test } from "vitest";
 import { Activity, D, type Existing, findAdoptions, forgetEmptied, matchById, MemoryLedger } from "../../src/importer";
 
 const act = (id: string, over: Record<string, unknown> = {}) =>
-  new Activity({ accountId: "A", plaidId: id, date: "2026-01-02", activityType: "BUY", symbol: "VTI", quantity: D(2), amount: D(100), ...over } as never);
+  new Activity({ accountId: "A", plaidId: id, date: "2026-01-02", activityType: "BUY", symbol: "VTI", quantity: D(2), amount: D(100), ...over });
 const ex = (id: string, over: Partial<Existing> = {}): Existing =>
   ({ id, accountId: "W", date: "2026-01-02", type: "BUY", symbol: "VTI", quantity: "2", amount: "100", comment: null, ...over });
 const wf = (a: string) => (a === "A" ? "W" : undefined);

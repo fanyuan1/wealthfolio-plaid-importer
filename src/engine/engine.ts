@@ -1,4 +1,4 @@
-import { required, valueAt, accountLabel, accountNames, plural, cryptoSymbol, isCrypto, isCurrency, type AccountCfg, BLOCKING_ITEM_ERRORS, PlaidError, RECONNECT_DETAIL, accountName, type OnProgress, type Progress, assignCategories, Closes, D, discoverAccounts, entry, fetchItems, type FetchResult, type Adoption, type Existing, findAdoptions, forgetEmptied, matchById, holdsSecurities, jointCopies, planLinks, type HttpGet, jointOwners, addDays, HISTORY_DAYS, MemoryLedger, Plaid, type PlaidEnv, plan, type Plan, push, type PushStats, rebases, reportedPrice, resolve, type SecurityOverride, type HoldingsData, type InvestmentData, type LinkSession, type PlaidInstitution, type PlaidSecurity, type HoldingsItem, todoReport, type Token, type Track, trackedIds, type Transport, uncategorized, WF_TYPE, withPrices, yahooFetch } from '../importer';
+import { errText, required, valueAt, accountLabel, accountNames, plural, cryptoSymbol, isCrypto, isCurrency, type AccountCfg, BLOCKING_ITEM_ERRORS, PlaidError, RECONNECT_DETAIL, accountName, type OnProgress, type Progress, assignCategories, Closes, D, discoverAccounts, entry, fetchItems, type FetchResult, type Adoption, type Existing, findAdoptions, forgetEmptied, matchById, holdsSecurities, jointCopies, planLinks, type HttpGet, jointOwners, addDays, HISTORY_DAYS, MemoryLedger, Plaid, type PlaidEnv, plan, type Plan, push, type PushStats, rebases, reportedPrice, resolve, type SecurityOverride, type HoldingsData, type InvestmentData, type LinkSession, type PlaidInstitution, type PlaidSecurity, type HoldingsItem, todoReport, type Token, type Track, trackedIds, type Transport, uncategorized, WF_TYPE, withPrices, yahooFetch } from '../importer';
 import { type Api, type AutoRun, type Daily, type ItemMeta, type RunRecord, Store } from './store';
 import { type Backup, type BackupItem, type BackupKind, isBackup } from './backup';
 import { SdkWriter } from './writer';
@@ -22,7 +22,6 @@ const BACKUP_FORMAT = "plaid-importer-backup";
 const NOT_A_BACKUP = "This is not a Plaid Importer backup. Make one in Backup.";
 const NO_HOSTED_LINK = "Plaid returned no hosted link. Ask Plaid support to enable Hosted Link for your account.";
 const DAILY_RUNNING = "The daily sync is running. Wait for it to finish.";
-const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const union = <T,>(...lists: Iterable<T>[]): T[] => [...new Set(lists.flatMap((l) => [...l]))];
 const clientUser = (owner: string) => `plaid-importer-${owner.toLowerCase()}`;
 const institutionName = (plaid: Plaid, id: string | null | undefined): Promise<string | undefined> =>
@@ -408,7 +407,7 @@ export class Engine {
       try {
         const n = (await this.refreshAccounts(id, false)).length;
         added += n;
-        progress({ id, label, state: "done", detail: n ? `${plural(n, "new account")}` : "No new accounts" });
+        progress({ id, label, state: "done", detail: n ? plural(n, "new account") : "No new accounts" });
       } catch (e) {
         const login = e instanceof PlaidError && BLOCKING_ITEM_ERRORS.has(e.code);
         if (login) await this.markReconnect([id], []);
@@ -502,9 +501,9 @@ export class Engine {
             continue;
           }
           const made = await this.api.accounts.create({
-            name: String(c.name), accountType: WF_TYPE[c.kind], group: String(c.owner ?? "") || null, currency: c.currency || "USD",
+            name: c.name, accountType: WF_TYPE[c.kind], group: String(c.owner ?? "") || null, currency: c.currency || "USD",
             accountNumber: (c.mask as string) || undefined, isDefault: false, isActive: true, trackingMode: "TRANSACTIONS",
-          } as never);
+          });
           c.wealthfolio_account_id = made.id;
           n++;
         }
@@ -650,7 +649,7 @@ export class Engine {
     else if (o.mode === "cash") e.cash = true;
     else if (o.mode === "holding") Object.assign(e, { investment: true, symbol: sym });
     else if (o.mode === "exclude") e.exclude = true;
-    else if (o.mode === "track") {
+    else {
       if (!o.track) throw new Error("Set the fund to follow first.");
       e.track = o.track;
     }
@@ -875,7 +874,7 @@ export class Engine {
       for (const a of list) {
         if (a.status === "VOID") continue;
         const d = a.date as unknown;
-        existing.push({ id: a.id, accountId: a.accountId, type: String(a.activityType), symbol: a.assetSymbol || null,
+        existing.push({ id: a.id, accountId: a.accountId, type: a.activityType, symbol: a.assetSymbol || null,
           date: d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10),
           quantity: a.quantity, amount: a.amount, comment: a.comment ?? null });
       }
@@ -1052,7 +1051,7 @@ export interface Task { label: string; running: boolean; progress: Progress[]; l
 export interface SyncView { dry?: DryRun | undefined; stale: boolean; result?: string | undefined; failed: string[]; refused: Record<string, string> }
 const EMPTY_VIEW: SyncView = { stale: false, failed: [], refused: {} };
 
-export function addProgress(list: Progress[], p: Progress): Progress[] {
+function addProgress(list: Progress[], p: Progress): Progress[] {
   const i = list.findIndex((x) => x.id === p.id);
   if (i < 0) return [...list, p];
   const next = list.slice();

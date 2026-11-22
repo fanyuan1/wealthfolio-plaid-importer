@@ -20,3 +20,7 @@ export function required<T>(value: T | null | undefined, what: string): T {
   if (value === null || value === undefined) throw new RangeError(`${what} is missing`);
   return value;
 }
+
+export function errText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}

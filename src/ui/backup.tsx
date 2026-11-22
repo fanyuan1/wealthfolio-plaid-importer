@@ -56,7 +56,7 @@ export function Backup({ engine, env, ready, onChange }: { engine: Engine; env: 
               </div>
               <p className="text-muted-foreground flex-1 text-sm">{text}</p>
               <div>
-                <Button variant={kind === 'full' ? 'default' : 'outline'} disabled={!!busy}
+                <Button variant={kind === 'full' ? 'default' : 'outline'} disabled={Boolean(busy)}
                         onClick={() => void run(`backup-${kind}`, async () => setMade({ kind, text: await engine.backup(kind) }))}>
                   <Spin on={busy === `backup-${kind}`} />Make {kind === 'connections' ? 'connections' : 'full'} backup
                 </Button>
@@ -71,7 +71,7 @@ export function Backup({ engine, env, ready, onChange }: { engine: Engine; env: 
               <span className="text-muted-foreground text-xs">{(made.text.length / 1024).toFixed(made.text.length < 10240 ? 1 : 0)} KB</span>
               <div className="ms-auto flex flex-wrap gap-2">
                 <Button size="sm" className="min-w-20" onClick={() => void copy()}><Icons.Copy className="h-3 w-3" />{made.copied ? 'Copied' : 'Copy'}</Button>
-                <Button size="sm" variant="outline" disabled={!!busy} onClick={() => void saveFile()}
+                <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => void saveFile()}
                         className="min-w-32">
                   <Spin on={busy === 'save'} />
                   <FlashLabel on={saved} done="Saved" small><Icons.Download className="h-3 w-3" />Save as file…</FlashLabel>
@@ -96,21 +96,21 @@ export function Backup({ engine, env, ready, onChange }: { engine: Engine; env: 
               <Icons.FileText className="text-muted-foreground h-5 w-5" />
               <span className="font-medium">{picked.name}</span>
               <span className="text-muted-foreground text-xs">{(picked.text.length / 1024).toFixed(1)} KB · loaded</span>
-              <Button size="sm" variant="ghost" className="ms-auto" disabled={!!restoring} onClick={() => setPicked(undefined)}>Remove</Button>
+              <Button size="sm" variant="ghost" className="ms-auto" disabled={Boolean(restoring)} onClick={() => setPicked(undefined)}>Remove</Button>
             </div>
           ) : (
             <textarea value={paste} onChange={(e) => setPaste(e.target.value)} spellCheck={false} autoComplete="off" placeholder="{ … }"
                       className="border-input bg-background h-20 rounded-md border p-2 font-mono text-xs" />
           )}
           <div className="flex flex-wrap gap-2">
-            <Button disabled={!source.trim() || !!restoring} onClick={() => setConfirm(true)}><Spin on={!!restoring} />Restore</Button>
+            <Button disabled={!source.trim() || Boolean(restoring)} onClick={() => setConfirm(true)}><Spin on={Boolean(restoring)} />Restore</Button>
             <input ref={file} type="file" accept=".json,application/json" className="hidden"
                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
                      const f = e.target.files?.[0];
                      e.target.value = '';
                      if (f) void run('read', async () => setPicked({ name: f.name, text: await f.text() }));
                    }} />
-            <Button variant="outline" disabled={!!restoring} onClick={() => file.current?.click()}><Icons.Upload className="h-4 w-4" />Choose a file</Button>
+            <Button variant="outline" disabled={Boolean(restoring)} onClick={() => file.current?.click()}><Icons.Upload className="h-4 w-4" />Choose a file</Button>
           </div>
           {restored && (
             <Alert>
@@ -149,7 +149,7 @@ export function Backup({ engine, env, ready, onChange }: { engine: Engine; env: 
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <AlertDialog open={!!overwrite} onOpenChange={(o) => { if (!o) setOverwrite(undefined); }}>
+      <AlertDialog open={Boolean(overwrite)} onOpenChange={(o) => { if (!o) setOverwrite(undefined); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Overwrite with {describe(source)}?</AlertDialogTitle>

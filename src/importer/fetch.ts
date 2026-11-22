@@ -17,9 +17,9 @@ type Log = (msg: string) => void;
 export const RECONNECT_DETAIL = "Login expired. Reconnect it in Connections.";
 
 export async function fetchItems(plaid: Plaid, tokens: Record<string, Token>, accountsCfg: Record<string, AccountCfg>,
-  state: Ledger, today: string, opts: { log?: Log; full?: Set<string>; tracked?: Set<string>;
-    progress?: OnProgress } = {}): Promise<FetchResult> {
-  const log = opts.log ?? console.log;
+  state: Ledger, today: string, opts: { log: Log; full?: Set<string>; tracked?: Set<string>;
+    progress?: OnProgress }): Promise<FetchResult> {
+  const log = opts.log;
   const progress = opts.progress ?? (() => {});
   const out: FetchResult = { items: [], skipped: [], blocked: [] };
   for (const [itemId, tok] of Object.entries(tokens)) {

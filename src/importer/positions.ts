@@ -79,7 +79,7 @@ export function openingActivities(accountId: string, startDate: string, holdings
     if (opening.abs().lt(EPS)) continue;
     const pid = `opening:${accountId}:${sym}`;
     if (opening.lt(0)) {
-      reviews.push(review(accountId, pid, startDate, "negative opening position", `${sym}: holdings ${current}, pulled net ${delta}`));
+      reviews.push(review(accountId, pid, startDate, "negative opening position", `${sym}: holdings ${String(current)}, pulled net ${String(delta)}`));
       continue;
     }
     let price: Dec | null = null;
@@ -92,7 +92,7 @@ export function openingActivities(accountId: string, startDate: string, holdings
       [price, source] = acquisitionPrice(sym, sid, startDate, acts, priceOn, grown);
       if (price === null && h) [price, source] = [dec(h.institution_price)?.times(grown) ?? null, "today's price; fix in Wealthfolio"];
       reviews.push(review(accountId, pid, startDate, "opening cost basis missing",
-        `${sym}: priced at ${price} (${source || "no price found; set it in Wealthfolio"})`));
+        `${sym}: priced at ${String(price)} (${source || "no price found; set it in Wealthfolio"})`));
     }
     out.push(new Activity({
       accountId, plaidId: pid, date: startDate, activityType: "TRANSFER_IN", currency, symbol: sym,
@@ -117,7 +117,7 @@ export function openingActivities(accountId: string, startDate: string, holdings
 function acquisitionPrice(sym: string, sid: string | null, day: string, acts: Activity[], priceOn?: PriceOn, grown: Dec = D(1)):
   [Dec | null, string | null] {
   const p = priceOn && sid ? priceOn(sid, day) : null;
-  if (nz(p)) return [p.times(grown), `market price on ${day}${grown.eq(1) ? "" : `, times ${grown} for later splits`}`];
+  if (nz(p)) return [p.times(grown), `market price on ${day}${grown.eq(1) ? "" : `, times ${String(grown)} for later splits`}`];
   const priced = acts.filter((a) => a.symbol === sym && nz(a.unitPrice)).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   const first = priced[0];
   if (first) return [first.unitPrice, `Plaid price on ${first.date}, the earliest it shows`];
@@ -132,7 +132,7 @@ export function resolveSplits(acts: Activity[], prior: Map<string, Dec> = new Ma
     if (a.activityType === "SPLIT") {
       const before = pos.get(key) ?? ZERO;
       if (before.lte(0)) {
-        reviews.push(review(a.accountId, a.plaidId, a.date, "split with unknown position", `${a.symbol}: delta ${a.splitDelta}`));
+        reviews.push(review(a.accountId, a.plaidId, a.date, "split with unknown position", `${a.symbol}: delta ${String(a.splitDelta)}`));
         a.amount = null;
       } else {
         a.amount = before.plus(a.splitDelta ?? ZERO).div(before).round(6, 2);
@@ -163,7 +163,7 @@ export function fixSplitPrices(acts: Activity[], all: Activity[], close: (sym: s
     if (near(price, y) && !near(price, y.times(factor))) {
       a.unitPrice = price.times(factor);
       out.push(review(a.accountId, a.plaidId, a.date, "price adjusted for a later split",
-        `${a.symbol}: Plaid price ${price} matches Yahoo's split-adjusted close ${y}; used ${a.unitPrice} for ${a.quantity} sh`));
+        `${a.symbol}: Plaid price ${String(price)} matches Yahoo's split-adjusted close ${String(y)}; used ${String(a.unitPrice)} for ${String(a.quantity)} sh`));
     }
   }
   return out;
@@ -186,9 +186,9 @@ export function reconcile(accountIds: Set<string>, computed: Map<string, Dec>, h
     const calc = computed.get(k) ?? ZERO;
     if (have.minus(calc).abs().gt(tol)) {
       const added = fresh.filter((a) => a.symbol && hkey(a.accountId, a.symbol) === k && !a.positionDelta().eq(0))
-        .map((a) => `${a.date} ${a.activityType} ${a.positionDelta()}`);
+        .map((a) => `${a.date} ${a.activityType} ${String(a.positionDelta())}`);
       const why = added.length ? `; this pull adds ${added.join(", ")}` : "";
-      reviews.push(review(acct, `reconcile:${sym}`, "", "holdings mismatch", `${sym}: Plaid ${have}, computed ${calc}, diff ${have.minus(calc)}${why}`));
+      reviews.push(review(acct, `reconcile:${sym}`, "", "holdings mismatch", `${sym}: Plaid ${String(have)}, computed ${String(calc)}, diff ${String(have.minus(calc))}${why}`));
     }
   }
   return reviews;

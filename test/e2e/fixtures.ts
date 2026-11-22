@@ -15,16 +15,15 @@ export async function routePlaid(page: Page, plaid: FakePlaid) {
 }
 
 export const test = base.extend<{ plaid: FakePlaid; addon: Addon }>({
-  plaid: async ({ page }, use) => {
+  plaid: [async ({ page }, provide) => {
     test.skip(process.env.E2E_DOCKER !== "1", "Docker is not running");
     await freshWealthfolio();
     const plaid = new FakePlaid();
     await routePlaid(page, plaid);
-    await use(plaid);
-  },
-  addon: async ({ page, plaid }, use) => {
-    void plaid;
-    await use(new Addon(page));
+    await provide(plaid);
+  }, { auto: true }],
+  addon: async ({ page }, provide) => {
+    await provide(new Addon(page));
   },
 });
 export { expect };

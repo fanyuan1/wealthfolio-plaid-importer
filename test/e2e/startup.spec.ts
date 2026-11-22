@@ -1,8 +1,7 @@
 import { BASE } from "./wealthfolio";
 import { expect, test } from "./fixtures";
 
-test("boots at startup and adds its sidebar item", async ({ page, plaid }) => {
-  void plaid;
+test("boots at startup and adds its sidebar item", async ({ page }) => {
   const logs: string[] = [];
   page.on("console", (m) => logs.push(m.text()));
   await page.goto(`${BASE}/dashboard`);

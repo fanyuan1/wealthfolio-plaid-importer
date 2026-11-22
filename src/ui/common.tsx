@@ -1,6 +1,6 @@
 import type { AddonContext } from '@wealthfolio/addon-sdk';
 import { Alert, AlertDescription, AlertTitle, Button, Icons, Input } from '@wealthfolio/ui';
-import { addProgress, type Progress, type Task } from '../engine/engine';
+import { type Progress, type Task } from '../engine/engine';
 
 import { type ReactNode, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { Engine } from '../engine/engine';

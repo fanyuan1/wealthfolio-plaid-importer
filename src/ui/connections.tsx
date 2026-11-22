@@ -51,11 +51,11 @@ export function Connections({ engine, env, onChange, onStep }: { engine: Engine;
                 <Label htmlFor="owner">Initials</Label>
                 <Input id="owner" className="w-28" maxLength={4} value={owner} onChange={(e) => setOwner(e.target.value.toUpperCase())} />
               </div>
-              <Button disabled={owner.length < 1 || !!busy} onClick={() => void start(() => engine.startHostedLink(owner), owner)}>
+              <Button disabled={owner.length < 1 || Boolean(busy)} onClick={() => void start(() => engine.startHostedLink(owner), owner)}>
                 <Spin on={busy === 'connect'} /><Icons.ExternalLink className="h-4 w-4" />Connect
               </Button>
               {env === 'sandbox' && (
-                <Button variant="outline" disabled={owner.length < 1 || !!busy}
+                <Button variant="outline" disabled={owner.length < 1 || Boolean(busy)}
                         onClick={() => void run('sandbox', async () => { await engine.connectSandbox(owner); await done(); })}>
                   <Spin on={busy === 'sandbox'} />Add a test bank
                 </Button>
@@ -112,10 +112,10 @@ export function Connections({ engine, env, onChange, onStep }: { engine: Engine;
                     <TableCell className="text-muted-foreground text-sm">{ago(m.checked)}</TableCell>
                     <TableCell className="pe-6 text-end">
                       <div className="flex justify-end gap-2">
-                        <Button variant={m.reconnect ? 'default' : 'outline'} size="sm" disabled={!!busy || !!link} onClick={() => void start(() => engine.startReconnect(id), m.owner, id)}>
+                        <Button variant={m.reconnect ? 'default' : 'outline'} size="sm" disabled={Boolean(busy) || Boolean(link)} onClick={() => void start(() => engine.startReconnect(id), m.owner, id)}>
                           Reconnect
                         </Button>
-                        <Button variant="ghost" size="sm" disabled={!!busy} aria-label={`Remove ${m.institution_name}`} onClick={() => setRemoving(id)}>
+                        <Button variant="ghost" size="sm" disabled={Boolean(busy)} aria-label={`Remove ${m.institution_name}`} onClick={() => setRemoving(id)}>
                           <Icons.Trash className="h-3 w-3" />
                         </Button>
                       </div>
@@ -143,7 +143,7 @@ export function Connections({ engine, env, onChange, onStep }: { engine: Engine;
             <Input id="tok-owner" className="w-28" maxLength={4} value={tokOwner} onChange={(e) => setTokOwner(e.target.value.toUpperCase())} />
           </div>
           {}
-          <Button className="min-w-32" disabled={!added && (!token.trim() || !tokOwner || !!busy)}
+          <Button className="min-w-32" disabled={!added && (!token.trim() || !tokOwner || Boolean(busy))}
                   onClick={() => { if (!added) void run('existing', async () => {
                     await engine.addToken(tokOwner, token);
                     setToken('');
@@ -155,7 +155,7 @@ export function Connections({ engine, env, onChange, onStep }: { engine: Engine;
         </CardContent>
       </Card>
       <Problem error={error} />
-      <AlertDialog open={!!removing} onOpenChange={(o) => { if (!o) setRemoving(undefined); }}>
+      <AlertDialog open={Boolean(removing)} onOpenChange={(o) => { if (!o) setRemoving(undefined); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Remove {removing && items[removing]?.institution_name}?</AlertDialogTitle>

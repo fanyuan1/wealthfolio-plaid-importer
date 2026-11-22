@@ -6,17 +6,8 @@
     "lints/max-params": {
       "count": 2
     },
-    "lints/no-unnecessary-condition": {
-      "count": 1
-    },
-    "lints/no-unnecessary-template-expression": {
-      "count": 1
-    },
-    "lints/no-unnecessary-type-assertion": {
-      "count": 1
-    },
     "lints/no-unnecessary-type-conversion": {
-      "count": 2
+      "count": 1
     },
     "lints/no-unused-vars": {
       "count": 1
@@ -24,15 +15,6 @@
   },
   "src/engine/writer.ts": {
     "lints/cognitive-complexity": {
-      "count": 1
-    },
-    "lints/no-unnecessary-condition": {
-      "count": 3
-    },
-    "lints/no-unnecessary-type-assertion": {
-      "count": 2
-    },
-    "lints/no-unnecessary-type-conversion": {
       "count": 1
     }
   },
@@ -44,14 +26,6 @@
   "src/importer/adopt.ts": {
     "lints/cognitive-complexity": {
       "count": 1
-    },
-    "lints/no-unnecessary-type-conversion": {
-      "count": 1
-    }
-  },
-  "src/importer/dec.ts": {
-    "lints/no-unnecessary-type-assertion": {
-      "count": 1
     }
   },
   "src/importer/fetch.ts": {
@@ -60,9 +34,6 @@
     },
     "lints/max-params": {
       "count": 2
-    },
-    "lints/no-console": {
-      "count": 1
     }
   },
   "src/importer/mapInvestments.ts": {
@@ -73,9 +44,6 @@
       "count": 1
     },
     "lints/max-params": {
-      "count": 2
-    },
-    "lints/restrict-template-expressions": {
       "count": 2
     }
   },
@@ -106,12 +74,6 @@
     },
     "lints/max-params": {
       "count": 1
-    },
-    "lints/prefer-const": {
-      "count": 1
-    },
-    "lints/restrict-template-expressions": {
-      "count": 1
     }
   },
   "src/importer/positions.ts": {
@@ -120,9 +82,6 @@
     },
     "lints/max-params": {
       "count": 3
-    },
-    "lints/restrict-template-expressions": {
-      "count": 13
     }
   },
   "src/importer/push.ts": {
@@ -133,18 +92,6 @@
       "count": 1
     },
     "lints/max-params": {
-      "count": 1
-    },
-    "lints/no-console": {
-      "count": 2
-    },
-    "lints/no-unnecessary-condition": {
-      "count": 3
-    },
-    "lints/no-unnecessary-type-conversion": {
-      "count": 3
-    },
-    "lints/restrict-template-expressions": {
       "count": 1
     }
   },
@@ -173,9 +120,6 @@
     "lints/max-lines-per-function": {
       "count": 1
     },
-    "lints/no-implicit-coercion": {
-      "count": 5
-    },
     "react-hooks/exhaustive-deps": {
       "count": 4
     }
@@ -183,9 +127,6 @@
   "src/ui/backup.tsx": {
     "lints/max-lines-per-function": {
       "count": 1
-    },
-    "lints/no-implicit-coercion": {
-      "count": 7
     }
   },
   "src/ui/common.tsx": {
@@ -197,9 +138,6 @@
     },
     "lints/no-unnecessary-type-parameters": {
       "count": 1
-    },
-    "lints/no-unused-vars": {
-      "count": 1
     }
   },
   "src/ui/connections.tsx": {
@@ -208,9 +146,6 @@
     },
     "lints/no-deprecated": {
       "count": 1
-    },
-    "lints/no-implicit-coercion": {
-      "count": 7
     }
   },
   "src/ui/matches.tsx": {
@@ -221,9 +156,6 @@
   "src/ui/page.tsx": {
     "lints/max-lines-per-function": {
       "count": 1
-    },
-    "lints/no-implicit-coercion": {
-      "count": 1
     }
   },
   "src/ui/securities.tsx": {
@@ -232,22 +164,11 @@
     },
     "lints/max-params": {
       "count": 1
-    },
-    "lints/no-implicit-coercion": {
-      "count": 3
-    }
-  },
-  "src/ui/setup.tsx": {
-    "lints/no-implicit-coercion": {
-      "count": 2
     }
   },
   "src/ui/sync.tsx": {
     "lints/max-lines-per-function": {
       "count": 2
-    },
-    "lints/no-implicit-coercion": {
-      "count": 7
     }
   },
   "test/e2e/fake-plaid.ts": {
@@ -258,12 +179,6 @@
   "test/e2e/fixtures.ts": {
     "lints/no-deprecated": {
       "count": 1
-    },
-    "lints/no-meaningless-void-operator": {
-      "count": 1
-    },
-    "lints/rules-of-hooks": {
-      "count": 2
     }
   },
   "test/e2e/layout.spec.ts": {
@@ -277,15 +192,7 @@
       "count": 1
     }
   },
-  "test/e2e/startup.spec.ts": {
-    "lints/no-meaningless-void-operator": {
-      "count": 1
-    }
-  },
   "test/engine/store.test.ts": {
-    "lints/no-unnecessary-type-assertion": {
-      "count": 16
-    },
     "lints/no-unsafe-argument": {
       "count": 1
     },
@@ -301,17 +208,9 @@
       "count": 1
     }
   },
-  "test/importer/adopt.test.ts": {
-    "lints/no-unnecessary-type-assertion": {
-      "count": 1
-    }
-  },
   "test/importer/mapping.test.ts": {
     "lints/max-params": {
       "count": 3
-    },
-    "lints/prefer-const": {
-      "count": 1
     }
   },
   "test/importer/sync.test.ts": {

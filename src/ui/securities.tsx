@@ -69,7 +69,7 @@ export function Securities({ engine, list, refused = {}, onSaved, onAttention }:
   const editing = list.find((s) => s.sid === open);
   return (
     <Card>
-      <Dialog open={!!editing} onOpenChange={(o) => { if (!o) setOpen(undefined); }}>
+      <Dialog open={Boolean(editing)} onOpenChange={(o) => { if (!o) setOpen(undefined); }}>
         <DialogContent className="max-w-2xl">
           {editing && (
             <>
@@ -183,7 +183,7 @@ function SecurityEditor({ engine, s, onSaved }: { engine: Engine; s: Security; o
             {field(`d-${s.sid}`, 'Date', day, (x) => { setDay(x); setTrack(undefined); }, 'YYYY-MM-DD')}
             {field(`p-${s.sid}`, 'This fund\'s price', price, (x) => { setPrice(x); setTrack(undefined); }, '104.25', 'w-28')}
             {field(`c-${s.sid}`, 'Close (optional)', close, (x) => { setClose(x); setTrack(undefined); }, 'from Yahoo', 'w-28')}
-            <Button variant="outline" disabled={!!busy || valid.state === 'bad'} onClick={() => void run('ratio', async () => setTrack(await engine.ratio(target, day, price, close)))}>
+            <Button variant="outline" disabled={Boolean(busy) || valid.state === 'bad'} onClick={() => void run('ratio', async () => setTrack(await engine.ratio(target, day, price, close)))}>
               <Spin on={busy === 'ratio'} />Get ratio
             </Button>
           </div>
@@ -197,7 +197,7 @@ function SecurityEditor({ engine, s, onSaved }: { engine: Engine; s: Security; o
         </div>
       )}
       <div className="flex gap-2">
-        <Button size="sm" disabled={!!busy || (mode === 'track' && !track) || ((mode === 'track' || mode === 'ticker') && valid.state === 'bad')}
+        <Button size="sm" disabled={Boolean(busy) || (mode === 'track' && !track) || ((mode === 'track' || mode === 'ticker') && valid.state === 'bad')}
                 onClick={() => void run('save', async () => {
                   const o = await engine.setSecurity(s.sid, s.name, { mode, symbol, track });
                   const name = modeInfo(mode)[1];

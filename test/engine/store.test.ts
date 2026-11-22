@@ -112,7 +112,7 @@ describe("backup", () => {
     const a = new Engine(fakeApi().api);
     await a.store.saveToken("item1", "access-sandbox-x");
     await a.store.saveItems("sandbox", { item1: { owner: "AB", institution_name: "Test Bank" } });
-    await a.store.saveAccounts("sandbox", { acc: { kind: "cash", item_id: "item1", wealthfolio_account_id: "wf1" } } as never);
+    await a.store.saveAccounts("sandbox", { acc: { kind: "cash", item_id: "item1", wealthfolio_account_id: "wf1" } });
     await a.store.saveLedger("sandbox", bigLedger(3));
     return a;
   }
@@ -164,7 +164,7 @@ describe("backup", () => {
     await b.store.saveToken("item1", "access-sandbox-new");
     await b.store.saveToken("item2", "access-sandbox-other");
     await b.store.saveItems("sandbox", { item1: { owner: "XY", institution_name: "Test Bank" }, item2: { owner: "CD", institution_name: "Other" } });
-    await b.store.saveAccounts("sandbox", { acc2: { kind: "cash", item_id: "item2", wealthfolio_account_id: "wf1" } } as never);
+    await b.store.saveAccounts("sandbox", { acc2: { kind: "cash", item_id: "item2", wealthfolio_account_id: "wf1" } });
     await b.restore(text);
     expect(valueAt(await b.store.items("sandbox"), "item1").owner).toBe("XY");
     expect(await b.store.token("item1")).toBe("access-sandbox-new");
@@ -193,7 +193,7 @@ describe("previous account", () => {
     await e.store.saveAccounts("sandbox", {
       a: { item_id: "i", kind: "cash", name: "AB · Chase Checking", wealthfolio_account_id: null, skip: false },
       b: { item_id: "i", kind: "cash", name: "AB · Chase Savings", wealthfolio_account_id: null, skip: false },
-    } as never);
+    });
     await e.setMatch("a", "wfB");
     await e.setMatch("b", "new");
     expect(await e.createAccounts()).toBe(1);
@@ -240,10 +240,10 @@ describe("link plan", () => {
 
   it("lets a link change only before the first push", async () => {
     const e = new Engine(fakeApi(["w1"]).api);
-    await e.store.saveAccounts("sandbox", { a: { item_id: "i", kind: "cash", name: "A", wealthfolio_account_id: "w1", match: "w1" } } as never);
+    await e.store.saveAccounts("sandbox", { a: { item_id: "i", kind: "cash", name: "A", wealthfolio_account_id: "w1", match: "w1" } });
     await e.unlinkAccount("a");
     expect(valueAt(await e.store.accounts("sandbox"), "a").wealthfolio_account_id).toBeNull();
-    await e.store.saveAccounts("sandbox", { a: { item_id: "i", kind: "cash", name: "A", wealthfolio_account_id: "w1" } } as never);
+    await e.store.saveAccounts("sandbox", { a: { item_id: "i", kind: "cash", name: "A", wealthfolio_account_id: "w1" } });
     const l = new MemoryLedger({});
     l.rows.set("p", row("p", "a"));
     await e.store.saveLedger("sandbox", l);
@@ -267,7 +267,7 @@ describe("joint accounts", () => {
     const e = new Engine(fakeApi().api);
     const acct = (owner: string, name: string) => ({ item_id: owner, owner, kind: "cash", name, institution_id: "ins", mask: "1111", plaid_subtype: "checking", skip: true });
     await e.store.saveAccounts("sandbox", { a: acct("AB", "AB · Chase ••1111"), b: acct("CD", "CD · Chase ••1111"),
-      c: { ...acct("AB", "AB · Chase ••2222"), mask: "2222" } } as never);
+      c: { ...acct("AB", "AB · Chase ••2222"), mask: "2222" } });
     await e.setSyncAll(true);
     const cfg = await e.store.accounts("sandbox");
     expect([valueAt(cfg, "a").skip, valueAt(cfg, "b").skip, valueAt(cfg, "c").skip]).toEqual([false, true, false]);
@@ -279,7 +279,7 @@ describe("dry run", () => {
     const e = new Engine(fakeApi(["W"]).api);
     await e.store.saveToken("i", "access-sandbox-x");
     await e.store.saveItems("sandbox", { i: { owner: "AB", institution_name: "Bank" } });
-    await e.store.saveAccounts("sandbox", { A: { item_id: "i", kind: "cash", name: "AB · Bank", wealthfolio_account_id: "W", skip: false } } as never);
+    await e.store.saveAccounts("sandbox", { A: { item_id: "i", kind: "cash", name: "AB · Bank", wealthfolio_account_id: "W", skip: false } });
     let pulls = 0;
     e.plaid = () => Promise.resolve(({
       item: () => Promise.resolve(({})),
@@ -313,7 +313,7 @@ describe("dry run", () => {
     await e.dryRun(() => {}, () => {}, true);
     expect(pulls()).toBe(2);
     await e.store.saveAccounts("sandbox", { A: { item_id: "i", kind: "cash", name: "AB · Bank", wealthfolio_account_id: "W", skip: false },
-      B: { item_id: "i", kind: "cash", name: "AB · Bank 2", wealthfolio_account_id: "W", skip: false } } as never);
+      B: { item_id: "i", kind: "cash", name: "AB · Bank 2", wealthfolio_account_id: "W", skip: false } });
     await e.dryRun(() => {});
     expect(pulls()).toBe(3);
   });
@@ -324,7 +324,7 @@ describe("securities changes after a push", () => {
     const e = new Engine(fakeApi(["W"]).api);
     await e.store.saveToken("i", "access-sandbox-x");
     await e.store.saveItems("sandbox", { i: { owner: "AB", institution_name: "Broker" } });
-    await e.store.saveAccounts("sandbox", { B: { item_id: "i", kind: "investment", name: "AB · Broker", wealthfolio_account_id: "W", skip: false } } as never);
+    await e.store.saveAccounts("sandbox", { B: { item_id: "i", kind: "investment", name: "AB · Broker", wealthfolio_account_id: "W", skip: false } });
     const secs = { v: { security_id: "v", ticker_symbol: "VTI", type: "etf", iso_currency_code: "USD" },
       f: { security_id: "f", ticker_symbol: null, name: "Plan Fund", type: "mutual fund", iso_currency_code: "USD" } };
     const txns = [
@@ -398,7 +398,7 @@ describe("setOwner", () => {
     await e.store.saveAccounts("sandbox", {
       a: { item_id: "i", owner: "AV", kind: "cash", institution: "Chase", plaid_name: "Checking", mask: "1111", name: "AV · Chase Checking ••1111", wealthfolio_account_id: null },
       b: { item_id: "i", owner: "AV", kind: "cash", institution: "Chase", plaid_name: "Savings", mask: "2222", name: "AV · Chase Savings ••2222", wealthfolio_account_id: "wf" },
-    } as never);
+    });
     await e.setOwner("i", "ab");
     const cfg = await e.store.accounts("sandbox");
     expect(valueAt(cfg, "a").name).toBe("AB · Chase Checking ••1111");
@@ -522,7 +522,7 @@ describe("autoSync", () => {
 
   it("refuses the user's changes while it runs, and waits while one is saved", async () => {
     const e = engine();
-    await e.store.saveAccounts("sandbox", { a: { item_id: "i", kind: "cash", name: "A" } } as never);
+    await e.store.saveAccounts("sandbox", { a: { item_id: "i", kind: "cash", name: "A" } });
     e.tasks.daily = { label: "run", running: true, progress: [], log: [] };
     await expect(e.setSync("a", false)).rejects.toThrow(/daily sync is running/);
     await expect(e.setSecurity("s", "S", { mode: "cash" })).rejects.toThrow(/daily sync is running/);
@@ -593,7 +593,7 @@ describe("autoSync", () => {
 describe("adoptions", () => {
   it("links a discarded row to the existing activity and does not add it", async () => {
     const f = fakeApi(), e = new Engine(f.api);
-    const act = new Activity({ accountId: "A", plaidId: "p1", date: "2026-01-02", activityType: "BUY", symbol: "VTI", quantity: D(2), amount: D(100) } as never);
+    const act = new Activity({ accountId: "A", plaidId: "p1", date: "2026-01-02", activityType: "BUY", symbol: "VTI", quantity: D(2), amount: D(100) });
     const emptyPlan = { new: [act], categories: new Map(), updates: [], voids: [], retype: [], pairs: [], reviews: [], cursors: {}, invLastEnd: {} };
     const d = { env: "sandbox", plan: emptyPlan, state: new MemoryLedger({}), cfg: { A: { kind: "investment", item_id: "i", wealthfolio_account_id: "W" } },
       fetched: { items: [], skipped: [], blocked: [] }, adoptions: [{ key: "p1", plaidId: "p1", accountId: "A", how: "exact", decision: "add",
@@ -607,9 +607,9 @@ describe("adoptions", () => {
 describe("rows the importer pushed before", () => {
   it("are linked back as its own on a first push, not offered for review", async () => {
     const f = fakeApi(), e = new Engine(f.api);
-    (f.api as never as { activities: { getAll: () => Promise<unknown[]> } }).activities.getAll = () => Promise.resolve([
+    (f.api as { activities: { getAll: () => Promise<unknown[]> } }).activities.getAll = () => Promise.resolve([
       { id: "wf1", accountId: "W", activityType: "BUY", assetSymbol: "VTI", date: "2026-01-02", quantity: "2", amount: "100", comment: "plaid:p1" }]);
-    const act = (pid: string) => new Activity({ accountId: "A", plaidId: pid, date: "2026-01-02", activityType: "BUY", symbol: "VTI", quantity: D(2), amount: D(100) } as never);
+    const act = (pid: string) => new Activity({ accountId: "A", plaidId: pid, date: "2026-01-02", activityType: "BUY", symbol: "VTI", quantity: D(2), amount: D(100) });
     const p = { new: [act("p1"), act("p2")], categories: new Map() } as never as Plan;
     const state = new MemoryLedger({});
     const cfg = { A: { kind: "investment", item_id: "i", wealthfolio_account_id: "W" } };
@@ -650,7 +650,7 @@ describe("categorize", () => {
     } });
     const e = new Engine(api);
     await e.store.saveAccounts("sandbox", { card: { item_id: "i", kind: "credit", name: "AB · Card", wealthfolio_account_id: "W" },
-      brk: { item_id: "i", kind: "investment", name: "AB · Broker", wealthfolio_account_id: "W2" } } as never);
+      brk: { item_id: "i", kind: "investment", name: "AB · Broker", wealthfolio_account_id: "W2" } });
     await e.store.saveLedger("sandbox", new MemoryLedger({ rows: rows as never }));
     return { e, assigned };
   }
@@ -666,7 +666,7 @@ describe("categorize", () => {
 
   it("pulls once for rows pushed before the category was kept", async () => {
     const { e, assigned } = await setup([card("old", { category: undefined }), card("gone", { category: undefined })]);
-    await e.store.saveItems("sandbox", { i: { owner: "AB", institution_name: "Bank", products: ["transactions"], env: "sandbox" } } as never);
+    await e.store.saveItems("sandbox", { i: { owner: "AB", institution_name: "Bank", products: ["transactions"], env: "sandbox" } });
     await e.store.saveToken("i", "tok");
     let pulls = 0;
     const { Plaid } = await import("../../src/importer");

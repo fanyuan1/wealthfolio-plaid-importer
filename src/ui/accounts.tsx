@@ -70,7 +70,7 @@ export function Accounts({ engine, env, version, onChange, onSpendingOff }: { en
       ) : (
         <span className="flex items-center gap-2 text-sm">
           {name}
-          <button type="button" className="text-primary text-xs underline underline-offset-2" disabled={!!busy}
+          <button type="button" className="text-primary text-xs underline underline-offset-2" disabled={Boolean(busy)}
                   onClick={() => void save(async () => { await engine.unlinkAccount(id); await load(); })}>Change</button>
         </span>
       );
@@ -80,7 +80,7 @@ export function Accounts({ engine, env, version, onChange, onSpendingOff }: { en
     return (
       <WithSave>
         {(save) => (
-          <select value={value} disabled={!!busy} aria-label="Previous account"
+          <select value={value} disabled={Boolean(busy)} aria-label="Previous account"
                   className="border-input bg-background h-8 max-w-56 rounded-md border px-2 text-sm"
                   onChange={(e) => { const v = e.target.value; save(async () => { await engine.setMatch(id, v); await load(); }); }}>
             <option value="new">New</option>
@@ -108,11 +108,11 @@ export function Accounts({ engine, env, version, onChange, onSpendingOff }: { en
             </CardDescription>
           </div>
           <div className={ACTIONS}>
-          <Button variant="outline" className="min-w-32" disabled={!rows.some(([, c]) => c.kind !== 'unsupported') || !!busy}
+          <Button variant="outline" className="min-w-32" disabled={!rows.some(([, c]) => c.kind !== 'unsupported') || Boolean(busy)}
                   onClick={() => void save(async () => { await engine.setSyncAll(!allOn); await load(); flashAll(); })}>
             <FlashLabel on={allSaved} done="Saved">{allOn ? 'Clear all' : 'Select all'}</FlashLabel>
           </Button>
-          <Button disabled={!missing || !!busy}
+          <Button disabled={!missing || Boolean(busy)}
                   onClick={() => void start('create', async () => {
                     const n = await engine.createAccounts();
                     host.ctx?.api.query.invalidateQueries(['accounts']);
@@ -160,7 +160,7 @@ export function Accounts({ engine, env, version, onChange, onSpendingOff }: { en
                   <TableCell className="ps-6">
                     <WithSave>
                       {(save) => (
-                        <Switch checked={!c.skip} disabled={c.kind === 'unsupported' || !!busy}
+                        <Switch checked={!c.skip} disabled={c.kind === 'unsupported' || Boolean(busy)}
                                 onCheckedChange={(on) => save(async () => { await engine.setSync(id, on); await load(); })} />
                       )}
                     </WithSave>

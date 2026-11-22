@@ -1,4 +1,4 @@
-import { entryAt, required } from "./at";
+import { entryAt, errText, required } from "./at";
 import type { Dec } from "./dec";
 import type { Ledger, LedgerRow } from "./ledger";
 import { Activity, type OnProgress } from "./models";
@@ -49,7 +49,7 @@ export interface PushStats {
 
 type Log = (msg: string) => void;
 
-export async function assignCategories(wf: Writer, state: Ledger, categories: Map<string, [string, string]>, log: Log = console.log): Promise<number> {
+export async function assignCategories(wf: Writer, state: Ledger, categories: Map<string, [string, string]>, log: Log): Promise<number> {
   const ids = await wf.categoryIds();
   const todo: [string, { activityId: string; taxonomyId: string; categoryId: string }][] = [];
   for (const [pid, [tax, key]] of categories) {
@@ -70,7 +70,7 @@ export async function assignCategories(wf: Writer, state: Ledger, categories: Ma
           await wf.setCategories([a]);
           ok.push([pid, a]);
         } catch (e) {
-          const msg = String((e as Error).message ?? e).slice(0, 200);
+          const msg = errText(e).slice(0, 200);
           errors.set(msg, [...(errors.get(msg) ?? []), pid]);
         }
       }
@@ -85,12 +85,12 @@ export async function assignCategories(wf: Writer, state: Ledger, categories: Ma
 }
 
 export async function push(p: Plan, wf: Writer, state: Ledger, accountsCfg: Record<string, AccountCfg>,
-  log: Log = console.log, rows?: ImportRow[], progress: OnProgress = () => {}): Promise<PushStats> {
+  log: Log, rows?: ImportRow[], progress: OnProgress = () => {}): Promise<PushStats> {
   const step = (id: string, label: string, run: boolean, detail?: string) =>
     progress({ id: `push:${id}`, label, state: run ? "running" : "done", detail });
   const stats: PushStats = { imported: 0, duplicates: 0, failed: 0, updated: 0, voided: 0, linked: 0, categorized: 0, ruled: 0, failures: [], refused: {} };
   const byLine = new Map(p.new.map((a, i) => [i + 1, a] as const));
-  rows ??= [...byLine].map(([n, a]) => toImportRow(a, String(accountsCfg[a.accountId]?.wealthfolio_account_id ?? ""), n));
+  rows ??= [...byLine].map(([n, a]) => toImportRow(a, accountsCfg[a.accountId]?.wealthfolio_account_id ?? "", n));
 
   if (rows.length) {
     step("add", "Add new activities", true, `${rows.length} rows`);
@@ -102,7 +102,7 @@ export async function push(p: Plan, wf: Writer, state: Ledger, accountsCfg: Reco
         stats[status === "imported" ? "imported" : "duplicates"] += 1;
       } else {
         stats.failed += 1;
-        const msg = `${a.date} ${a.activityType} ${a.symbol ?? ""} ${a.amount ?? ""} (plaid:${a.plaidId})${why ? ` — ${why}` : ""}`;
+        const msg = `${a.date} ${a.activityType} ${a.symbol ?? ""} ${String(a.amount ?? "")} (plaid:${a.plaidId})${why ? ` — ${why}` : ""}`;
         stats.failures.push(msg);
         if (a.symbol) stats.refused[a.symbol] ??= why || "Wealthfolio did not save it";
         log(`  failed: ${msg}`);
@@ -170,8 +170,8 @@ export async function push(p: Plan, wf: Writer, state: Ledger, accountsCfg: Reco
     try {
       await wf.linkTransfers([[ro.wf_activity_id, ri.wf_activity_id]]);
     } catch (e) {
-      if (!String((e as Error).message ?? e).toLowerCase().includes("already")) {
-        log(`  link failed ${o} <-> ${i}: ${(e as Error).message ?? e}`);
+      if (!errText(e).toLowerCase().includes("already")) {
+        log(`  link failed ${o} <-> ${i}: ${errText(e)}`);
         continue;
       }
     }

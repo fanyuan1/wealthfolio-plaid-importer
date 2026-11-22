@@ -10,7 +10,7 @@ export const EPS: Dec = D("0.000001");
 
 export function dec(v: unknown): Dec | null {
   if (v === null || v === undefined || v === "") return null;
-  if (v instanceof D) return v as Dec;
+  if (v instanceof D) return v;
   return D(typeof v === "number" ? String(v) : (v as string));
 }
 

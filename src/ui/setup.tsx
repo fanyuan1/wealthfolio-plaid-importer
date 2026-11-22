@@ -42,7 +42,7 @@ export function Setup({ engine, env, onEnv }: { engine: Engine; env: PlaidEnv; o
                    onChange={(e) => setSecret(e.target.value)} />
           </div>
           <div>
-            <Button className="min-w-32" disabled={!ok && (!clientId || !secret || !!busy)}
+            <Button className="min-w-32" disabled={!ok && (!clientId || !secret || Boolean(busy))}
                     onClick={() => { if (!ok) void run('save keys', async () => {
                       await engine.saveKeys(env, clientId, secret);
                       setSecret('');
@@ -50,7 +50,7 @@ export function Setup({ engine, env, onEnv }: { engine: Engine; env: PlaidEnv; o
                       await engine.checkKeys();
                       flashOk();
                     }); }}>
-              <Spin on={!!busy} /><FlashLabel on={ok} done="Keys work">Save keys</FlashLabel>
+              <Spin on={Boolean(busy)} /><FlashLabel on={ok} done="Keys work">Save keys</FlashLabel>
             </Button>
           </div>
         </CardContent>

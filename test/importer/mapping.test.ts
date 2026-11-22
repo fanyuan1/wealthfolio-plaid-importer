@@ -207,11 +207,11 @@ describe("positions", () => {
     const [hs] = holdingsBySymbol([{ account_id: "a1", security_id: "s_vti", quantity: 2, cost_basis: null, institution_price: 250, institution_value: 500 }], SECS, {});
     const acts = one([tx("t1", "buy", "buy", 1, 3, 100, "s_td"), tx("t2", "sell", "sell", 1, -3, 100, "s_td"),
       tx("t3", "sell", "sell", 1, -1, 100, "s_td")]).activities;
-    let [opening, reviews] = openingActivities("a1", "2024-11-05", hs, null, acts);
+    const [opening, reviews] = openingActivities("a1", "2024-11-05", hs, null, acts);
     expect(opening.map((o) => [o.symbol, n(o.quantity), n(o.unitPrice)])).toEqual([["TD.TO", 1, 100], ["VTI", 2, 250]]);
     expect(new Set(reviews.map((r) => r.reason))).toEqual(new Set(["opening cost basis missing"]));
-    [opening] = openingActivities("a1", "2024-11-05", hs, null, acts, "USD", () => D(7));
-    expect(opening.map((o) => n(o.unitPrice))).toEqual([7, 7]);
+    const [priced] = openingActivities("a1", "2024-11-05", hs, null, acts, "USD", () => D(7));
+    expect(priced.map((o) => n(o.unitPrice))).toEqual([7, 7]);
   });
 
   test("yahoo symbol", () => {

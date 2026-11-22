@@ -1,5 +1,5 @@
 import type { HostAPI } from "@wealthfolio/addon-sdk";
-import { chunks, IMPORT_CHUNK, itemAt, type ImportRow, SMALL_CHUNK, type Update, WealthfolioError, type Writer } from "../importer";
+import { chunks, errText, IMPORT_CHUNK, itemAt, type ImportRow, SMALL_CHUNK, type Update, WealthfolioError, type Writer } from "../importer";
 
 export interface Base { accountId: string; activityType: string; date: string; currency: string }
 
@@ -43,9 +43,9 @@ export class SdkWriter implements Writer {
         lines.push(line);
         creates.push({
           id: `plaid-importer-${line}`, accountId: String(r.accountId), activityType: String(r.activityType),
-          subtype: (r.subtype as string) ?? null, activityDate: String(r.date), asset,
+          subtype: r.subtype ?? null, activityDate: String(r.date), asset,
           quantity: r.quantity ?? null, unitPrice: r.unitPrice ?? null, amount: r.amount ?? null, currency: String(r.currency || "USD"),
-          fee: r.fee ?? null, tax: r.tax ?? null, comment: (r.comment as string) ?? null,
+          fee: r.fee ?? null, tax: r.tax ?? null, comment: r.comment ?? null,
         });
       }
       if (!creates.length) continue;
@@ -117,7 +117,7 @@ export class SdkWriter implements Writer {
     try {
       return await this.api.spending.rerunRules(true);
     } catch (e) {
-      throw new WealthfolioError(String((e as Error).message ?? e));
+      throw new WealthfolioError(errText(e));
     }
   }
 }

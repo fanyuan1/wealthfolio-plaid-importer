@@ -58,10 +58,10 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
             </CardDescription>
           </div>
           <div className={ACTIONS}>
-            <Button variant="outline" disabled={!!busy} onClick={() => void dryRun()}>
+            <Button variant="outline" disabled={Boolean(busy)} onClick={() => void dryRun()}>
               <Spin on={busy === 'dry'} /><Icons.RefreshCw className="h-4 w-4" />Dry run
             </Button>
-            <Button disabled={!dry || stale || attention > 0 || !!busy} onClick={() => void push()}>
+            <Button disabled={!dry || stale || attention > 0 || Boolean(busy)} onClick={() => void push()}>
               <Spin on={busy === 'push'} /><Icons.Upload className="h-4 w-4" />Push to Wealthfolio
             </Button>
           </div>
@@ -108,7 +108,7 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
             <span>Pushed activities now map to another ticker, to cash or to Leave out. Delete them; the next push imports them again as set now.</span>
             <div className="flex flex-wrap gap-2">
               {[...dry.plan.moved].map(([sym, accts]) => (
-                <Button key={sym} size="sm" variant="outline" disabled={!!busy} onClick={() => setMoving([sym, accts])}>
+                <Button key={sym} size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => setMoving([sym, accts])}>
                   Delete pushed {sym} activities
                 </Button>
               ))}
@@ -127,7 +127,7 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
           <AlertDescription className="flex flex-col gap-2">
             <span>When you finish, update the preview. Push is off until then.</span>
             <div>
-              <Button size="sm" disabled={!dry || !!busy}
+              <Button size="sm" disabled={!dry || Boolean(busy)}
                       onClick={() => void start('replan', async () => { const d = await engine.replan(required(dry, 'dry run')); set({ dry: d, stale: false }); })}>
                 <Spin on={busy === 'replan'} /><Icons.RefreshCw className="h-3 w-3" />Update preview
               </Button>
@@ -171,7 +171,7 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
           <DialogFooter><Button onClick={() => set({ failed: [] })}>OK</Button></DialogFooter>
         </DialogContent>
       </Dialog>
-      <AlertDialog open={!!moving} onOpenChange={(o) => { if (!o) setMoving(undefined); }}>
+      <AlertDialog open={Boolean(moving)} onOpenChange={(o) => { if (!o) setMoving(undefined); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete pushed {moving?.[0]} activities?</AlertDialogTitle>
@@ -335,7 +335,7 @@ export function Daily({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; 
             </div>
             <Button variant="outline" className="ms-auto" disabled={engineBusy}
                     onClick={() => void engine.runDaily().then(() => host.ctx?.api.query.invalidateQueries(['activities']), () => {})}>
-              <Spin on={!!busy} /><Icons.RefreshCw className="h-4 w-4" />Run now
+              <Spin on={Boolean(busy)} /><Icons.RefreshCw className="h-4 w-4" />Run now
             </Button>
           </div>
           <div className="text-muted-foreground flex flex-wrap gap-x-6 gap-y-1 text-sm">
@@ -436,7 +436,7 @@ function RatioProposal({ engine, p, onDone }: { engine: Engine; p: Proposal; onD
         )}
         {next && (
           <div className="flex gap-2">
-            <Button size="sm" disabled={!!busy}
+            <Button size="sm" disabled={Boolean(busy)}
                     onClick={() => void run('ratio', async () => { await engine.setSecurity(p.sid, p.name, { mode: 'track', track: next }); onDone(); })}>
               <Spin on={busy === 'ratio'} />Use the new ratio
             </Button>

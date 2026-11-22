@@ -95,7 +95,7 @@ function mapOne(t: PlaidInvestmentTransaction, securities: Record<string, PlaidS
   const rawQty = dec(t.quantity);
 
   const rev = (reason: string): Out =>
-    [null, review(acct, tid, date, reason, `${ttype}/${sub}: ${name} amount=${amount} qty=${qty}`)];
+    [null, review(acct, tid, date, reason, `${ttype}/${sub}: ${name} amount=${String(amount)} qty=${String(qty)}`)];
   const act = (atype: string, kw: Partial<ActivityInit> = {}): Out =>
     [new Activity({ accountId: acct, plaidId: tid, date, activityType: atype, currency: cur, description: name, ...kw }), null];
 
