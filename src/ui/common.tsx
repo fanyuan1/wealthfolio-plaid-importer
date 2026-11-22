@@ -2,11 +2,10 @@ import type { AddonContext } from '@wealthfolio/addon-sdk';
 import { Alert, AlertDescription, AlertTitle, Button, Icons, Input } from '@wealthfolio/ui';
 import { addProgress, type Progress, type Task } from '../engine/engine';
 
-export { addProgress };
 import { type ReactNode, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { Engine } from '../engine/engine';
 
-export const host: { ctx?: AddonContext; engine?: Engine } = {};
+export const host: { ctx?: AddonContext | undefined; engine?: Engine | undefined } = {};
 
 export const TITLE = 'Plaid Importer';
 export const KEYS_URL = 'https://dashboard.plaid.com/developers/keys';
@@ -34,7 +33,7 @@ export function useBusy() {
   return { busy, error, run, fail };
 }
 
-export function Problem({ error }: { error?: string }) {
+export function Problem({ error }: { error?: string | undefined }) {
   if (!error) return null;
   return (
     <Alert variant="destructive">

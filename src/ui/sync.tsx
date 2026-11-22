@@ -247,7 +247,7 @@ function FailedRows({ list }: { list: string[] }) {
   for (const f of list) {
     const m = /^(\S+) (\S+) (\S*) (\S*) \(plaid:[^)]*\)(?: — (.*))?$/.exec(f);
     const why = m?.[5] || 'No reason given';
-    groups.set(why, [...(groups.get(why) ?? []), m ? [m[1], m[2], m[3], m[4]] : [f, '', '', '']]);
+    groups.set(why, [...(groups.get(why) ?? []), m ? [m[1] ?? '', m[2] ?? '', m[3] ?? '', m[4] ?? ''] : [f, '', '', '']]);
   }
   return (
     <div className="flex flex-col gap-4">

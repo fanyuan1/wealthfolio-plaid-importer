@@ -1,3 +1,5 @@
+import { take } from "../take";
+import { itemAt, valueAt } from "../../src/importer";
 import { describe, expect, test } from "vitest";
 import {
   Activity, D, type Dec, INCOME, SPENDING, biltPassthrough, convert, entry, fixSplitPrices, holdingsBySymbol, hkey, mapBankTransaction,
@@ -26,7 +28,7 @@ const one = (rows: Row[], overrides: Record<string, Row> = {}) => mapInvestmentT
 
 describe("investments", () => {
   test("buy sell absolute values and fee", () => {
-    const [b, s] = one([tx("t1", "buy", "buy", 1004.95, 10, 100, "s_vti", 4.95), tx("t2", "sell", "sell", -500, -5, 100, "s_vti")]).activities;
+    const [b, s] = take(one([tx("t1", "buy", "buy", 1004.95, 10, 100, "s_vti", 4.95), tx("t2", "sell", "sell", -500, -5, 100, "s_vti")]).activities, 2);
     expect([b.activityType, b.symbol, n(b.quantity), n(b.unitPrice), n(b.fee)]).toEqual(["BUY", "VTI", 10, 100, 4.95]);
     expect([s.activityType, n(s.quantity), s.amount, s.subtype]).toEqual(["SELL", 5, null, null]);
     expect(b.comment.endsWith("plaid:t1")).toBe(true);
@@ -35,21 +37,21 @@ describe("investments", () => {
   test("mic suffix and crypto", () => {
     const r = one([tx("t1", "buy", "buy", 100, 1, 100, "s_td"), tx("t2", "buy", "buy", 50, 0.001, 50000, "s_btc")]);
     expect(r.activities.map((a) => a.symbol)).toEqual(["TD.TO", "BTC-USD"]);
-    expect(r.activities[1].instrumentType).toBe("CRYPTO");
+    expect(itemAt(r.activities, 1).instrumentType).toBe("CRYPTO");
   });
 
   test("price derived from amount when missing", () => {
-    expect(n(one([tx("t1", "buy", "contribution", 200, 4, 0, "s_vti")]).activities[0].unitPrice)).toBe(50);
+    expect(n(itemAt(one([tx("t1", "buy", "contribution", 200, 4, 0, "s_vti")]).activities, 0).unitPrice)).toBe(50);
   });
 
   test("sweep trades dropped and money-market dividend is interest", () => {
     const r = one([tx("t1", "buy", "buy", 100, 100, 1, "s_spaxx"), tx("t2", "cash", "dividend", -1.23, 0, 0, "s_spaxx")]);
     expect(r.activities.length).toBe(1);
-    expect([r.activities[0].activityType, n(r.activities[0].amount), r.activities[0].symbol]).toEqual(["INTEREST", 1.23, null]);
+    expect([itemAt(r.activities, 0).activityType, n(itemAt(r.activities, 0).amount), itemAt(r.activities, 0).symbol]).toEqual(["INTEREST", 1.23, null]);
   });
 
   test("money market override as investment", () => {
-    expect(one([tx("t1", "buy", "buy", 100, 100, 1, "s_spaxx")], { s_spaxx: { investment: true } }).activities[0].symbol).toBe("SPAXX");
+    expect(itemAt(one([tx("t1", "buy", "buy", 100, 100, 1, "s_spaxx")], { s_spaxx: { investment: true } }).activities, 0).symbol).toBe("SPAXX");
   });
 
   test("dividend subtypes, tax, fee", () => {
@@ -94,9 +96,9 @@ describe("investments", () => {
   test("split ratio from position", () => {
     const r = one([tx("t1", "transfer", "split", 0, 30, 0, "s_vti", null, { date: "2026-03-05" })]);
     expect(resolveSplits(r.activities, new Map([[hkey("a1", "VTI"), D(10)]]))).toEqual([]);
-    expect(n(r.activities[0].amount)).toBe(4);
+    expect(n(itemAt(r.activities, 0).amount)).toBe(4);
     const r2 = one([tx("t1", "transfer", "split", 0, 30, 0, "s_vti")]);
-    expect(resolveSplits(r2.activities)[0].reason).toBe("split with unknown position");
+    expect(itemAt(resolveSplits(r2.activities), 0).reason).toBe("split with unknown position");
   });
 });
 
@@ -119,12 +121,12 @@ describe("bank and transfers", () => {
     ];
     const kinds: Record<string, string> = KINDS;
     const r = { activities: txns.filter((t) => kinds[t.account_id] === "cash" || kinds[t.account_id] === "credit")
-      .map((t) => mapBankTransaction(t, kinds[t.account_id])).filter((a) => a != null) };
+      .map((t) => mapBankTransaction(t, valueAt(kinds, t.account_id))).filter((a) => a != null) };
     expect(r.activities.map((a) => [a.plaidId, a.activityType, a.subtype, n(a.amount), a.transferHint])).toEqual([
       ["1", "WITHDRAWAL", null, 12.5, false], ["2", "DEPOSIT", null, 2000, false], ["3", "INTEREST", null, 0.4, false],
       ["4", "WITHDRAWAL", null, 50, false], ["5", "CREDIT", "REFUND", 20, false], ["6", "TRANSFER_IN", null, 300, true],
       ["9", "FEE", "INTEREST_CHARGE", 25, false]]);
-    expect(r.activities[0].description).toBe("M1");
+    expect(itemAt(r.activities, 0).description).toBe("M1");
   });
 
   test("transfer matching within three days", () => {
@@ -132,13 +134,13 @@ describe("bank and transfers", () => {
       act("chk", "p3", "2026-03-01", "WITHDRAWAL", "99"), act("brk", "p4", "2026-03-09", "DEPOSIT", "99"),
       act("chk", "p5", "2026-03-01", "WITHDRAWAL", "40", { transferHint: false }), act("card", "p6", "2026-03-01", "DEPOSIT", "40")];
     expect(matchTransfers(acts).map(([o, i]) => [o.plaidId, i.plaidId])).toEqual([["p1", "p2"]]);
-    expect([acts[0].activityType, acts[1].activityType, acts[2].activityType]).toEqual(["TRANSFER_OUT", "TRANSFER_IN", "WITHDRAWAL"]);
+    expect([itemAt(acts, 0).activityType, itemAt(acts, 1).activityType, itemAt(acts, 2).activityType]).toEqual(["TRANSFER_OUT", "TRANSFER_IN", "WITHDRAWAL"]);
   });
 
   test("transfer prefers closest date", () => {
     const acts = [act("chk", "o", "2026-03-01", "WITHDRAWAL", "5"), act("brk", "far", "2026-03-04", "DEPOSIT", "5"),
       act("card", "near", "2026-03-02", "DEPOSIT", "5")];
-    expect(matchTransfers(acts)[0][1].plaidId).toBe("near");
+    expect(itemAt(matchTransfers(acts), 0)[1].plaidId).toBe("near");
   });
 
   test("transfer prefers shared reference number", () => {
@@ -147,7 +149,7 @@ describe("bank and transfers", () => {
       act("chk1", "in", "2026-03-01", "DEPOSIT", "5000", { description: "Online Transfer from CHK ...5678 transaction#: 12345678901" })];
     const pairs = matchTransfers(acts);
     expect(pairs.map(([o, i]) => [o.plaidId, i.plaidId])).toEqual([["z_xfer", "in"]]);
-    expect(acts[0].activityType).toBe("WITHDRAWAL");
+    expect(itemAt(acts, 0).activityType).toBe("WITHDRAWAL");
   });
 
   test("bilt housing pair dropped and bank card payment is transfer", () => {
@@ -175,7 +177,7 @@ describe("positions", () => {
     const acts = one([tx("t1", "buy", "buy", 1000, 10, 100, "s_vti"), tx("t2", "cash", "deposit", -1200)]).activities;
     const [opening, reviews] = openingActivities("a1", "2024-11-05", hs, cash.get("a1")!, acts);
     expect(reviews).toEqual([]);
-    const [pos, c] = opening;
+    const [pos, c] = take(opening, 2);
     expect([pos.activityType, pos.symbol, n(pos.quantity), n(pos.unitPrice)]).toEqual(["TRANSFER_IN", "VTI", 5, 100]);
     expect([c.activityType, n(c.amount)]).toEqual(["TRANSFER_IN", 200]);
   });
@@ -184,9 +186,9 @@ describe("positions", () => {
     const [hs] = holdingsBySymbol([{ account_id: "a1", security_id: "s_vti", quantity: 80, cost_basis: 4000, institution_price: 60 }], SECS, {});
     const split = new Activity({ accountId: "a1", plaidId: "sp", date: "2026-04-21", activityType: "SPLIT", symbol: "VTI", splitDelta: D(70) });
     let [opening] = openingActivities("a1", "2024-11-05", hs, null, [split]);
-    expect([n(opening[0].quantity), n(opening[0].unitPrice)]).toEqual([10, 400]);
+    expect([n(itemAt(opening, 0).quantity), n(itemAt(opening, 0).unitPrice)]).toEqual([10, 400]);
     [opening] = openingActivities("a1", "2024-11-05", new Map([[hkey("a1", "VTI"), { ...hs.get(hkey("a1", "VTI"))!, cost_basis: null }]]), null, [split], "USD", () => D(75));
-    expect(n(opening[0].unitPrice)).toBe(600);
+    expect(n(itemAt(opening, 0).unitPrice)).toBe(600);
   });
 
   test("a pre-split price already adjusted by Plaid is scaled back; an unadjusted one is left", () => {
@@ -212,7 +214,7 @@ describe("positions", () => {
   });
 
   test("yahoo symbol", () => {
-    expect([yahooSymbol(SECS.s_td), yahooSymbol(SECS.s_cit)]).toEqual(["TD.TO", null]);
+    expect([yahooSymbol(SECS.s_td), yahooSymbol(valueAt(SECS, "s_cit"))]).toEqual(["TD.TO", null]);
   });
 
   test("reconcile flags mismatch", () => {
@@ -233,8 +235,8 @@ describe("positions", () => {
   });
 
   test("manual quote flag and symbol", () => {
-    const [td, cit] = one([tx("t1", "buy", "buy", 100, 1, 100, "s_td"), tx("t2", "buy", "buy", 100, 2, 50, "s_cit")],
-      { s_td: { manual: true }, s_cit: { manual: true } }).activities;
+    const [td, cit] = take(one([tx("t1", "buy", "buy", 100, 1, 100, "s_td"), tx("t2", "buy", "buy", 100, 2, 50, "s_cit")],
+      { s_td: { manual: true }, s_cit: { manual: true } }).activities, 2);
     expect([td.symbol, td.quoteManual, cit.symbol, cit.quoteManual]).toEqual(["TD.TO", true, "TARGET2050CIT-S_CI", true]);
   });
 });
@@ -258,14 +260,14 @@ describe("options and plans", () => {
       ["SELL", "POSITION_OPEN", "SPY261218P00450500", "OPTION", 1, 1.5],
       ["BUY", "POSITION_CLOSE", "SPY261218P00450500", "OPTION", 1, 0.5],
       ["ADJUSTMENT", "OPTION_EXPIRY", "NFLX180201C00355000", "OPTION", 1, null]]);
-    expect(n(r.activities[0].fee)).toBe(5);
+    expect(n(itemAt(r.activities, 0).fee)).toBe(5);
     expect(r.reviews.map((x) => x.reason)).toEqual(["unmapped security"]);
   });
 
   test("option price from amount and multiplier override", () => {
-    const a = mapInvestmentTransactions([tx("o1", "buy", "buy", 46, 4600, 0, "o_occ")], OPT_SECS, {}).activities[0];
+    const a = itemAt(mapInvestmentTransactions([tx("o1", "buy", "buy", 46, 4600, 0, "o_occ")], OPT_SECS, {}).activities, 0);
     expect([n(a.quantity), n(a.unitPrice)]).toEqual([46, 0.01]);
-    const mini = mapInvestmentTransactions([tx("o1", "buy", "buy", 10, 100, 0.1, "o_occ")], OPT_SECS, { o_occ: { multiplier: 10 } }).activities[0];
+    const mini = itemAt(mapInvestmentTransactions([tx("o1", "buy", "buy", 10, 100, 0.1, "o_occ")], OPT_SECS, { o_occ: { multiplier: 10 } }).activities, 0);
     expect(n(mini.quantity)).toBe(10);
   });
 
@@ -277,8 +279,8 @@ describe("options and plans", () => {
     const overrides = { ant_order: { symbol: "ANT" } };
     expect(resolve(secs.ant_order, overrides)).toMatchObject({ kind: "security", symbol: "ANT", instrumentType: "EQUITY" });
     expect(n(resolve(secs.ant_order, overrides).multiplier)).toBe(1);
-    const [buy] = mapInvestmentTransactions([tx("p", "buy", "buy", 166, 42, 83, "ant_order", null,
-      { name: "buy 42.000000 shares of Anthropic for $83.00 each. This order is partially filled. - PURCHASED" })], secs, overrides).activities;
+    const [buy] = take(mapInvestmentTransactions([tx("p", "buy", "buy", 166, 42, 83, "ant_order", null,
+      { name: "buy 42.000000 shares of Anthropic for $83.00 each. This order is partially filled. - PURCHASED" })], secs, overrides).activities, 1);
     expect([buy.activityType, buy.subtype, buy.symbol, buy.instrumentType, n(buy.quantity), n(buy.unitPrice)])
       .toEqual(["BUY", null, "ANT", "EQUITY", 2, 83]);
     const [hs, cash] = holdingsBySymbol([
@@ -289,8 +291,8 @@ describe("options and plans", () => {
   });
 
   test("partial fill on an option compares contracts with contracts", () => {
-    const [a] = mapInvestmentTransactions([tx("o1", "buy", "buy", 100, 300, 1.0, "o_occ", null,
-      { name: "buy 3 contracts. This order is partially filled." })], OPT_SECS, {}).activities;
+    const [a] = take(mapInvestmentTransactions([tx("o1", "buy", "buy", 100, 300, 1.0, "o_occ", null,
+      { name: "buy 3 contracts. This order is partially filled." })], OPT_SECS, {}).activities, 1);
     expect(n(a.quantity)).toBe(1);
   });
 
@@ -304,33 +306,33 @@ describe("options and plans", () => {
     expect(n(hs.get(hkey("a1", "NFLX180201C00355000"))!.quantity)).toBe(100);
     const [opening, reviews] = openingActivities("a1", "2024-11-05", hs, null, []);
     expect(reviews).toEqual([]);
-    expect([n(opening[0].quantity), n(opening[0].unitPrice), opening[0].instrumentType]).toEqual([100, 0.01, "OPTION"]);
+    expect([n(itemAt(opening, 0).quantity), n(itemAt(opening, 0).unitPrice), itemAt(opening, 0).instrumentType]).toEqual([100, 0.01, "OPTION"]);
   });
 
   test("stock plan vests in, journals out, cash journal", () => {
     const rows = [tx("v1", "cash", "withdrawal", 0, 10.956, 1, "s_vti", null, { name: "RESTRICTED STOCK DEPOSIT" }),
       tx("j1", "transfer", "transfer", 0, 1551.191, 0, "s_vti", null, { name: "JOURNAL - TRANSFER" }),
       tx("j2", "transfer", "transfer", 571.38, 0, 0, "s_vti", null, { name: "Journal To Account 07E3 - JRNLFUND" })];
-    const [v, j, c] = mapInvestmentTransactions(rows, SECS, {}, "USD", new Set(["a1"])).activities;
+    const [v, j, c] = take(mapInvestmentTransactions(rows, SECS, {}, "USD", new Set(["a1"])).activities, 3);
     expect([v.activityType, v.symbol, n(v.quantity), n(v.unitPrice)]).toEqual(["TRANSFER_IN", "VTI", 10.956, 0]);
     expect([j.activityType, n(j.quantity)]).toEqual(["TRANSFER_OUT", 1551.191]);
     expect([c.activityType, c.symbol, n(c.amount)]).toEqual(["WITHDRAWAL", null, 571.38]);
-    expect(one(rows.slice(1, 2)).activities[0].activityType).toBe("TRANSFER_IN");
+    expect(itemAt(one(rows.slice(1, 2)).activities, 0).activityType).toBe("TRANSFER_IN");
   });
 
   test("plan contribution is shares in, not a buy", () => {
-    const [a] = one([tx("c1", "buy", "contribution", 1420, 11.732, 121.04, "s_vti")]).activities;
+    const [a] = take(one([tx("c1", "buy", "contribution", 1420, 11.732, 121.04, "s_vti")]).activities, 1);
     expect([a.activityType, n(a.quantity), n(a.unitPrice)]).toEqual(["TRANSFER_IN", 11.732, 121.04]);
   });
 
   test("partial fill uses the filled amount", () => {
-    const [a] = one([tx("p1", "buy", "buy", 135, 40, 135, "s_vti", null,
-      { name: "buy 40.000000 shares for $135.00 each. This order is partially filled." })]).activities;
+    const [a] = take(one([tx("p1", "buy", "buy", 135, 40, 135, "s_vti", null,
+      { name: "buy 40.000000 shares for $135.00 each. This order is partially filled." })]).activities, 1);
     expect(n(a.quantity)).toBe(1);
   });
 
   test("fidelity split distribution and merrill sweep", () => {
-    const [a] = one([tx("d1", "cash", "deposit", -12345.67, 120.5, 0, "s_vti", null, { name: "EXAMPLE SECTOR ETF - DISTRIBUTION" })]).activities;
+    const [a] = take(one([tx("d1", "cash", "deposit", -12345.67, 120.5, 0, "s_vti", null, { name: "EXAMPLE SECTOR ETF - DISTRIBUTION" })]).activities, 1);
     expect([a.activityType, n(a.splitDelta), a.amount]).toEqual(["SPLIT", 120.5, null]);
     expect(resolve({ security_id: "m", ticker_symbol: "Deposit", type: "other", name: "Ml Direct Deposit Progrm" }, {}).kind).toBe("cash");
   });
@@ -351,11 +353,11 @@ describe("options and plans", () => {
       tx("rp", "cash", "withdrawal", 0, 300, 0, "s_vti", null, { date: "2026-04-22" }),
       tx("j", "transfer", "transfer", 0, 203, 0, "s_vti", null, { date: "2026-02-25" })]);
     expect(r.activities.map((a) => [a.plaidId, a.activityType])).toEqual([["c", "TRANSFER_IN"], ["s", "SPLIT"], ["j", "TRANSFER_IN"]]);
-    expect([n(r.activities[1].splitDelta), r.activities[2].marketPrice]).toEqual([300, true]);
+    expect([n(itemAt(r.activities, 1).splitDelta), itemAt(r.activities, 2).marketPrice]).toEqual([300, true]);
   });
 
   test("vest stays a vest in a stock plan", () => {
-    const [a] = mapInvestmentTransactions([tx("v", "cash", "withdrawal", 0, 10, 0, "s_vti")], SECS, {}, "USD", new Set(["a1"])).activities;
+    const [a] = take(mapInvestmentTransactions([tx("v", "cash", "withdrawal", 0, 10, 0, "s_vti")], SECS, {}, "USD", new Set(["a1"])).activities, 1);
     expect([a.activityType, a.marketPrice]).toEqual(["TRANSFER_IN", true]);
   });
 });
@@ -367,12 +369,12 @@ describe("tracking", () => {
     const symbols = { s_cit: { name: "Target 2050 CIT", symbol: null, track: t } };
     const [rows, holds, secs] = convert([tx("b", "buy", "contribution", 1000.0, 10, 100.0, "s_cit"), tx("v", "buy", "buy", 100, 1, 100, "s_vti")],
       [{ security_id: "s_cit", quantity: 50, institution_price: 100.0, cost_basis: 5000 }], SECS, symbols);
-    expect([n(rows[0].quantity), n(rows[0].price), rows[0].amount]).toEqual([2, 500, 1000]);
-    expect([rows[1].quantity, SECS.s_cit.ticker_symbol]).toEqual([1, null]);
-    expect([n(holds[0].quantity), n(holds[0].institution_price), holds[0].cost_basis]).toEqual([10, 500, 5000]);
+    expect([n(itemAt(rows, 0).quantity), n(itemAt(rows, 0).price), itemAt(rows, 0).amount]).toEqual([2, 500, 1000]);
+    expect([itemAt(rows, 1).quantity, valueAt(SECS, "s_cit").ticker_symbol]).toEqual([1, null]);
+    expect([n(itemAt(holds, 0).quantity), n(itemAt(holds, 0).institution_price), itemAt(holds, 0).cost_basis]).toEqual([10, 500, 5000]);
     const r = resolve(secs.s_cit, symbols);
     expect([r.kind, r.manual, r.symbol]).toEqual(["security", false, "VOO"]);
-    const [a] = mapInvestmentTransactions(rows.slice(0, 1), secs, symbols).activities;
+    const [a] = take(mapInvestmentTransactions(rows.slice(0, 1), secs, symbols).activities, 1);
     expect([a.symbol, n(a.quantity), n(a.unitPrice)]).toEqual(["VOO", 2, 500]);
   });
 
@@ -380,21 +382,21 @@ describe("tracking", () => {
     const yahoo: Record<string, string> = { "2026-11-06": "600.00", "2026-11-09": "610.00" };
     const closes = { closeOn: (_s: string, day: string) => {
       const d = Object.keys(yahoo).filter((k) => k <= day).sort().at(-1);
-      return d ? { day: d, close: D(yahoo[d]) } : null;
+      return d ? { day: d, close: D(valueAt(yahoo, d)) } : null;
     } };
     const symbols = { s_cit: { name: "Trust", symbol: null, track: entry("VOO", "2026-11-06", D("100.00"), D("600.00")) } };
     const items = (price: number, day: string | null) => [{ holdings: { holdings: [{ security_id: "s_cit", account_id: "a1",
       institution_price: price, institution_price_as_of: day }] } }];
     expect(rebases(items(100.0, "2026-11-06"), symbols, closes)).toEqual([]);
     expect(rebases(items(101.0, null), symbols, closes)).toEqual([]);
-    const [rb] = rebases(items(102.0, "2026-11-09"), symbols, closes);
+    const [rb] = take(rebases(items(102.0, "2026-11-09"), symbols, closes), 1);
     expect([n(rb.close!.close), rb.next!.ratio, rb.safe]).toEqual([610, 0.1672131148, true]);
-    expect(rebases(items(130, "2026-11-09"), symbols, closes)[0].safe).toBe(false);
-    const [weekend] = rebases(items(102.0, "2026-11-14"), symbols, closes);
+    expect(itemAt(rebases(items(130, "2026-11-09"), symbols, closes), 0).safe).toBe(false);
+    const [weekend] = take(rebases(items(102.0, "2026-11-14"), symbols, closes), 1);
     expect([weekend.next!.date, weekend.next!.close]).toEqual(["2026-11-09", 610]);
     const saved = { s_cit: { ...symbols.s_cit, track: weekend.next! } };
     expect(rebases(items(102.0, "2026-11-14"), saved, closes)).toEqual([]);
-    const [none] = rebases(items(102.0, "2026-11-05"), { s_cit: { ...symbols.s_cit, track: entry("VOO", "2026-11-01", D("100"), D("600")) } }, closes);
+    const [none] = take(rebases(items(102.0, "2026-11-05"), { s_cit: { ...symbols.s_cit, track: entry("VOO", "2026-11-01", D("100"), D("600")) } }, closes), 1);
     expect([none.close, none.next, none.safe]).toEqual([null, null, false]);
   });
 });
@@ -424,8 +426,8 @@ describe("prices and to-do", () => {
       review("a1", "reconcile:X", "", "holdings mismatch", "X: Plaid 0, computed 1"),
       review("a1", "t9", "2025-01-02", "corporate action: merger", "merger")];
     const lines = todoReport(reviews, { a1: "AB · Broker" }, c.warnings());
-    expect(lines[0].startsWith("Warning: Yahoo Finance price lookup for GOOG failed: could not reach it")).toBe(true);
-    expect(lines[1]).toBe("To do in Wealthfolio: 3 items");
+    expect(itemAt(lines, 0).startsWith("Warning: Yahoo Finance price lookup for GOOG failed: could not reach it")).toBe(true);
+    expect(itemAt(lines, 1)).toBe("To do in Wealthfolio: 3 items");
     expect(lines).toContain("Opening cost basis (1)");
     expect(lines).toContain("Positions that do not add up (1)");
     expect(lines).toContain("  - AB · Broker: 2025-01-02 corporate action: merger: merger");
@@ -440,6 +442,6 @@ describe("todoGroups", () => {
       "\nKept as they are in Wealthfolio (1)", "  Edit them in Wealthfolio.", "  - AB · Bank: 2026-01-01 BUY removed at Plaid"];
     const g = todoGroups(lines);
     expect(g.map((x) => [x.heading, x.count, x.items.length])).toEqual([["Price lookup", 0, 0], ["Securities without a ticker", 1, 1], ["Kept as they are in Wealthfolio", 1, 1]]);
-    expect(g[1].text).toMatch(/Sync → Securities/);
+    expect(itemAt(g, 1).text).toMatch(/Sync → Securities/);
   });
 });

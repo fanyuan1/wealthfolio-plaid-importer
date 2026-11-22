@@ -1,3 +1,4 @@
+import { itemAt } from "../../src/importer";
 import { expect, test } from "vitest";
 import { Activity, D, type Existing, findAdoptions, forgetEmptied, matchById, MemoryLedger } from "../../src/importer";
 
@@ -9,7 +10,7 @@ const wf = (a: string) => (a === "A" ? "W" : undefined);
 
 test("own comment is exact and discarded by default", () => {
   const r = findAdoptions([act("p1")], [ex("e1", { comment: "x · plaid:p1", quantity: "9" })], wf);
-  expect([r[0].how, r[0].decision, r[0].existing?.id]).toEqual(["exact", "discard", "e1"]);
+  expect([itemAt(r, 0).how, itemAt(r, 0).decision, itemAt(r, 0).existing?.id]).toEqual(["exact", "discard", "e1"]);
 });
 
 test("same day, ticker and quantity is exact; each existing row is used once; the rest are new and added", () => {
@@ -25,25 +26,25 @@ test("different day or amount is new", () => {
 test("deposit vs transfer-in is similar", () => {
   const a = act("p1", { activityType: "TRANSFER_IN", symbol: null, quantity: null, amount: D(50) });
   const r = findAdoptions([a], [ex("e1", { type: "DEPOSIT", symbol: "$CASH-USD", quantity: null, amount: "50" })], wf);
-  expect(r[0].how).toBe("similar");
+  expect(itemAt(r, 0).how).toBe("similar");
 });
 
 test("shares transferred in on a day match any activity of the same shares that day", () => {
   const a = act("p1", { activityType: "TRANSFER_IN", amount: null });
-  expect(findAdoptions([a], [ex("e1", { type: "BUY" })], wf)[0]).toMatchObject({ how: "exact", decision: "discard" });
-  expect(findAdoptions([act("p2")], [ex("e1", { type: "SELL" })], wf)[0].how).toBe("new");
+  expect(itemAt(findAdoptions([a], [ex("e1", { type: "BUY" })], wf), 0)).toMatchObject({ how: "exact", decision: "discard" });
+  expect(itemAt(findAdoptions([act("p2")], [ex("e1", { type: "SELL" })], wf), 0).how).toBe("new");
 });
 
 test("ledger-known ids are never matched", () => {
-  expect(findAdoptions([act("p1")], [ex("e1")], wf, new Set(["e1"]))[0].how).toBe("new");
+  expect(itemAt(findAdoptions([act("p1")], [ex("e1")], wf, new Set(["e1"])), 0).how).toBe("new");
 });
 
 test("opening that equals what the account already holds is exact; a different amount is similar", () => {
   const open = act("opening:A:VTI", { date: "2024-01-01", quantity: D(10), activityType: "TRANSFER_IN" });
   const old = [ex("e1", { date: "2023-06-01", quantity: "6" }), ex("e2", { date: "2023-07-01", quantity: "4" })];
-  expect(findAdoptions([open], old, wf)[0]).toMatchObject({ how: "exact", decision: "discard", held: "10" });
-  expect(findAdoptions([open], [old[0]], wf)[0]).toMatchObject({ how: "similar", held: "6" });
-  expect(findAdoptions([open], [ex("e3", { date: "2024-03-01" })], wf)[0].how).toBe("new");
+  expect(itemAt(findAdoptions([open], old, wf), 0)).toMatchObject({ how: "exact", decision: "discard", held: "10" });
+  expect(itemAt(findAdoptions([open], [itemAt(old, 0)], wf), 0)).toMatchObject({ how: "similar", held: "6" });
+  expect(itemAt(findAdoptions([open], [ex("e3", { date: "2024-03-01" })], wf), 0).how).toBe("new");
 });
 
 test("an account emptied in Wealthfolio is forgotten, with its Item's cursor; others are kept", () => {

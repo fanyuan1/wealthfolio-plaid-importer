@@ -1,3 +1,4 @@
+import { itemAt, valueAt } from "../../src/importer";
 import { describe, expect, it } from "vitest";
 import { Activity, D, MemoryLedger, type PlaidEnv } from "../../src/importer";
 import type { DryRun } from "../../src/engine/engine";
@@ -153,7 +154,7 @@ describe("backup", () => {
     await b.store.saveItems("sandbox", { item1: { owner: "XY", institution_name: "Test Bank" } });
     await b.restore(text);
     expect(await b.store.token("item1")).toBe("access-sandbox-x");
-    expect((await b.store.items("sandbox")).item1.owner).toBe("XY");
+    expect(valueAt(await b.store.items("sandbox"), "item1").owner).toBe("XY");
   });
 
   it("merge keeps what is here; overwrite replaces it and removes connections the backup lacks", async () => {
@@ -164,14 +165,14 @@ describe("backup", () => {
     await b.store.saveItems("sandbox", { item1: { owner: "XY", institution_name: "Test Bank" }, item2: { owner: "CD", institution_name: "Other" } });
     await b.store.saveAccounts("sandbox", { acc2: { kind: "cash", item_id: "item2", wealthfolio_account_id: "wf1" } } as never);
     await b.restore(text);
-    expect((await b.store.items("sandbox")).item1.owner).toBe("XY");
+    expect(valueAt(await b.store.items("sandbox"), "item1").owner).toBe("XY");
     expect(await b.store.token("item1")).toBe("access-sandbox-new");
     expect(await b.overwriteLoss(text)).toEqual(["CD · Other"]);
     const r = await b.restore(text, "overwrite");
     expect(r.removed).toBe(1);
     expect(Object.keys(await b.store.items("sandbox"))).toEqual(["item1"]);
     expect(await b.store.token("item2")).toBeNull();
-    expect((await b.store.items("sandbox")).item1.owner).toBe("AB");
+    expect(valueAt(await b.store.items("sandbox"), "item1").owner).toBe("AB");
     expect(await b.store.token("item1")).toBe("access-sandbox-x");
     expect(Object.keys(await b.store.accounts("sandbox"))).toEqual(["acc"]);
     expect((await b.store.ledger("sandbox")).rows.size).toBe(3);
@@ -196,8 +197,8 @@ describe("previous account", () => {
     await e.setMatch("b", "new");
     expect(await e.createAccounts()).toBe(1);
     const cfg = await e.store.accounts("sandbox");
-    expect(cfg.a.wealthfolio_account_id).toBe("wfB");
-    expect(cfg.b.wealthfolio_account_id).toBe("new-AB · Chase Savings");
+    expect(valueAt(cfg, "a").wealthfolio_account_id).toBe("wfB");
+    expect(valueAt(cfg, "b").wealthfolio_account_id).toBe("new-AB · Chase Savings");
     expect(await e.accountsReady()).toBe(true);
   });
 });
@@ -240,7 +241,7 @@ describe("link plan", () => {
     const e = new Engine(fakeApi(["w1"]).api);
     await e.store.saveAccounts("sandbox", { a: { item_id: "i", kind: "cash", name: "A", wealthfolio_account_id: "w1", match: "w1" } } as never);
     await e.unlinkAccount("a");
-    expect((await e.store.accounts("sandbox")).a.wealthfolio_account_id).toBeNull();
+    expect(valueAt(await e.store.accounts("sandbox"), "a").wealthfolio_account_id).toBeNull();
     await e.store.saveAccounts("sandbox", { a: { item_id: "i", kind: "cash", name: "A", wealthfolio_account_id: "w1" } } as never);
     const l = new MemoryLedger({});
     l.rows.set("p", row("p", "a"));
@@ -256,7 +257,7 @@ describe("reconnect flag", () => {
     e.plaid = async () => ({ linkTokenGet: async () => ({ link_sessions: [{ on_success: {} }] }) }) as never;
     e.refreshAccounts = async () => [];
     expect((await e.checkReconnect("i", "t")).state).toBe("done");
-    expect((await e.store.items("sandbox")).i.reconnect).toBe(false);
+    expect(valueAt(await e.store.items("sandbox"), "i").reconnect).toBe(false);
   });
 });
 
@@ -268,7 +269,7 @@ describe("joint accounts", () => {
       c: { ...acct("AB", "AB · Chase ••2222"), mask: "2222" } } as never);
     await e.setSyncAll(true);
     const cfg = await e.store.accounts("sandbox");
-    expect([cfg.a.skip, cfg.b.skip, cfg.c.skip]).toEqual([false, true, false]);
+    expect([valueAt(cfg, "a").skip, valueAt(cfg, "b").skip, valueAt(cfg, "c").skip]).toEqual([false, true, false]);
   });
 });
 
@@ -399,10 +400,10 @@ describe("setOwner", () => {
     } as never);
     await e.setOwner("i", "ab");
     const cfg = await e.store.accounts("sandbox");
-    expect(cfg.a.name).toBe("AB · Chase Checking ••1111");
-    expect(cfg.b.name).toBe("AV · Chase Savings ••2222");
-    expect([cfg.a.owner, cfg.b.owner]).toEqual(["AB", "AB"]);
-    expect((await e.store.items("sandbox")).i.owner).toBe("AB");
+    expect(valueAt(cfg, "a").name).toBe("AB · Chase Checking ••1111");
+    expect(valueAt(cfg, "b").name).toBe("AV · Chase Savings ••2222");
+    expect([valueAt(cfg, "a").owner, valueAt(cfg, "b").owner]).toEqual(["AB", "AB"]);
+    expect(valueAt(await e.store.items("sandbox"), "i").owner).toBe("AB");
     await expect(e.setOwner("i", "A1")).rejects.toThrow(/1 to 4 letters/);
   });
 });
@@ -446,7 +447,7 @@ describe("replan", () => {
     await e.setSecurity("s1", "Fund", { mode: "ticker", symbol: "vfiax" });
     const d = await e.replan(dry([]));
     expect(d.plan.new).toEqual([]);
-    expect((await e.store.symbols("sandbox")).s1.symbol).toBe("VFIAX");
+    expect(valueAt(await e.store.symbols("sandbox"), "s1").symbol).toBe("VFIAX");
   });
 
   it("replans without a dry run when a fund newly follows a ticker (pulls only that history)", async () => {
@@ -478,11 +479,11 @@ describe("autoSync", () => {
       return e;
     };
     const tabs = [tab(), tab(), tab()];
-    await tabs[0].store.saveDaily({ on: true, time: "08:30" });
+    await itemAt(tabs, 0).store.saveDaily({ on: true, time: "08:30" });
     const runs = await Promise.all(tabs.map((e) => e.autoSync(at(9))));
     expect(runs.filter(Boolean).length).toBe(1);
     expect(pushes).toBe(1);
-    expect(await tabs[0].store.dailyLock("sandbox")).toBeNull();
+    expect(await itemAt(tabs, 0).store.dailyLock("sandbox")).toBeNull();
 
     const e = tab();
     await e.store.saveDailyLock("sandbox", { id: "other", at: at(10).toISOString() });
@@ -514,7 +515,7 @@ describe("autoSync", () => {
     expect(pushes).toBe(1);
     const runs = (await e.store.autoRun("sandbox")).runs!;
     expect(runs.length).toBe(1);
-    expect(runs[0].totals).toBeTruthy();
+    expect(itemAt(runs, 0).totals).toBeTruthy();
     expect((await e.nextDaily(at(12)))?.getDate()).toBe(8);
   });
 
@@ -562,8 +563,8 @@ describe("autoSync", () => {
     for (let i = 0; i < 9; i++) await e.runDaily(at(9, i));
     const runs = (await e.store.autoRun("sandbox")).runs!;
     expect(runs.length).toBe(7);
-    expect(runs[0].status).toBe("failed");
-    expect(runs[0].time).toBe(at(9, 8).toISOString());
+    expect(itemAt(runs, 0).status).toBe("failed");
+    expect(itemAt(runs, 0).time).toBe(at(9, 8).toISOString());
   });
 
   it("does not push while a security needs review", async () => {
@@ -596,7 +597,7 @@ describe("adoptions", () => {
     const d = { env: "sandbox", plan: emptyPlan, state: new MemoryLedger({}), cfg: { A: { kind: "investment", item_id: "i", wealthfolio_account_id: "W" } },
       fetched: { items: [], skipped: [], blocked: [] }, adoptions: [{ key: "p1", plaidId: "p1", accountId: "A", how: "exact", decision: "add",
         row: {}, existing: { id: "e1" } }] } as never as DryRun;
-    d.adoptions[0].decision = "discard";
+    itemAt(d.adoptions, 0).decision = "discard";
     await e.push(d, () => {}).catch(() => {});
     expect(d.state.get("p1")?.wf_activity_id).toBe("e1");
   });
@@ -631,7 +632,7 @@ describe("old data is kept", () => {
     const lines = await (e as never as { protect(p: Plan, c: unknown, s: MemoryLedger): Promise<string[]> }).protect(p, cfg, l);
     expect(p.updates.length).toBe(1);
     expect(p.voids.length).toBe(0);
-    expect(lines[0]).toMatch(/Kept as they are in Wealthfolio \(2\)/);
+    expect(itemAt(lines, 0)).toMatch(/Kept as they are in Wealthfolio \(2\)/);
   });
 });
 
@@ -679,7 +680,7 @@ describe("categorize", () => {
       return { status: 200, body: JSON.stringify(ep === "/item/get" ? { item: {} } : { accounts: [] }) };
     });
     expect(await e.categorize()).toBe("Categorized 1 of 1 rows.");
-    expect(assigned.map((a) => a[0])).toEqual(["wf-old"]);
+    expect(assigned.map((a) => itemAt(a, 0))).toEqual(["wf-old"]);
     const state = await e.store.ledger("sandbox");
     expect(state.get("gone")?.category).toBeNull();
     expect(await e.categorize()).toMatch(/already has one/);

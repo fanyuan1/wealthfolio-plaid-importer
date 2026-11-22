@@ -7,9 +7,9 @@ function uiClasses(): string[] {
   for (const f of readdirSync("src/ui").filter((n) => n.endsWith(".tsx"))) {
     const src = readFileSync(`src/ui/${f}`, "utf8");
     for (const m of src.matchAll(/className=(?:"([^"]*)"|\{([^}]*(?:\$\{[^}]*\}[^}]*)*)\})/g)) {
-      const attr = m[1] !== undefined ? `"${m[1]}"` : m[2];
+      const attr = m[1] !== undefined ? `"${m[1]}"` : m[2] ?? "";
       const parts = [...attr.matchAll(/([!=]==\s*)?(?:'([^']*)'|"([^"]*)")/g)].filter((q) => !q[1]).map((q) => q[2] ?? q[3]);
-      for (const b of attr.matchAll(/`([^`]*)`/g)) parts.push(b[1].replace(/\$\{[^}]*\}/g, " "));
+      for (const b of attr.matchAll(/`([^`]*)`/g)) parts.push((b[1] ?? "").replace(/\$\{[^}]*\}/g, " "));
       for (const t of parts.join(" ").split(/\s+/)) if (/^[a-z-][\w:/.[\]()%-]*$/.test(t)) out.add(t);
     }
   }

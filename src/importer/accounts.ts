@@ -1,3 +1,4 @@
+import { valueAt } from "./at";
 import ABBREV_DATA from "./abbreviations.json";
 import type { Row } from "./models";
 import type { AccountCfg } from "./plan";
@@ -11,12 +12,12 @@ const NON_EUR: Record<string, string> = { US: "USD", CA: "CAD", GB: "GBP", DK: "
 const currencyFor = (country?: string | null): string => NON_EUR[(country || "US").toUpperCase()] ?? "EUR";
 const ABBREV: Record<string, string> = ABBREV_DATA;
 
-export function shortName(name: string): string {
+function shortName(name: string): string {
   const n = (name || "").trim();
   const low = n.toLowerCase();
   let best = "";
   for (const key of Object.keys(ABBREV)) if ((low === key || low.startsWith(key + " ")) && key.length > best.length) best = key;
-  return best ? ABBREV[best] : n || "Bank";
+  return best ? valueAt(ABBREV, best) : n || "Bank";
 }
 
 const trim = (s: string, n: number) => (s.length <= n ? s : s.slice(0, Math.max(n - 1, 1)).trimEnd() + "…");
@@ -62,7 +63,7 @@ export function jointByMask(cfg: Record<string, AccountCfg>): Set<string> {
     const k = [c.institution_id, mask, c.plaid_subtype].join("|");
     groups.set(k, [...(groups.get(k) ?? []), id]);
   }
-  return new Set([...groups.values()].filter((ids) => new Set(ids.map((i) => cfg[i].owner)).size > 1).flat());
+  return new Set([...groups.values()].filter((ids) => new Set(ids.map((i) => valueAt(cfg, i).owner)).size > 1).flat());
 }
 
 export function jointCopies(cfg: Record<string, AccountCfg>): string[] {
@@ -92,8 +93,8 @@ export function discoverAccounts(cfg: Record<string, AccountCfg>, itemId: string
     if (kind === "investment" && !(tok.products ?? ["investments"]).includes("investments")) kind = undefined;
     const isJoint = joint.has(aid) || JOINT_NAME.test(`${a.name} ${a.official_name ?? ""}`);
     if (aid in cfg) {
-      cfg[aid].plaid_name = a.name;
-      if (isJoint) cfg[aid].joint = true;
+      valueAt(cfg, aid).plaid_name = a.name;
+      if (isJoint) valueAt(cfg, aid).joint = true;
       continue;
     }
     const mask = a.mask || "";
@@ -111,7 +112,7 @@ export function discoverAccounts(cfg: Record<string, AccountCfg>, itemId: string
 
 const words = (s: string) => new Set((s.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter((w) => w.length > 1 || /\d/.test(w)));
 
-export function suggestMatch(name: string, mask: string | undefined, candidates: { id: string; name: string; accountNumber?: string }[]): string | null {
+export function suggestMatch(name: string, mask: string | undefined, candidates: { id: string; name: string; accountNumber?: string | undefined }[]): string | null {
   const mine = words(name);
   let best: string | null = null, top = 0;
   for (const c of candidates) {
@@ -124,7 +125,7 @@ export function suggestMatch(name: string, mask: string | undefined, candidates:
   return top >= 0.4 ? best : null;
 }
 
-type WfAccount = { id: string; name: string; accountType: string; accountNumber?: string };
+type WfAccount = { id: string; name: string; accountType: string; accountNumber?: string | undefined };
 
 export function planLinks(cfg: Record<string, AccountCfg>, existing: WfAccount[]): Record<string, string | null> {
   const taken = new Set(Object.values(cfg).map((c) => c.wealthfolio_account_id).filter((x): x is string => Boolean(x)));

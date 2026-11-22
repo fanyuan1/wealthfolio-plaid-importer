@@ -1,8 +1,8 @@
-import { accountLabel, accountNames, plural, cryptoSymbol, isCrypto, isCurrency, type AccountCfg, BLOCKING_ITEM_ERRORS, PlaidError, RECONNECT_DETAIL, accountName, type OnProgress, type Progress, assignCategories, Closes, D, discoverAccounts, entry, fetchItems, type FetchResult, type Adoption, type Existing, findAdoptions, forgetEmptied, matchById, holdsSecurities, jointCopies, planLinks, type HttpGet, jointOwners, addDays, HISTORY_DAYS, MemoryLedger, Plaid, type PlaidEnv, plan, type Plan, push, type PushStats, rebases, reportedPrice, resolve, type Row, todoReport, type Token, type Track, trackedIds, type Transport, uncategorized, WF_TYPE, withPrices, yahooFetch } from '../importer';
+import { valueAt, accountLabel, accountNames, plural, cryptoSymbol, isCrypto, isCurrency, type AccountCfg, BLOCKING_ITEM_ERRORS, PlaidError, RECONNECT_DETAIL, accountName, type OnProgress, type Progress, assignCategories, Closes, D, discoverAccounts, entry, fetchItems, type FetchResult, type Adoption, type Existing, findAdoptions, forgetEmptied, matchById, holdsSecurities, jointCopies, planLinks, type HttpGet, jointOwners, addDays, HISTORY_DAYS, MemoryLedger, Plaid, type PlaidEnv, plan, type Plan, push, type PushStats, rebases, reportedPrice, resolve, type Row, todoReport, type Token, type Track, trackedIds, type Transport, uncategorized, WF_TYPE, withPrices, yahooFetch } from '../importer';
 import { type Api, type AutoRun, type Daily, type ItemMeta, type RunRecord, Store } from './store';
 import { SdkWriter } from './writer';
 
-export type { AutoRun, Daily, ItemMeta, RunRecord } from './store';
+export type { AutoRun, Daily, RunRecord } from './store';
 export type { Progress } from '../importer';
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -14,7 +14,7 @@ const LOCK_SETTLE_MS = 2000;
 const PULL_REUSE_MS = 15 * 60_000;
 const REFRESH_MS = 24 * 3600_000;
 export const DEFAULT_DAILY: Daily = { on: false, time: "07:00" };
-const minutes = (hhmm: string) => { const [h, m] = hhmm.split(":").map(Number); return h * 60 + (m || 0); };
+const minutes = (hhmm: string) => { const [h = 0, m = 0] = hhmm.split(":").map(Number); return h * 60 + (m || 0); };
 const AUTO_RATIO_LIMIT = 0.05;
 const BACKUP_FORMAT = "plaid-importer-backup";
 const DAILY_RUNNING = "The daily sync is running. Wait for it to finish.";
@@ -40,8 +40,8 @@ export class Engine {
   view: SyncView = EMPTY_VIEW;
   tasks: Record<string, Task | undefined> = {};
   private listeners = new Set<() => void>();
-  pendingLink?: { url: string; linkToken: string; owner: string; itemId?: string; started: number };
-  lastLinked?: LinkCheck & { state: "done"; reconnect: boolean };
+  pendingLink?: { url: string; linkToken: string; owner: string; itemId?: string | undefined; started: number } | undefined;
+  lastLinked?: (LinkCheck & { state: "done"; reconnect: boolean }) | undefined;
   private pulled?: { key: string; fetched: FetchResult };
   lockSettleMs = LOCK_SETTLE_MS;
   constructor(private api: Api) {
@@ -49,7 +49,7 @@ export class Engine {
   }
 
   private writing = 0;
-  private doneDay?: string;
+  private doneDay?: string | undefined;
   get busy() { return this.writing > 0 || Object.values(this.tasks).some((t) => t?.running); }
 
   private async write<T>(fn: () => Promise<T>): Promise<T> {
@@ -222,7 +222,7 @@ export class Engine {
           c.owner = o;
           if (c.wealthfolio_account_id) continue;
           const taken = new Set(Object.entries(cfg).filter(([id]) => id !== aid).map(([, x]) => String(x.name)));
-          c.name = accountName(o, String(c.institution ?? items[itemId].institution_name), c.plaid_name as string, c.mask as string, taken);
+          c.name = accountName(o, String(c.institution ?? valueAt(items, itemId).institution_name), c.plaid_name as string, c.mask as string, taken);
         }
       });
     });
@@ -358,7 +358,7 @@ export class Engine {
     return this.write(async () => {
       const plaid = await this.plaid();
       const { env } = await this.store.settings();
-      const meta = (await this.store.items(env))[itemId];
+      const meta = valueAt(await this.store.items(env), itemId);
       const tok = (await this.store.token(itemId))!;
       const products = meta.products ?? [];
       const [accts, holdings, ident] = await Promise.all([
@@ -436,7 +436,7 @@ export class Engine {
 
   async setSync(accountId: string, on: boolean) {
     return this.write(async () => {
-      await this.editAccounts((cfg) => { cfg[accountId].skip = !on; });
+      await this.editAccounts((cfg) => { valueAt(cfg, accountId).skip = !on; });
     });
   }
 
@@ -444,12 +444,12 @@ export class Engine {
     return this.write(async () => {
       await this.editAccounts((cfg) => {
         for (const c of Object.values(cfg)) if (WF_TYPE[c.kind]) c.skip = !on;
-        if (on) for (const id of jointCopies(cfg)) cfg[id].skip = true;
+        if (on) for (const id of jointCopies(cfg)) valueAt(cfg, id).skip = true;
       });
     });
   }
 
-  async wealthfolioAccounts(): Promise<{ id: string; name: string; accountType: string; accountNumber?: string }[]> {
+  async wealthfolioAccounts(): Promise<{ id: string; name: string; accountType: string; accountNumber?: string | undefined }[]> {
     try {
       return (await this.api.accounts.getAll()).map((a) => ({ id: a.id, name: a.name, accountType: a.accountType, accountNumber: a.accountNumber }));
     } catch {
@@ -466,8 +466,8 @@ export class Engine {
     return this.write(async () => {
       if ((await this.pushedAccounts()).has(accountId)) throw new Error("Rows were already pushed to this account, so its link cannot change.");
       await this.editAccounts((cfg) => {
-        cfg[accountId].wealthfolio_account_id = null;
-        delete cfg[accountId].match;
+        valueAt(cfg, accountId).wealthfolio_account_id = null;
+        delete valueAt(cfg, accountId).match;
       });
     });
   }
@@ -475,8 +475,8 @@ export class Engine {
   async setMatch(accountId: string, match: string | undefined) {
     return this.write(async () => {
       await this.editAccounts((cfg) => {
-        if (match === undefined) delete cfg[accountId].match;
-        else cfg[accountId].match = match;
+        if (match === undefined) delete valueAt(cfg, accountId).match;
+        else valueAt(cfg, accountId).match = match;
       });
     });
   }
@@ -487,7 +487,7 @@ export class Engine {
         const links = planLinks(cfg, await this.wealthfolioAccounts());
         let n = 0;
         for (const [aid, pick] of Object.entries(links)) {
-          const c = cfg[aid];
+          const c = valueAt(cfg, aid);
           if (pick) {
             c.wealthfolio_account_id = pick;
             continue;
@@ -530,7 +530,7 @@ export class Engine {
       { log: (m) => { if (!m.includes("no active accounts")) log(m); } });
     const pfc = new Map(plan(fetched.items, bank, {}, scratch, today(), undefined, () => null).new.map((a) => [a.plaidId, a.category ?? null]));
     const pulled = new Set(fetched.items.map((d) => d.itemId));
-    for (const r of unlearned(state, cfg)) if (pulled.has(cfg[r.account_id].item_id)) r.category = pfc.get(r.plaid_id) ?? null;
+    for (const r of unlearned(state, cfg)) if (pulled.has(valueAt(cfg, r.account_id).item_id)) r.category = pfc.get(r.plaid_id) ?? null;
   }
 
 
@@ -674,7 +674,7 @@ export class Engine {
     await this.store.saveRemap(env, remap);
   }
 
-  async validTicker(symbol: string): Promise<{ ok: boolean; name?: string; suggestions?: { symbol: string; name?: string }[] }> {
+  async validTicker(symbol: string): Promise<{ ok: boolean; name?: string | undefined; suggestions?: { symbol: string; name?: string }[] | undefined }> {
     const sym = symbol.trim().toUpperCase();
     if (!sym) return { ok: false };
     const hits = await this.api.market.searchTicker(sym);
@@ -688,7 +688,7 @@ export class Engine {
   async checkTickers(symbols: string[]): Promise<Record<string, boolean | null>> {
     const todo = [...new Set(symbols)].filter((s) => !this.tickerOk.has(s));
     const got = await Promise.all(todo.map((s) => this.validTicker(s).then((r) => r.ok, () => null)));
-    todo.forEach((s, i) => this.tickerOk.set(s, got[i]));
+    todo.forEach((s, i) => this.tickerOk.set(s, got[i] ?? null));
     return Object.fromEntries(symbols.map((s) => [s, this.tickerOk.get(s)!]));
   }
 
@@ -749,7 +749,7 @@ export class Engine {
     }));
     const wiped = forgetEmptied(state, cfg, counts);
     if (wiped.accounts.length) {
-      log(`  ${wiped.accounts.map((a) => String(cfg[a].name)).join(", ")}: empty in Wealthfolio, so ${wiped.rows} remembered rows were forgotten and will be pulled again`);
+      log(`  ${wiped.accounts.map((a) => String(valueAt(cfg, a).name)).join(", ")}: empty in Wealthfolio, so ${wiped.rows} remembered rows were forgotten and will be pulled again`);
       await this.store.saveLedger(env, state);
     }
     const tokens = await this.tokens(env);
@@ -796,12 +796,15 @@ export class Engine {
     let plaid: Plaid | undefined;
     const start = addDays(today(), -HISTORY_DAYS);
     for (const item of d.fetched.items) {
-      const accts = new Set(Object.keys(item.invStart).filter((a) => want.has(a) && item.invStart[a] > start));
+      const accts = new Set(Object.keys(item.invStart).filter((a) => want.has(a) && valueAt(item.invStart, a) > start));
       const tok = accts.size ? await this.store.token(item.itemId) : null;
       if (!tok) continue;
       const full = await (plaid ??= await this.plaid()).investmentTransactions(tok, start, today());
       const from = item.invStart;
-      full.investment_transactions = full.investment_transactions.filter((t: Row) => accts.has(t.account_id) || !from[t.account_id] || t.date >= from[t.account_id]);
+      full.investment_transactions = full.investment_transactions.filter((t: Row) => {
+        const since = from[t.account_id];
+        return accts.has(t.account_id) || !since || t.date >= since;
+      });
       for (const a of accts) from[String(a)] = start;
       item.inv = full;
     }
@@ -824,7 +827,7 @@ export class Engine {
     const asked: [string, string][] = [];
     for (const sid of trackedIds(symbols)) {
       const got = reportedPrice(fetched.items, sid);
-      if (got) asked.push([symbols[sid].track.symbol, got[1]]);
+      if (got) asked.push([valueAt(symbols, sid).track.symbol, got[1]]);
     }
     await closes.load(asked, { latest: true });
     const proposals = rebases(fetched.items, symbols, closes).map((rb) => ({
@@ -923,7 +926,7 @@ export class Engine {
     const plan = this.applyAdoptions(d);
     const wfAccount = Object.fromEntries(Object.entries(d.cfg).map(([id, c]) => [id, c.wealthfolio_account_id ?? ""]));
     const byWfId = () => new Map([...d.state.rows.values()].filter((r) => r.wf_activity_id)
-      .map((r) => [r.wf_activity_id!, { accountId: wfAccount[r.account_id], activityType: r.activity_type, date: r.date, currency: r.currency || "USD" }]));
+      .map((r) => [r.wf_activity_id!, { accountId: wfAccount[r.account_id] ?? "", activityType: r.activity_type, date: r.date, currency: r.currency || "USD" }]));
     let index = byWfId();
     const writer = new SdkWriter(this.api, (id) => (index.get(id) ?? (index = byWfId()).get(id)) ?? null);
     try {
@@ -966,7 +969,7 @@ export function nextRun(daily: Daily, rec: AutoRun, now = new Date()): Date | nu
 
 function unlearned(state: MemoryLedger, cfg: Record<string, AccountCfg>) {
   return [...state.rows.values()].filter((r) => r.category === undefined && !r.voided && r.wf_activity_id && !r.category_set
-    && !r.pair_plaid_id && !cfg[r.account_id]?.skip && ["cash", "credit"].includes(cfg[r.account_id]?.kind));
+    && !r.pair_plaid_id && !cfg[r.account_id]?.skip && ["cash", "credit"].includes(cfg[r.account_id]?.kind ?? ""));
 }
 
 export function seenSecurities(items: { inv?: Row | null; holdings?: Row | null }[], symbols: Record<string, Row>): Security[] {
@@ -1015,7 +1018,7 @@ export function needsReview(s: Security, known: Record<string, boolean | null>):
   if (modeOf(s) !== "auto") return false;
   return !((s.result === "cash" && isCurrency({ ticker_symbol: s.ticker })) || (tickersMatch(s) && known[s.result] === true));
 }
-export interface SecurityChoice { mode: SecurityMode; symbol?: string; track?: Track }
+export interface SecurityChoice { mode: SecurityMode; symbol?: string; track?: Track | undefined }
 export interface DryRun {
   env: PlaidEnv; plan: Plan; fetched: FetchResult; todo: string[]; state: MemoryLedger; cfg: Record<string, AccountCfg>;
   tracked: Set<string>;
@@ -1025,7 +1028,7 @@ export interface DryRun {
 }
 
 export interface Task { label: string; running: boolean; progress: Progress[]; log: string[]; result?: unknown; error?: string }
-export interface SyncView { dry?: DryRun; stale: boolean; result?: string; failed: string[]; refused: Record<string, string> }
+export interface SyncView { dry?: DryRun | undefined; stale: boolean; result?: string | undefined; failed: string[]; refused: Record<string, string> }
 const EMPTY_VIEW: SyncView = { stale: false, failed: [], refused: {} };
 
 export function addProgress(list: Progress[], p: Progress): Progress[] {

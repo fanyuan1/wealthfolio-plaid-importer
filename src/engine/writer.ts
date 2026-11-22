@@ -1,5 +1,5 @@
 import type { HostAPI } from "@wealthfolio/addon-sdk";
-import { chunks, IMPORT_CHUNK, type ImportRow, SMALL_CHUNK, type Update, WealthfolioError, type Writer } from "../importer";
+import { chunks, IMPORT_CHUNK, itemAt, type ImportRow, SMALL_CHUNK, type Update, WealthfolioError, type Writer } from "../importer";
 
 export interface Base { accountId: string; activityType: string; date: string; currency: string }
 
@@ -56,7 +56,7 @@ export class SdkWriter implements Writer {
         const id = ids.get(`plaid-importer-${line}`);
         out.set(line, id ? ["imported", id] : ["failed", null, rejected.get(`plaid-importer-${line}`) ?? "Wealthfolio did not save the row"]);
       });
-      if (!res.createdMappings.length && res.errors.length) throw new WealthfolioError(`import rejected: ${res.errors[0].message}`);
+      if (!res.createdMappings.length && res.errors.length) throw new WealthfolioError(`import rejected: ${itemAt(res.errors, 0).message}`);
     }
     return out;
   }
@@ -82,7 +82,7 @@ export class SdkWriter implements Writer {
         const res = await this.api.activities.saveMany({ updates: reqs as never });
         for (const e of res.errors) {
           const i = reqs.findIndex((r) => r.id === e.id);
-          errors.push({ index: i >= 0 ? idx[i] : 0, message: e.message });
+          errors.push({ index: i >= 0 ? itemAt(idx, i) : 0, message: e.message });
         }
       }
       out.push({ errors });

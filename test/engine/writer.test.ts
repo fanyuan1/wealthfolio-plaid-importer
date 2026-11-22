@@ -1,3 +1,4 @@
+import { itemAt } from "../../src/importer";
 import { expect, test } from "vitest";
 import { SdkWriter } from "../../src/engine/writer";
 
@@ -38,10 +39,10 @@ test("imports through checkImport and saveMany, mapping lines to new ids", async
   ]);
   expect(calls.checked).toEqual([2]);
   expect(Object.fromEntries(out)).toEqual({ 1: ["imported", "wf-plaid-importer-1"], 2: ["failed", null, expect.any(String)], 3: ["imported", "wf-plaid-importer-3"], 4: ["imported", "wf-plaid-importer-4"] });
-  const creates = (calls.saveMany[0] as { creates: Record<string, unknown>[] }).creates;
-  expect(creates[0].asset).toEqual({ id: "asset-VTI", symbol: "VTI", exchangeMic: "XNAS" });
-  expect([creates[1].asset, creates[1].activityDate, creates[1].amount]).toEqual([undefined, "2026-01-03", 5]);
-  expect(creates[2].asset).toEqual({ id: "asset-VTI", symbol: "VTI", exchangeMic: "XNAS" });
+  const creates = (itemAt(calls.saveMany, 0) as { creates: Record<string, unknown>[] }).creates;
+  expect(itemAt(creates, 0).asset).toEqual({ id: "asset-VTI", symbol: "VTI", exchangeMic: "XNAS" });
+  expect([itemAt(creates, 1).asset, itemAt(creates, 1).activityDate, itemAt(creates, 1).amount]).toEqual([undefined, "2026-01-03", 5]);
+  expect(itemAt(creates, 2).asset).toEqual({ id: "asset-VTI", symbol: "VTI", exchangeMic: "XNAS" });
 });
 
 test("updates send the whole activity and map errors to indexes", async () => {
@@ -49,10 +50,10 @@ test("updates send the whole activity and map errors to indexes", async () => {
   const w = new SdkWriter(api, (id) => ({ accountId: `acct-${id}`, activityType: "WITHDRAWAL", date: "2026-02-01", currency: "USD" }));
   const out = await w.update([{ activityId: "wf-1", amount: 26 }, { activityId: "wf-x", void: true }, { activityId: "wf-2", activityType: "TRANSFER_OUT" }]);
   expect(out).toEqual([{ errors: [{ index: 1, message: "nope" }] }]);
-  const ups = (calls.saveMany[0] as { updates: Record<string, unknown>[] }).updates;
-  expect(ups[0]).toEqual({ id: "wf-1", accountId: "acct-wf-1", activityType: "WITHDRAWAL", activityDate: "2026-02-01", currency: "USD", amount: 26 });
-  expect(ups[1].status).toBe("VOID");
-  expect(ups[2].activityType).toBe("TRANSFER_OUT");
+  const ups = (itemAt(calls.saveMany, 0) as { updates: Record<string, unknown>[] }).updates;
+  expect(itemAt(ups, 0)).toEqual({ id: "wf-1", accountId: "acct-wf-1", activityType: "WITHDRAWAL", activityDate: "2026-02-01", currency: "USD", amount: 26 });
+  expect(itemAt(ups, 1).status).toBe("VOID");
+  expect(itemAt(ups, 2).activityType).toBe("TRANSFER_OUT");
   expect(ups.every((u) => u.currency === "USD")).toBe(true);
 });
 
@@ -73,7 +74,7 @@ test("a duplicate flag on the checked row does not fail the security's rows", as
   const out = await new SdkWriter(api as never, () => null).commitImport([
     { lineNumber: 1, accountId: "A", date: "2026-01-02", activityType: "BUY", currency: "USD", symbol: "VUSXX", quantity: 1, unitPrice: 1 },
     { lineNumber: 2, accountId: "A", date: "2026-01-03", activityType: "BUY", currency: "USD", symbol: "VUSXX", quantity: 2, unitPrice: 1 }]);
-  expect([...out.values()].map((v) => v[0])).toEqual(["imported", "imported"]);
+  expect([...out.values()].map((v) => itemAt(v, 0))).toEqual(["imported", "imported"]);
   expect(calls.saveMany.length).toBe(1);
 });
 

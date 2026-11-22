@@ -114,7 +114,8 @@ function acquisitionPrice(sym: string, sid: string | null, day: string, acts: Ac
   const p = priceOn && sid ? priceOn(sid, day) : null;
   if (nz(p)) return [p!.times(grown), `market price on ${day}${grown.eq(1) ? "" : `, times ${grown} for later splits`}`];
   const priced = acts.filter((a) => a.symbol === sym && nz(a.unitPrice)).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-  if (priced.length) return [priced[0].unitPrice, `Plaid price on ${priced[0].date}, the earliest it shows`];
+  const first = priced[0];
+  if (first) return [first.unitPrice, `Plaid price on ${first.date}, the earliest it shows`];
   return [null, null];
 }
 

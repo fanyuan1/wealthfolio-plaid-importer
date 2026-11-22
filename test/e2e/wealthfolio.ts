@@ -2,7 +2,7 @@ import { execFileSync, execSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 
-export const PORT = Number(process.env.E2E_WF_PORT ?? 18088);
+const PORT = Number(process.env.E2E_WF_PORT ?? 18088);
 export const BASE = `http://127.0.0.1:${PORT}`;
 const API = `${BASE}/api/v1`;
 const PROJECT = "plaid-importer-e2e";
@@ -26,7 +26,7 @@ function compose(...args: string[]) {
 }
 
 async function call(method: string, path: string, body?: unknown) {
-  const r = await fetch(`${API}${path}`, { method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const r = await fetch(`${API}${path}`, { method, headers: { "Content-Type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   if (!r.ok) throw new Error(`${method} ${path}: ${r.status} ${await r.text()}`);
   const text = await r.text();
   return text ? JSON.parse(text) : null;

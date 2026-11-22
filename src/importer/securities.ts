@@ -53,7 +53,7 @@ export function isCrypto(sec: Row): boolean {
 
 export function isCurrency(sec: Row): boolean {
   const m = /^CUR:([A-Z]{3})$/.exec(String(sec.ticker_symbol ?? "").toUpperCase());
-  return Boolean(m && FIAT.has(m[1]));
+  return Boolean(m?.[1] && FIAT.has(m[1]));
 }
 
 export function cryptoSymbol(ticker: string, currency = "USD"): string {

@@ -1,3 +1,4 @@
+import { valueAt } from "./at";
 import { D, type Dec, dec } from "./dec";
 import type { Row } from "./models";
 
@@ -66,7 +67,7 @@ export function reportedPrice(items: HoldingsItem[], sid: string): [Dec, string]
   return best;
 }
 
-export interface DatedClose { day: string; close: Dec }
+interface DatedClose { day: string; close: Dec }
 export interface RecentCloses { closeOn(symbol: string, day: string): DatedClose | null }
 
 class Rebase {
@@ -91,7 +92,7 @@ class Rebase {
 export function rebases(items: HoldingsItem[], symbols: Record<string, Row>, closes: RecentCloses): Rebase[] {
   const out: Rebase[] = [];
   for (const sid of trackedIds(symbols)) {
-    const e = symbols[sid];
+    const e = valueAt(symbols, sid);
     const got = reportedPrice(items, sid);
     if (got && got[1] > String(e.track.date) && !got[0].eq(D(String(e.track.price)))) {
       out.push(new Rebase(sid, e.name || sid, e.track, got[1], got[0], closes.closeOn(e.track.symbol, got[1])));

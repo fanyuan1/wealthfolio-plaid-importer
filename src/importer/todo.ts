@@ -89,7 +89,7 @@ export function todoGroups(lines: string[]): TodoGroup[] {
     if (!l.trim() || /^To do in Wealthfolio:/.test(l)) continue;
     if (l.startsWith('Warning: ')) { out.push({ heading: 'Price lookup', count: 0, text: l.slice(9), items: [], warning: true }); continue; }
     const head = /^(\S.*) \((\d+)\)$/.exec(l);
-    if (head) { out.push({ heading: head[1], count: Number(head[2]), text: '', items: [] }); continue; }
+    if (head?.[1]) { out.push({ heading: head[1], count: Number(head[2]), text: '', items: [] }); continue; }
     const g = out[out.length - 1];
     if (!g) continue;
     if (l.startsWith('  - ')) g.items.push(l.slice(4));

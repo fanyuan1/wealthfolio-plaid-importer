@@ -1,3 +1,4 @@
+import { itemAt } from "../../src/importer/at";
 import { expect, routePlaid, test } from "./fixtures";
 import { BASE, wf } from "./wealthfolio";
 
@@ -22,7 +23,7 @@ test("runs once after its time, in one of two tabs, with the addon page never op
   await Promise.all(tabs.map((p) => p.clock.fastForward("01:05")));
   await expect.poll(async () => (await wf.activities()).filter((a) => (a.comment ?? "").includes("plaid:tx_daily")).length,
     { timeout: 60_000 }).toBe(1);
-  await tabs[0].waitForTimeout(5000);
+  await itemAt(tabs, 0).waitForTimeout(5000);
   expect((await wf.activities()).filter((a) => (a.comment ?? "").includes("plaid:tx_daily")).length).toBe(1);
   expect(pulls() - before).toBe(1);
   for (const p of tabs) expect(p.url()).not.toContain("/addons/");

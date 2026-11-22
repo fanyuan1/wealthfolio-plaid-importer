@@ -6,7 +6,7 @@ export interface Existing {
   quantity: string | null; amount: string | null; comment: string | null;
 }
 
-export type How = "new" | "exact" | "similar";
+type How = "new" | "exact" | "similar";
 
 export interface Adoption {
   key: string;
@@ -89,7 +89,7 @@ export function findAdoptions(acts: Activity[], existing: Existing[], wf: (plaid
     if (!w || !a.symbol || !a.quantity) continue;
     const parts = (inAccount.get(w) ?? []).filter((e) => !isOurs(e) && e.date < a.date && e.symbol && POSITION_SIGN[e.type]
       && norm(e.symbol) === norm(a.symbol)).sort((x, y) => x.date.localeCompare(y.date));
-    const held = parts.reduce((s, e) => s.plus((dec(e.quantity) ?? ZERO).abs().times(POSITION_SIGN[e.type])), ZERO);
+    const held = parts.reduce((s, e) => s.plus((dec(e.quantity) ?? ZERO).abs().times(POSITION_SIGN[e.type] ?? 0)), ZERO);
     if (held.eq(0)) continue;
     out.set(a.plaidId, make(a, a.quantity.minus(held).abs().lte(EPS) ? "exact" : "similar", null, { held: held.toFixed(), parts }));
   }

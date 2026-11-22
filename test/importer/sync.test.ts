@@ -1,3 +1,4 @@
+import { itemAt } from "../../src/importer";
 import { describe, expect, test } from "vitest";
 import {
   Activity, D, type ImportRow, type ItemData, MemoryLedger, openingDay, plan, push, type Row,
@@ -78,7 +79,7 @@ describe("sync", () => {
     expect(p.reviews).toEqual([]);
     const stats = await run(p, wf, state);
     expect([stats.imported, stats.linked, stats.categorized]).toEqual([8, 1, 1]);
-    expect(wf.cats[0].categoryId).toBe("cat_food");
+    expect(itemAt(wf.cats, 0).categoryId).toBe("cat_food");
     expect(wf.reruns).toBe(1);
     expect(state.cursor("i_boa")).toBe("c1");
     expect(state.invLastEnd("brk")).toBe("2026-11-05");
@@ -124,7 +125,7 @@ describe("sync", () => {
     expect(p2.new.map((a) => a.plaidId).sort()).toEqual(["f1", "f2", "opening:brk:PLANFUND-S_FU"]);
     expect(p2.new.filter((a) => a.plaidId.startsWith("opening:")).map((a) => a.quantity!.toNumber())).toEqual([2]);
     expect(p2.updates.length).toBe(1);
-    const [row, a, fields] = p2.updates[0];
+    const [row, a, fields] = itemAt(p2.updates, 0);
     expect([row.plaid_id, fields]).toEqual(["opening:brk:cash", ["amount"]]);
     expect(a.amount!.eq(D(cashBefore).plus(100))).toBe(true);
     expect(p2.reviews).toEqual([]);

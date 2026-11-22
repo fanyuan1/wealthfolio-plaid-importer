@@ -114,7 +114,7 @@ export type Row = Record<string, any>; // eslint-disable-line @typescript-eslint
 export interface Progress {
   id: string; label: string; parent?: string;
   state: "running" | "done" | "warn" | "error" | "skipped";
-  detail?: string;
+  detail?: string | undefined;
 }
 export type OnProgress = (p: Progress) => void;
 

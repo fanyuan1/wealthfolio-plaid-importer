@@ -117,7 +117,7 @@ function SecurityEditor({ engine, s, onSaved }: { engine: Engine; s: Security; o
   const [close, setClose] = useState<string>('');
   const [track, setTrack] = useState<Track | undefined>(o.track);
   const { busy, error, run } = useBusy();
-  const [valid, setValid] = useState<{ state: 'idle' | 'checking' | 'ok' | 'bad'; name?: string; suggestions?: { symbol: string; name?: string }[] }>({ state: 'idle' });
+  const [valid, setValid] = useState<{ state: 'idle' | 'checking' | 'ok' | 'bad'; name?: string | undefined; suggestions?: { symbol: string; name?: string }[] | undefined }>({ state: 'idle' });
   useEffect(() => {
     const sym = mode === 'track' ? target : mode === 'ticker' ? symbol : '';
     if (!sym.trim()) { setValid({ state: 'idle' }); return; }
@@ -209,7 +209,7 @@ function SecurityEditor({ engine, s, onSaved }: { engine: Engine; s: Security; o
   );
 }
 
-function Suggest({ list, onPick }: { list?: { symbol: string; name?: string }[]; onPick: (symbol: string) => void }) {
+function Suggest({ list, onPick }: { list?: { symbol: string; name?: string }[] | undefined; onPick: (symbol: string) => void }) {
   if (!list?.length) return null;
   return (
     <div className="flex flex-wrap items-center gap-2 text-sm">

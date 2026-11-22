@@ -26,8 +26,9 @@
     "wf:down": "docker compose -p plaid-wf -f test/docker/compose.yml --env-file test/docker/.env down",
     "wf:reset": "docker compose -p plaid-wf -f test/docker/compose.yml --env-file test/docker/.env down -v && rm -f test/docker/.env",
     "lint:comments": "eslint .",
-    "check": "pnpm run lint:comments && pnpm run type-check && pnpm run test",
-    "prepare": "husky"
+    "check": "pnpm run lint:comments && pnpm run type-check && pnpm run knip && pnpm run test",
+    "prepare": "husky",
+    "knip": "knip"
   },
   "dependencies": {
     "big.js": "^7.0.1"
@@ -51,8 +52,9 @@
     "@wealthfolio/ui": "^3.12.0",
     "eslint": "^10.15.0",
     "husky": "^9.1.7",
+    "knip": "^6.47.0",
     "lint-staged": "^17.6.1",
-    "lints": "github:fanyuan1/lints#v0.4.1",
+    "lints": "github:fanyuan1/lints#v0.5.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "typescript": "^5.9.2",

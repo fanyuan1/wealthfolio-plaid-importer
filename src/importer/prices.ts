@@ -71,10 +71,11 @@ export class Closes {
     if (!sym || this.failed.has(sym)) return null;
     const t = Date.parse(day);
     let best: string | null = null;
-    for (const d of Object.keys(this.cache[sym] ?? {})) {
-      if (best === null || Math.abs(Date.parse(d) - t) < Math.abs(Date.parse(best) - t)) best = d;
+    let close: string | undefined;
+    for (const [d, c] of Object.entries(this.cache[sym] ?? {})) {
+      if (best === null || Math.abs(Date.parse(d) - t) < Math.abs(Date.parse(best) - t)) { best = d; close = c; }
     }
-    return best ? { day: best, close: D(this.cache[sym][best]) } : null;
+    return best && close !== undefined ? { day: best, close: D(close) } : null;
   }
 
   warnings(): string[] {
@@ -92,7 +93,8 @@ export class Closes {
 
   private covers(sym: string, day: string): boolean {
     const ds = Object.keys(this.cache[sym] ?? {}).sort();
-    return ds.length > 0 && ds[0] <= day && day <= ds[ds.length - 1];
+    const first = ds[0], last = ds.at(-1);
+    return first !== undefined && last !== undefined && first <= day && day <= last;
   }
 }
 

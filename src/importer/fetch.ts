@@ -1,3 +1,4 @@
+import { valueAt } from "./at";
 import type { Ledger } from "./ledger";
 import type { OnProgress, Row } from "./models";
 import { type AccountCfg, accountLabel, activeAccounts, addDays, BLOCKING_ITEM_ERRORS, HISTORY_DAYS, type ItemData, OVERLAP_DAYS } from "./plan";
@@ -60,12 +61,12 @@ export async function fetchItems(plaid: Plaid, tokens: Record<string, Token>, ac
 async function fetchItem(plaid: Plaid, itemId: string, tok: Token, accts: Record<string, AccountCfg>, state: Ledger,
   today: string, label: string, log: Log, fullAccts: Set<string>, tracked: Set<string>, progress: OnProgress = () => {}): Promise<ItemData> {
   const d: ItemData = { itemId, owner: tok.owner, institution: tok.institution_name, invStart: {} };
-  let invIds = Object.keys(accts).filter((a) => accts[a].kind === "investment");
+  let invIds = Object.keys(accts).filter((a) => valueAt(accts, a).kind === "investment");
   if (invIds.length && !(tok.products ?? ["investments"]).includes("investments")) {
     log(`  ${label}: ${invIds.length} investment accounts skipped (${tok.institution_name} has no investments product in Plaid)`);
     invIds = [];
   }
-  const bankIds = Object.keys(accts).filter((a) => accts[a].kind === "cash" || accts[a].kind === "credit");
+  const bankIds = Object.keys(accts).filter((a) => valueAt(accts, a).kind === "cash" || valueAt(accts, a).kind === "credit");
   if (invIds.length) {
     d.holdings = await plaid.holdings(tok.access_token);
     const full = new Set([...fullAccts, ...(d.holdings.holdings ?? []).filter((h: Row) => tracked.has(h.security_id)).map((h: Row) => h.account_id)]);

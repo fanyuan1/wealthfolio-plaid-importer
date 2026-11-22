@@ -1,3 +1,4 @@
+import { valueAt } from "./at";
 import { mapCategory } from "./categories";
 import { type Dec, dec, ZERO } from "./dec";
 import { type Ledger, type LedgerRow, differs } from "./ledger";
@@ -88,15 +89,15 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
   for (const d of items) {
     const accts = activeAccounts(accountsCfg, d.itemId);
     if (d.inv != null) {
-      const ids = new Set(Object.keys(accts).filter((a) => accts[a].kind === "investment"));
+      const ids = new Set(Object.keys(accts).filter((a) => valueAt(accts, a).kind === "investment"));
       for (const a of ids) invAccounts.add(a);
       let secs: Record<string, Row> = { ...d.inv.securities };
       for (const s of d.holdings?.securities ?? []) secs[s.security_id] = s;
       let rows: Row[] = (d.inv.investment_transactions as Row[]).filter((t) => ids.has(t.account_id)
-        && String(t.date) >= d.invStart[t.account_id]);
+        && String(t.date) >= valueAt(d.invStart, t.account_id));
       let allHoldings: Row[] = d.holdings?.holdings ?? [];
       [rows, allHoldings, secs] = convert(rows, allHoldings, secs, symbols);
-      const plans = new Set([...ids].filter((a) => accts[a].plaid_subtype === "stock plan"));
+      const plans = new Set([...ids].filter((a) => valueAt(accts, a).plaid_subtype === "stock plan"));
       const r = mapInvestmentTransactions(rows, secs, symbols, "USD", plans);
 
       const s = secs;
@@ -143,23 +144,23 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
       }
       for (const aid of ids) {
         let acts = r.activities.filter((a) => a.accountId === aid);
-        const cur = accts[aid].currency || "USD";
+        const cur = valueAt(accts, aid).currency || "USD";
         if (!state.hasAny(aid)) {
-          const [op, rv] = openingActivities(aid, openingDay(state, d.invStart[aid]), hs, cash.get(aid) ?? null, acts, cur, priceOn);
+          const [op, rv] = openingActivities(aid, openingDay(state, valueAt(d.invStart, aid)), hs, cash.get(aid) ?? null, acts, cur, priceOn);
           acts = [...op, ...acts];
           p.reviews.push(...rv);
         } else if (backfill.has(aid) || hasLateRows(state, aid, acts) || !state.hasFullHistory(aid)) {
           const known = new Map<string, Activity>();
           for (const a of state.activities(new Set([aid]))) if (!a.plaidId.startsWith("opening:")) known.set(a.plaidId, a);
           for (const a of acts) known.set(a.plaidId, a);
-          const [op, rv] = openingActivities(aid, state.openingDate(aid) || openingDay(state, d.invStart[aid]), hs,
+          const [op, rv] = openingActivities(aid, state.openingDate(aid) || openingDay(state, valueAt(d.invStart, aid)), hs,
             cash.get(aid) ?? null, [...known.values()], cur, priceOn);
           acts = [...op, ...acts];
           p.reviews.push(...rv);
         }
         batch.push(...acts);
         p.invLastEnd[aid] = today;
-        if (d.invStart[aid] <= addDays(today, -HISTORY_DAYS)) p.fullHistory.push(aid);
+        if (valueAt(d.invStart, aid) <= addDays(today, -HISTORY_DAYS)) p.fullHistory.push(aid);
       }
     }
     if (d.tx != null) {
@@ -170,7 +171,7 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
       let acts: Activity[] = [];
       for (const t of rows) {
         if (!(t.account_id in kinds) || drop.has(t.transaction_id)) continue;
-        const x = mapBankTransaction(t, kinds[t.account_id]);
+        const x = mapBankTransaction(t, valueAt(kinds, t.account_id));
         if (x) acts.push(x);
       }
       for (const t of d.tx.removed as Row[]) removed.add(t.transaction_id);
@@ -181,7 +182,7 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
           if (current === null) continue;
           if (kind === "credit") current = current.neg();
           const [op, rv] = openingActivities(aid, earliest(acts, aid, today), new Map(), current,
-            acts.filter((a) => a.accountId === aid), accts[aid].currency || "USD");
+            acts.filter((a) => a.accountId === aid), valueAt(accts, aid).currency || "USD");
           acts = [...op, ...acts];
           p.reviews.push(...rv);
         }

@@ -8,7 +8,11 @@ export const daysBetween = (a: string, b: string): number =>
   Math.abs(Math.round((Date.parse(a) - Date.parse(b)) / 86_400_000));
 
 const cmp = (a: (string | number)[], b: (string | number)[]): number => {
-  for (let k = 0; k < a.length; k++) if (a[k] !== b[k]) return a[k] < b[k] ? -1 : 1;
+  for (const [k, x] of a.entries()) {
+    const y = b[k];
+    if (y === undefined) return 1;
+    if (x !== y) return x < y ? -1 : 1;
+  }
   return 0;
 };
 

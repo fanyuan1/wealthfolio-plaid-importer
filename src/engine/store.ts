@@ -1,11 +1,11 @@
 import type { HostAPI } from '@wealthfolio/addon-sdk';
-import { type AccountCfg, type CloseCache, MemoryLedger, type PlaidEnv, type Row } from '../importer';
+import { type AccountCfg, type CloseCache, itemAt, MemoryLedger, type PlaidEnv, type Row } from '../importer';
 
 export type Api = HostAPI;
 export interface Daily { on: boolean; time: string }
 export interface Settings { env: PlaidEnv; daily?: { time: string } }
 export interface RunRecord {
-  time: string; status: "ok" | "stopped" | "failed"; message: string; goto?: "connections" | "sync";
+  time: string; status: "ok" | "stopped" | "failed"; message: string; goto?: "connections" | "sync" | undefined;
   accounts?: { name: string; new: number; updated: number; removed: number }[];
   totals?: { new: number; updated: number; removed: number; categorized: number; failed: number };
 }
@@ -73,7 +73,10 @@ export class Store {
       await this.api.storage.set(key, s);
     } else {
       const parts = split(s), ids = parts.map(hash);
-      for (let i = 0; i < parts.length; i++) if (!old.includes(ids[i])) await this.api.storage.set(`${key}.${ids[i]}`, parts[i]);
+      for (const [i, part] of parts.entries()) {
+        const id = itemAt(ids, i);
+        if (!old.includes(id)) await this.api.storage.set(`${key}.${id}`, part);
+      }
       await this.api.storage.set(key, JSON.stringify({ parts: ids }));
       keep = ids;
     }
