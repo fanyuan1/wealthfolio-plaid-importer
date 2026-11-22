@@ -49,8 +49,12 @@ const SECTIONS: [string, string | null, string | null][] = [
 ];
 const OTHER: [string, string] = ["Activities to add by hand", "Plaid did not give enough detail to import these. Add them in Wealthfolio from your statements."];
 
-export function todoReport(reviews: Review[], names: Record<string, string>, priceWarnings: string[] = []): string[] {
-  const lines = priceWarnings.map((w) => `Warning: ${w}`);
+const SECTION_LIST: [string, string, string][] = [
+  ...SECTIONS.flatMap(([r, h, t]): [string, string, string][] => (h ? [[r, h, t ?? ""]] : [])),
+  ["other", ...OTHER],
+];
+
+function groupReviews(reviews: Review[]): Map<string, Review[]> {
   const known = new Set(SECTIONS.map(([r]) => r));
   const groups = new Map<string, Review[]>();
   for (const r of reviews) {
@@ -58,26 +62,30 @@ export function todoReport(reviews: Review[], names: Record<string, string>, pri
     const g = key === "holdings mismatch" ? "negative opening position" : key;
     groups.set(g, [...(groups.get(g) ?? []), r]);
   }
-  const sections: [string, string, string][] = [
-    ...SECTIONS.flatMap(([r, h, t]): [string, string, string][] => (h ? [[r, h, t ?? ""]] : [])),
-    ["other", ...OTHER],
-  ];
+  return groups;
+}
+
+export function todoReport(reviews: Review[], names: Record<string, string>, priceWarnings: string[] = []): string[] {
+  const lines = priceWarnings.map((w) => `Warning: ${w}`);
+  const groups = groupReviews(reviews);
   const name = (id: string) => names[id] ?? id;
   let n = 0;
-  for (const [reason, heading, text] of sections) {
+  for (const [reason, heading, text] of SECTION_LIST) {
     const rows = groups.get(reason);
     if (!rows) continue;
     n += rows.length;
     lines.push("", `${heading} (${rows.length})`, `  ${text}`);
     const sorted = [...rows].sort((a, b) => (name(a.accountId) + "\0" + a.date < name(b.accountId) + "\0" + b.date ? -1 : 1));
-    for (const r of sorted) {
-      const when = r.date ? `${r.date} ` : "";
-      const what = reason === "other" || r.reason === "holdings mismatch" ? `${r.reason}: ` : "";
-      lines.push(`  - ${name(r.accountId)}: ${when}${what}${r.detail}`);
-    }
+    lines.push(...sorted.map((r) => reviewLine(r, reason, name)));
   }
   if (n) lines.splice(priceWarnings.length, 0, `To do in Wealthfolio: ${plural(n, "item")}`);
   return lines;
+}
+
+function reviewLine(r: Review, reason: string, name: (id: string) => string): string {
+  const when = r.date ? `${r.date} ` : "";
+  const what = reason === "other" || r.reason === "holdings mismatch" ? `${r.reason}: ` : "";
+  return `  - ${name(r.accountId)}: ${when}${what}${r.detail}`;
 }
 
 export interface TodoGroup { heading: string; count: number; text: string; items: string[]; warning?: boolean }

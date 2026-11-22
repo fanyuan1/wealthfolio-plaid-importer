@@ -106,7 +106,7 @@ function openingPosition(ctx: OpeningContext, sym: string, delta: Dec): { activi
   if (opening.abs().lt(EPS)) return {};
   const pid = `opening:${accountId}:${sym}`;
   if (opening.lt(0)) {
-    return { note: review(accountId, pid, date, "negative opening position", `${sym}: holdings ${String(current)}, pulled net ${String(delta)}`) };
+    return { note: review({ accountId, plaidId: pid, date }, "negative opening position", `${sym}: holdings ${String(current)}, pulled net ${String(delta)}`) };
   }
   const grown = splitFactor(opening, ctx.acts.filter((a) => a.accountId === accountId && a.symbol === sym));
   const { price, note } = openingPrice(ctx, { sym, pid, holding: h, current }, grown);
@@ -133,8 +133,7 @@ function openingPrice(ctx: OpeningContext, { sym, pid, holding: h, current }: Op
   const sid = h ? h.security_id : ctx.acts.find((a) => a.symbol === sym)?.securityId ?? null;
   let [price, source] = acquisitionPrice(sym, sid, ctx, grown);
   if (price === null && h) [price, source] = [dec(h.institution_price)?.times(grown) ?? null, "today's price; fix in Wealthfolio"];
-  const note = review(ctx.at.accountId, pid, ctx.at.date, "opening cost basis missing",
-    `${sym}: priced at ${String(price)} (${source || "no price found; set it in Wealthfolio"})`);
+  const note = review({ accountId: ctx.at.accountId, plaidId: pid, date: ctx.at.date }, "opening cost basis missing", `${sym}: priced at ${String(price)} (${source || "no price found; set it in Wealthfolio"})`);
   return { price, note };
 }
 
@@ -168,7 +167,7 @@ export function resolveSplits(acts: Activity[], prior: Map<string, Dec> = new Ma
     if (a.activityType === "SPLIT") {
       const before = pos.get(key) ?? ZERO;
       if (before.lte(0)) {
-        reviews.push(review(a.accountId, a.plaidId, a.date, "split with unknown position", `${a.symbol}: delta ${String(a.splitDelta)}`));
+        reviews.push(review({ accountId: a.accountId, plaidId: a.plaidId, date: a.date }, "split with unknown position", `${a.symbol}: delta ${String(a.splitDelta)}`));
         a.amount = null;
       } else {
         a.amount = before.plus(a.splitDelta ?? ZERO).div(before).round(6, 2);
@@ -198,8 +197,7 @@ export function fixSplitPrices(acts: Activity[], all: Activity[], close: (sym: s
     const near = (x: Dec, target: Dec) => x.div(target).minus(1).abs().lte("0.3");
     if (near(price, y) && !near(price, y.times(factor))) {
       a.unitPrice = price.times(factor);
-      out.push(review(a.accountId, a.plaidId, a.date, "price adjusted for a later split",
-        `${a.symbol}: Plaid price ${String(price)} matches Yahoo's split-adjusted close ${String(y)}; used ${String(a.unitPrice)} for ${String(a.quantity)} sh`));
+      out.push(review({ accountId: a.accountId, plaidId: a.plaidId, date: a.date }, "price adjusted for a later split", `${a.symbol}: Plaid price ${String(price)} matches Yahoo's split-adjusted close ${String(y)}; used ${String(a.unitPrice)} for ${String(a.quantity)} sh`));
     }
   }
   return out;
@@ -225,7 +223,7 @@ export function reconcile(accountIds: Set<string>, computed: Map<string, Dec>, h
       const added = fresh.filter((a) => a.symbol && hkey(a.accountId, a.symbol) === k && !a.positionDelta().eq(0))
         .map((a) => `${a.date} ${a.activityType} ${String(a.positionDelta())}`);
       const why = added.length ? `; this pull adds ${added.join(", ")}` : "";
-      reviews.push(review(acct, `reconcile:${sym}`, "", "holdings mismatch", `${sym}: Plaid ${String(have)}, computed ${String(calc)}, diff ${String(have.minus(calc))}${why}`));
+      reviews.push(review({ accountId: acct, plaidId: `reconcile:${sym}`, date: "" }, "holdings mismatch", `${sym}: Plaid ${String(have)}, computed ${String(calc)}, diff ${String(have.minus(calc))}${why}`));
     }
   }
   return reviews;

@@ -12,68 +12,6 @@
       "count": 1
     }
   },
-  "src/importer/accounts.ts": {
-    "lints/max-params": {
-      "count": 2
-    }
-  },
-  "src/importer/adopt.ts": {
-    "lints/cognitive-complexity": {
-      "count": 1
-    }
-  },
-  "src/importer/fetch.ts": {
-    "lints/cognitive-complexity": {
-      "count": 1
-    },
-    "lints/max-params": {
-      "count": 2
-    }
-  },
-  "src/importer/mapTransactions.ts": {
-    "lints/cognitive-complexity": {
-      "count": 1
-    }
-  },
-  "src/importer/models.ts": {
-    "lints/max-params": {
-      "count": 1
-    }
-  },
-  "src/importer/plaid.ts": {
-    "lints/max-params": {
-      "count": 2
-    }
-  },
-  "src/importer/push.ts": {
-    "lints/cognitive-complexity": {
-      "count": 2
-    },
-    "lints/max-lines-per-function": {
-      "count": 1
-    },
-    "lints/max-params": {
-      "count": 1
-    }
-  },
-  "src/importer/securities.ts": {
-    "lints/cognitive-complexity": {
-      "count": 1
-    },
-    "lints/max-params": {
-      "count": 1
-    }
-  },
-  "src/importer/todo.ts": {
-    "lints/cognitive-complexity": {
-      "count": 1
-    }
-  },
-  "src/importer/tracking.ts": {
-    "lints/max-params": {
-      "count": 1
-    }
-  },
   "src/ui/accounts.tsx": {
     "lints/exhaustive-deps": {
       "count": 4

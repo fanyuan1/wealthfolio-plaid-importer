@@ -61,7 +61,7 @@ class FakeWF implements Writer {
   rerunRules() { this.reruns += 1; return Promise.resolve(0); }
 }
 
-const run = (p: ReturnType<typeof plan>, wf: Writer, state: MemoryLedger) => push(p, wf, state, ACCOUNTS, () => {});
+const run = (p: ReturnType<typeof plan>, wf: Writer, state: MemoryLedger) => push(p, wf, state, { accounts: ACCOUNTS, log: () => {} });
 
 describe("sync", () => {
   test("full cycle", async () => {
@@ -213,7 +213,7 @@ describe("fetch", () => {
   test("skips investments without the product and isolates errors", async () => {
     const { fetchItems, Plaid, PlaidError } = await import("../../src/importer");
     const calls: string[] = [];
-    const plaidStub = new Plaid("id", "secret", "sandbox", (url, body) => {
+    const plaidStub = new Plaid({ clientId: "id", secret: "secret" }, "sandbox", (url, body) => {
       const ep = url.replace(/^https:\/\/[^/]+/, "");
       const request: unknown = JSON.parse(body);
       const tok = isRecord(request) ? request.access_token : undefined;
@@ -233,8 +233,8 @@ describe("fetch", () => {
       chk: { item_id: "i2", kind: "cash" }, eu: { item_id: "i3", kind: "cash" } };
     const logs: string[] = [];
     const last = new Map<string, string>();
-    const r = await fetchItems(plaidStub, tokens, cfg, new MemoryLedger(), "2026-11-05",
-      { log: (m) => logs.push(m), progress: (p) => last.set(p.id, p.state) });
+    const r = await fetchItems(plaidStub, tokens,
+      { accounts: cfg, state: new MemoryLedger(), today: "2026-11-05", log: (m) => logs.push(m), progress: (p) => last.set(p.id, p.state) });
     expect(Object.fromEntries(last)).toEqual({ i1: "done", "i1:tx": "done", i2: "error", "i2:tx": "running", i3: "done", "i3:tx": "done" });
     expect(r.items.map((d) => [d.itemId, d.inv ?? null])).toEqual([["i1", null], ["i3", null]]);
     expect(r.skipped).toEqual(["AB · Broken"]);

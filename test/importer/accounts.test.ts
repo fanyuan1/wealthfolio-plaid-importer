@@ -2,30 +2,30 @@ import { expect, test } from "vitest";
 import { type AccountCfg, accountName, MAX_LEN } from "../../src/importer";
 
 test("short names and limit", () => {
-  expect(accountName("AB", "Charles Schwab", "Brokerage", "1234")).toBe("AB · Schwab Brokerage ••1234");
-  const long = accountName("AB", "Bank of America", "Plaid Gold Standard 0% Interest Checking Account Plus", "0000");
+  expect(accountName({ owner: "AB", institution: "Charles Schwab", plaidName: "Brokerage", mask: "1234" })).toBe("AB · Schwab Brokerage ••1234");
+  const long = accountName({ owner: "AB", institution: "Bank of America", plaidName: "Plaid Gold Standard 0% Interest Checking Account Plus", mask: "0000" });
   expect(long.length <= MAX_LEN && long.endsWith("… ••0000") && long.startsWith("AB · BoA Gold Standard")).toBe(true);
 });
 
 test("unique within limit", () => {
-  expect(accountName("CD", "Vanguard", "Roth IRA", "9", new Set(["CD · Vanguard Roth IRA ••9"]))).toBe("CD · Vanguard Roth IRA ••9 (2)");
-  const n = accountName("AB", "Chase", "x".repeat(80), "1", new Set([accountName("AB", "Chase", "x".repeat(80), "1")]));
+  expect(accountName({ owner: "CD", institution: "Vanguard", plaidName: "Roth IRA", mask: "9" }, new Set(["CD · Vanguard Roth IRA ••9"]))).toBe("CD · Vanguard Roth IRA ••9 (2)");
+  const n = accountName({ owner: "AB", institution: "Chase", plaidName: "x".repeat(80), mask: "1" }, new Set([accountName({ owner: "AB", institution: "Chase", plaidName: "x".repeat(80), mask: "1" })]));
   expect(n.length <= MAX_LEN && n.endsWith("(2)")).toBe(true);
 });
 
 test("unknown institution keeps plaid name", () => {
-  expect(accountName("CD", "Second Wombat Bank", "Plaid Checking", null)).toBe("CD · Second Wombat Bank Checking");
+  expect(accountName({ owner: "CD", institution: "Second Wombat Bank", plaidName: "Plaid Checking", mask: null })).toBe("CD · Second Wombat Bank Checking");
 });
 
 test("long institution trimmed before account name", () => {
-  const n = accountName("AB", "Greater Northwestern Community Federal Credit Union", "Savings", "4321");
+  const n = accountName({ owner: "AB", institution: "Greater Northwestern Community Federal Credit Union", plaidName: "Savings", mask: "4321" });
   expect(n.length <= MAX_LEN && n.endsWith(" Savings ••4321") && n.includes("…")).toBe(true);
 });
 
 test("abbreviation prefix match and plaid word removed", () => {
-  expect(accountName("AB", "Charles Schwab - Retirement Plan Center", "401k", "7")).toBe("AB · Schwab 401k ••7");
-  expect(accountName("AB", "First Platypus Bank", "Plaid Home Equity Line of Credit", "9004")).toBe("AB · Platypus Home Equity Line of Credit ••9004");
-  expect(accountName("AB", "Chase", "Plaid", null)).toBe("AB · Chase Account");
+  expect(accountName({ owner: "AB", institution: "Charles Schwab - Retirement Plan Center", plaidName: "401k", mask: "7" })).toBe("AB · Schwab 401k ••7");
+  expect(accountName({ owner: "AB", institution: "First Platypus Bank", plaidName: "Plaid Home Equity Line of Credit", mask: "9004" })).toBe("AB · Platypus Home Equity Line of Credit ••9004");
+  expect(accountName({ owner: "AB", institution: "Chase", plaidName: "Plaid", mask: null })).toBe("AB · Chase Account");
 });
 
 test("crypto symbols", async () => {
@@ -38,7 +38,7 @@ test("joint accounts from owners or name", async () => {
   const cfg: Record<string, AccountCfg> = {};
   const accts = [{ account_id: "a", name: "Joint Checking", type: "depository", subtype: "checking", balances: {} },
     { account_id: "b", name: "Savings", type: "depository", subtype: "savings", balances: {} }];
-  discoverAccounts(cfg, "i", { owner: "AB", institution_name: "Chase" }, accts, new Set(), jointOwners([{ account_id: "b", owners: [{}, {}] }]));
+  discoverAccounts(cfg, { itemId: "i", tok: { owner: "AB", institution_name: "Chase" }, accounts: accts }, new Set(), jointOwners([{ account_id: "b", owners: [{}, {}] }]));
   expect([cfg.a?.joint, cfg.b?.joint]).toEqual([true, true]);
 });
 

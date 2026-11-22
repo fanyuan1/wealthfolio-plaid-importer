@@ -52,13 +52,25 @@ const isInvestmentPage = shape<{ investment_transactions: PlaidInvestmentTransac
 const isSyncPage = shape<{ added: PlaidTransaction[]; modified: PlaidTransaction[]; removed: PlaidRemoved[]; next_cursor: string; has_more: boolean }>({
   added: arrayOf(isTransaction), modified: arrayOf(isTransaction), removed: arrayOf(isRemoved), next_cursor: isString, has_more: isBoolean });
 
+export interface PlaidKeys {
+  clientId: string;
+  secret: string;
+}
+
+export interface LinkRequest {
+  products?: string[];
+  optional?: string[];
+  country?: string;
+  accessToken?: string | undefined;
+}
+
 export class Plaid {
-  constructor(private clientId: string, private secret: string, public env: PlaidEnv,
+  constructor(private keys: PlaidKeys, public env: PlaidEnv,
     private transport: Transport, private wait: (ms: number) => Promise<unknown> = sleep) {}
 
   async call(endpoint: string, req: PlaidRequest = {}): Promise<Record<string, unknown>> {
     const r = await this.transport(`${PLAID_HOSTS[this.env]}${endpoint}`,
-      JSON.stringify({ client_id: this.clientId, secret: this.secret, ...req }),
+      JSON.stringify({ client_id: this.keys.clientId, secret: this.keys.secret, ...req }),
       { "Content-Type": "application/json", "Plaid-Version": "2020-09-14" });
     const body = parseBody(r);
     if (r.status >= 400) throw new PlaidError(text(body.error_code, "UNKNOWN"), text(body.error_message, ""));
@@ -73,8 +85,8 @@ export class Plaid {
     return (await this.get("/institutions/get_by_id", { institution_id: institutionId, country_codes: [country] }, isInstitutionResponse)).institution;
   }
 
-  linkToken(clientUserId: string, products: string[] = [], optional: string[] = [], country = "US",
-    accessToken?: string, extra: PlaidRequest = {}): Promise<{ link_token: string; hosted_link_url?: string | null }> {
+  linkToken(clientUserId: string, link: LinkRequest, extra: PlaidRequest = {}): Promise<{ link_token: string; hosted_link_url?: string | null }> {
+    const { products = [], optional = [], country = "US", accessToken } = link;
     const req: PlaidRequest = { client_name: "Plaid Importer", language: "en", country_codes: [country], user: { client_user_id: clientUserId }, ...extra };
     if (accessToken) {
       req.access_token = accessToken;

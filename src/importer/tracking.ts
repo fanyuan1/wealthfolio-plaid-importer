@@ -72,9 +72,26 @@ export function reportedPrice(items: HoldingsItem[], sid: string): [Dec, string]
 interface DatedClose { day: string; close: Dec }
 export interface RecentCloses { closeOn(symbol: string, day: string): DatedClose | null }
 
-class Rebase {
-  constructor(public sid: string, public name: string, public old: Track, public day: string,
-    public price: Dec, public close: DatedClose | null) {}
+interface RebaseInit {
+  sid: string;
+  name: string;
+  old: Track;
+  day: string;
+  price: Dec;
+  close: DatedClose | null;
+}
+
+class Rebase implements RebaseInit {
+  sid: string;
+  name: string;
+  old: Track;
+  day: string;
+  price: Dec;
+  close: DatedClose | null;
+
+  constructor(init: RebaseInit) {
+    ({ sid: this.sid, name: this.name, old: this.old, day: this.day, price: this.price, close: this.close } = init);
+  }
 
   get next(): Track | null {
     return this.close ? entry(this.old.symbol, this.close.day, this.price, this.close.close) : null;
@@ -98,7 +115,7 @@ export function rebases(items: HoldingsItem[], symbols: Record<string, SecurityO
     const track = e.track;
     const got = reportedPrice(items, sid);
     if (track && got && got[1] > track.date && !got[0].eq(D(String(track.price)))) {
-      out.push(new Rebase(sid, e.name || sid, track, got[1], got[0], closes.closeOn(track.symbol, got[1])));
+      out.push(new Rebase({ sid, name: e.name || sid, old: track, day: got[1], price: got[0], close: closes.closeOn(track.symbol, got[1]) }));
     }
   }
   return out;

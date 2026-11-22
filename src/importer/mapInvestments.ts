@@ -161,7 +161,7 @@ function prepare(t: PlaidInvestmentTransaction, { sec, r, cur, stockPlan }: Reso
       symbol: r.symbol, instrumentType: r.instrumentType, securityId: sec.security_id,
       symbolName: sec.name ?? null, quoteManual: r.manual,
     } : {},
-    rev: (reason, shownQty = qty) => [null, review(acct, tid, date, reason, `${ttype}/${sub}: ${name} amount=${String(amount)} qty=${String(shownQty)}`)],
+    rev: (reason, shownQty = qty) => [null, review({ accountId: acct, plaidId: tid, date }, reason, `${ttype}/${sub}: ${name} amount=${String(amount)} qty=${String(shownQty)}`)],
     act: (atype, kw = {}) =>
       [new Activity({ accountId: acct, plaidId: tid, date, activityType: atype, currency: cur, description: name, ...kw }), null],
   };

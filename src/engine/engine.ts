@@ -117,7 +117,7 @@ export class Engine {
     const { env } = await this.store.settings();
     const k = await this.store.keys(env);
     if (!k.clientId || !k.secret) throw new Error(`Add your Plaid ${env} keys first.`);
-    return new Plaid(k.clientId, k.secret, env, brokerTransport(this.api));
+    return new Plaid({ clientId: k.clientId, secret: k.secret }, env, brokerTransport(this.api));
   }
 
   setEnv(env: PlaidEnv) {
@@ -147,8 +147,7 @@ export class Engine {
 
   async startHostedLink(owner: string): Promise<{ url: string; linkToken: string }> {
     const plaid = await this.plaid();
-    const r = await plaid.linkToken(clientUser(owner), ["transactions"], ["investments", "auth"], "US",
-      undefined, { hosted_link: {} });
+    const r = await plaid.linkToken(clientUser(owner), { products: ["transactions"], optional: ["investments", "auth"] }, { hosted_link: {} });
     if (!r.hosted_link_url) throw new Error(NO_HOSTED_LINK);
     return { url: r.hosted_link_url, linkToken: r.link_token };
   }
@@ -194,7 +193,7 @@ export class Engine {
     const meta = (await this.store.items(env))[itemId];
     const tok = await this.store.token(itemId);
     if (!meta || !tok) throw new Error("Unknown connection.");
-    const r = await plaid.linkToken(clientUser(meta.owner), [], [], "US", tok, { hosted_link: {} });
+    const r = await plaid.linkToken(clientUser(meta.owner), { accessToken: tok }, { hosted_link: {} });
     if (!r.hosted_link_url) throw new Error(NO_HOSTED_LINK);
     return { url: r.hosted_link_url, linkToken: r.link_token };
   }
@@ -229,7 +228,7 @@ export class Engine {
           c.owner = o;
           if (c.wealthfolio_account_id) continue;
           const taken = new Set(Object.entries(cfg).filter(([id]) => id !== aid).map(([, x]) => String(x.name)));
-          c.name = accountName(o, c.institution ?? valueAt(items, itemId).institution_name, c.plaid_name, c.mask, taken);
+          c.name = accountName({ owner: o, institution: c.institution ?? valueAt(items, itemId).institution_name, plaidName: c.plaid_name, mask: c.mask }, taken);
         }
       });
     });
@@ -375,7 +374,7 @@ export class Engine {
         products.includes("investments") ? plaid.holdings(tok).catch(() => null) : null,
         identity && products.includes("identity") ? plaid.identity(tok).catch(() => null) : null,
       ]);
-      const added = await this.editAccounts((cfg) => discoverAccounts(cfg, itemId, meta, accts, holdsSecurities(accts, holdings), jointOwners(ident)));
+      const added = await this.editAccounts((cfg) => discoverAccounts(cfg, { itemId, tok: meta, accounts: accts }, holdsSecurities(accts, holdings), jointOwners(ident)));
       const items = await this.store.items(env);
       if (items[itemId]) {
         items[itemId] = { ...items[itemId], checked: new Date().toISOString() };
@@ -535,8 +534,8 @@ export class Engine {
     const accts = new Set(unlearned(state, cfg).map((r) => r.account_id));
     const bank = Object.fromEntries(Object.entries(cfg).filter(([aid]) => accts.has(aid)));
     const scratch = new MemoryLedger({});
-    const fetched = await fetchItems(await this.plaid(), await this.tokens(env), bank, scratch, today(),
-      { log: (m) => { if (!m.includes("no active accounts")) log(m); } });
+    const fetched = await fetchItems(await this.plaid(), await this.tokens(env),
+      { accounts: bank, state: scratch, today: today(), log: (m) => { if (!m.includes("no active accounts")) log(m); } });
     const pfc = new Map(plan(fetched.items, { accounts: bank, symbols: {} }, scratch, { today: today(), closes: () => null }).new.map((a) => [a.plaidId, a.category ?? null]));
     const pulled = new Set(fetched.items.map((d) => d.itemId));
     for (const r of unlearned(state, cfg)) if (pulled.has(valueAt(cfg, r.account_id).item_id)) r.category = pfc.get(r.plaid_id) ?? null;
@@ -775,8 +774,7 @@ export class Engine {
       log(`  using the Plaid pull from ${at}`);
       progress({ id: "pull", label: "Plaid data", state: "done", detail: `Reused the pull from ${at}` });
     } else {
-      fetched = await fetchItems(plaid, tokens, cfg, state, today(),
-        { log, tracked, full, progress });
+      fetched = await fetchItems(plaid, tokens, { accounts: cfg, state, today: today(), log, tracked, full, progress });
       fetched.pulledAt = Date.now();
       this.pulled = { key, fetched };
       await this.markReconnect(fetched.blocked, fetched.items.map((d) => d.itemId));
@@ -947,7 +945,7 @@ export class Engine {
     let index = byWfId();
     const writer = new SdkWriter(this.api, (id) => (index.get(id) ?? (index = byWfId()).get(id)) ?? null);
     try {
-      const stats = await push(plan, writer, d.state, d.cfg, log, undefined, progress);
+      const stats = await push(plan, writer, d.state, { accounts: d.cfg, log, progress });
       await this.store.saveLastSync(d.env, summary(d.plan, d.fetched, stats));
       if (d.backfill.size && !stats.failed) {
         const remap = await this.store.remap(d.env);

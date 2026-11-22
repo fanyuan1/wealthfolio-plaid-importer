@@ -44,33 +44,36 @@ export function mapBankTransaction(t: PlaidTransaction, accountKind: string, def
   const amount = D(t.amount);
   if (amount.eq(0)) return null;
   const [primary, detailed] = pfc(t);
-  const name = (t.name ?? "").toUpperCase();
-  let hint = TRANSFER_PRIMARIES.has(primary) || detailed === CARD_PAYMENT || CARD_PAYMENT_NAMES.some((n) => name.includes(n));
-  const outflow = amount.gt(0);
-  if (accountKind === "credit" && !outflow && statementCredit(t)) hint = false;
-  const desc = t.merchant_name || t.name || "";
-  let subtype: string | null = null;
-  let atype: string;
-  if (accountKind === "credit") {
-    if (outflow) {
-      atype = primary === "BANK_FEES" ? "FEE" : "WITHDRAWAL";
-      if (detailed === "BANK_FEES_INTEREST_CHARGE") subtype = "INTEREST_CHARGE";
-    } else if (hint) {
-      atype = "TRANSFER_IN";
-    } else {
-      atype = "CREDIT";
-      subtype = "REFUND";
-    }
-  } else if (outflow) {
-    atype = primary === "BANK_FEES" ? "FEE" : "WITHDRAWAL";
-  } else {
-    atype = detailed === "INCOME_INTEREST_EARNED" ? "INTEREST" : "DEPOSIT";
-  }
+  const flow: Flow = { credit: accountKind === "credit", outflow: amount.gt(0), primary, detailed, hint: false };
+  flow.hint = looksLikeTransfer(t, flow) && !(flow.credit && !flow.outflow && statementCredit(t));
+  const [atype, subtype] = activityTypeFor(flow);
   return new Activity({
     accountId: t.account_id, plaidId: t.transaction_id, date: t.date, activityType: atype,
     currency: t.iso_currency_code || t.unofficial_currency_code || defaultCurrency,
-    amount: amount.abs(), subtype, description: desc,
-    category: hint ? null : detailed || primary || null, transferHint: hint,
+    amount: amount.abs(), subtype, description: t.merchant_name || t.name || "",
+    category: flow.hint ? null : detailed || primary || null, transferHint: flow.hint,
   });
+}
+
+interface Flow {
+  credit: boolean;
+  outflow: boolean;
+  primary: string;
+  detailed: string;
+  hint: boolean;
+}
+
+function looksLikeTransfer(t: PlaidTransaction, { primary, detailed }: Flow): boolean {
+  const name = (t.name ?? "").toUpperCase();
+  return TRANSFER_PRIMARIES.has(primary) || detailed === CARD_PAYMENT || CARD_PAYMENT_NAMES.some((n) => name.includes(n));
+}
+
+function activityTypeFor({ credit, outflow, primary, detailed, hint }: Flow): [string, string | null] {
+  if (outflow) {
+    const atype = primary === "BANK_FEES" ? "FEE" : "WITHDRAWAL";
+    return [atype, credit && detailed === "BANK_FEES_INTEREST_CHARGE" ? "INTEREST_CHARGE" : null];
+  }
+  if (!credit) return [detailed === "INCOME_INTEREST_EARNED" ? "INTEREST" : "DEPOSIT", null];
+  return hint ? ["TRANSFER_IN", null] : ["CREDIT", "REFUND"];
 }
 

@@ -49,9 +49,30 @@ export interface PushStats {
 
 type Log = (msg: string) => void;
 
+type CategoryAssignment = [string, { activityId: string; taxonomyId: string; categoryId: string }];
+
+async function setCategoryChunk(wf: Writer, chunk: CategoryAssignment[], errors: Map<string, string[]>): Promise<CategoryAssignment[]> {
+  try {
+    await wf.setCategories(chunk.map(([, a]) => a));
+    return chunk;
+  } catch {
+    const ok: CategoryAssignment[] = [];
+    for (const [pid, a] of chunk) {
+      try {
+        await wf.setCategories([a]);
+        ok.push([pid, a]);
+      } catch (e) {
+        const msg = errText(e).slice(0, 200);
+        errors.set(msg, [...(errors.get(msg) ?? []), pid]);
+      }
+    }
+    return ok;
+  }
+}
+
 export async function assignCategories(wf: Writer, state: Ledger, categories: Map<string, [string, string]>, log: Log): Promise<number> {
   const ids = await wf.categoryIds();
-  const todo: [string, { activityId: string; taxonomyId: string; categoryId: string }][] = [];
+  const todo: CategoryAssignment[] = [];
   for (const [pid, [tax, key]] of categories) {
     const row = state.get(pid);
     const cid = ids.get(`${tax}|${key}`) ?? ids.get(`${tax}|${key.split("_")[0]}`);
@@ -60,21 +81,7 @@ export async function assignCategories(wf: Writer, state: Ledger, categories: Ma
   let done = 0;
   const errors = new Map<string, string[]>();
   for (const chunk of chunks(todo, SMALL_CHUNK)) {
-    let ok = chunk;
-    try {
-      await wf.setCategories(chunk.map(([, a]) => a));
-    } catch {
-      ok = [];
-      for (const [pid, a] of chunk) {
-        try {
-          await wf.setCategories([a]);
-          ok.push([pid, a]);
-        } catch (e) {
-          const msg = errText(e).slice(0, 200);
-          errors.set(msg, [...(errors.get(msg) ?? []), pid]);
-        }
-      }
-    }
+    const ok = await setCategoryChunk(wf, chunk, errors);
     for (const [pid] of ok) state.setCategory(pid);
     done += ok.length;
     state.commit();
@@ -84,121 +91,186 @@ export async function assignCategories(wf: Writer, state: Ledger, categories: Ma
   return done;
 }
 
-export async function push(p: Plan, wf: Writer, state: Ledger, accountsCfg: Record<string, AccountCfg>,
-  log: Log, rows?: ImportRow[], progress: OnProgress = () => {}): Promise<PushStats> {
-  const step = (id: string, label: string, run: boolean, detail?: string) =>
-    progress({ id: `push:${id}`, label, state: run ? "running" : "done", detail });
-  const stats: PushStats = { imported: 0, duplicates: 0, failed: 0, updated: 0, voided: 0, linked: 0, categorized: 0, ruled: 0, failures: [], refused: {} };
-  const byLine = new Map(p.new.map((a, i) => [i + 1, a] as const));
-  rows ??= [...byLine].map(([n, a]) => toImportRow(a, accountsCfg[a.accountId]?.wealthfolio_account_id ?? "", n));
+export interface PushOptions {
+  accounts: Record<string, AccountCfg>;
+  log: Log;
+  rows?: ImportRow[] | undefined;
+  progress?: OnProgress;
+}
 
-  if (rows.length) {
-    step("add", "Add new activities", true, `${rows.length} rows`);
-    const results = await wf.commitImport(rows);
+export async function push(p: Plan, wf: Writer, state: Ledger, opts: PushOptions): Promise<PushStats> {
+  return new Pusher(p, wf, state, opts).run();
+}
+
+type UpdateSource =
+  | { kind: "activity"; activity: Activity }
+  | { kind: "void"; row: LedgerRow }
+  | { kind: "pair"; pair: [string, string, string] };
+
+const UPDATE_KEYS: Record<string, string> = { activity_type: "activityType", unit_price: "unitPrice" };
+
+function updatedValue(a: Activity, field: string): string | number | null {
+  const values: Record<string, string | Dec | null> = {
+    activity_type: a.activityType, date: a.date, symbol: a.symbol, quantity: a.quantity,
+    unit_price: a.unitPrice, amount: a.amount, fee: a.fee, currency: a.currency,
+  };
+  const v = values[field] ?? null;
+  return v === null || typeof v === "string" ? v : v.toNumber();
+}
+
+function activityUpdate(row: LedgerRow, a: Activity, fields: string[]): Update {
+  const u: Update = { activityId: row.wf_activity_id };
+  for (const f of fields) u[UPDATE_KEYS[f] ?? f] = updatedValue(a, f);
+  if (a.activityType === "SPLIT" && "quantity" in u) {
+    delete u.quantity;
+    u.amount = num(a.amount);
+  }
+  return u;
+}
+
+class Pusher {
+  private readonly stats: PushStats = { imported: 0, duplicates: 0, failed: 0, updated: 0, voided: 0, linked: 0, categorized: 0, ruled: 0, failures: [], refused: {} };
+  private readonly progress: OnProgress;
+  private readonly log: Log;
+
+  constructor(private readonly p: Plan, private readonly wf: Writer, private readonly state: Ledger, private readonly opts: PushOptions) {
+    this.progress = opts.progress ?? (() => {});
+    this.log = opts.log;
+  }
+
+  private step(id: string, label: string, run: boolean, detail?: string): void {
+    this.progress({ id: `push:${id}`, label, state: run ? "running" : "done", detail });
+  }
+
+  async run(): Promise<PushStats> {
+    const { p, state } = this;
+    await this.addNew();
+    const updates: [Update, UpdateSource][] = p.updates.map(([row, a, fields]) => [activityUpdate(row, a, fields), { kind: "activity", activity: a }]);
+    const deleted = await this.deleteGone();
+    for (const row of p.voids) if (!deleted.has(row)) updates.push([{ activityId: row.wf_activity_id, void: true }, { kind: "void", row }]);
+    for (const [pid, atype, pair] of p.retype) {
+      updates.push([{ activityId: required(state.get(pid), `ledger row ${pid}`).wf_activity_id, activityType: atype }, { kind: "pair", pair: [pid, atype, pair] }]);
+    }
+    if (updates.length) await this.applyUpdates(updates);
+    await this.linkPairs();
+    await this.categorize();
+
+    for (const [itemId, cur] of Object.entries(p.cursors)) state.setCursor(itemId, cur);
+    for (const [aid, d] of Object.entries(p.invLastEnd)) state.setInvLastEnd(aid, d);
+    for (const aid of p.fullHistory) state.setFullHistory(aid);
+    state.commit();
+    return this.stats;
+  }
+
+  private async addNew(): Promise<void> {
+    const { p, stats, state } = this;
+    const byLine = new Map(p.new.map((a, i) => [i + 1, a] as const));
+    const rows = this.opts.rows ?? [...byLine].map(([n, a]) => toImportRow(a, this.opts.accounts[a.accountId]?.wealthfolio_account_id ?? "", n));
+    if (!rows.length) return;
+    this.step("add", "Add new activities", true, `${rows.length} rows`);
+    const results = await this.wf.commitImport(rows);
     for (const [line, [status, wfId, why]] of results) {
       const a = entryAt(byLine, line);
       if ((status === "imported" || status === "duplicate_skipped") && wfId) {
         state.record(a, wfId);
         stats[status === "imported" ? "imported" : "duplicates"] += 1;
       } else {
-        stats.failed += 1;
-        const msg = `${a.date} ${a.activityType} ${a.symbol ?? ""} ${String(a.amount ?? "")} (plaid:${a.plaidId})${why ? ` — ${why}` : ""}`;
-        stats.failures.push(msg);
-        if (a.symbol) stats.refused[a.symbol] ??= why || "Wealthfolio did not save it";
-        log(`  failed: ${msg}`);
+        this.recordFailure(a, why);
       }
     }
     state.commit();
-    progress({ id: "push:add", label: "Add new activities", state: stats.failed ? "warn" : "done",
+    this.progress({ id: "push:add", label: "Add new activities", state: stats.failed ? "warn" : "done",
       detail: `${stats.imported} added${stats.failed ? `, ${stats.failed} not saved` : ""}` });
   }
 
-  type Src = Activity | LedgerRow | [string, string, string];
-  const updates: [Update, Src][] = [];
-  for (const [row, a, fields] of p.updates) {
-    const u: Update = { activityId: row.wf_activity_id };
-    for (const f of fields) {
-      const key = ({ activity_type: "activityType", unit_price: "unitPrice" } as Record<string, string>)[f] ?? f;
-      const v = ({ activity_type: a.activityType, date: a.date, symbol: a.symbol, quantity: a.quantity,
-        unit_price: a.unitPrice, amount: a.amount, fee: a.fee, currency: a.currency } as Record<string, unknown>)[f];
-      u[key] = v != null && typeof v === "object" ? (v as Dec).toNumber() : (v as string | null);
-    }
-    if (a.activityType === "SPLIT" && "quantity" in u) {
-      delete u.quantity;
-      u.amount = num(a.amount);
-    }
-    updates.push([u, a]);
+  private recordFailure(a: Activity, why: string | undefined): void {
+    const { stats } = this;
+    stats.failed += 1;
+    const msg = `${a.date} ${a.activityType} ${a.symbol ?? ""} ${String(a.amount ?? "")} (plaid:${a.plaidId})${why ? ` — ${why}` : ""}`;
+    stats.failures.push(msg);
+    if (a.symbol) stats.refused[a.symbol] ??= why || "Wealthfolio did not save it";
+    this.log(`  failed: ${msg}`);
   }
-  const gone = p.voids.filter((r) => !r.pair_plaid_id && r.wf_activity_id);
-  if (gone.length) {
-    step("delete", "Delete rows removed at Plaid", true, `${gone.length} rows`);
-    await wf.delete(gone.flatMap((r) => (r.wf_activity_id ? [r.wf_activity_id] : [])));
-    for (const r of gone) state.setVoided(r.plaid_id, true);
-    stats.voided += gone.length;
-    state.commit();
-    step("delete", "Delete rows removed at Plaid", false, `${gone.length} deleted`);
+
+  private async deleteGone(): Promise<Set<LedgerRow>> {
+    const gone = this.p.voids.filter((r) => !r.pair_plaid_id && r.wf_activity_id);
+    if (!gone.length) return new Set();
+    this.step("delete", "Delete rows removed at Plaid", true, `${gone.length} rows`);
+    await this.wf.delete(gone.flatMap((r) => (r.wf_activity_id ? [r.wf_activity_id] : [])));
+    for (const r of gone) this.state.setVoided(r.plaid_id, true);
+    this.stats.voided += gone.length;
+    this.state.commit();
+    this.step("delete", "Delete rows removed at Plaid", false, `${gone.length} deleted`);
+    return new Set(gone);
   }
-  const deleted = new Set(gone);
-  for (const row of p.voids) if (!deleted.has(row)) updates.push([{ activityId: row.wf_activity_id, void: true }, row]);
-  for (const [pid, atype, pair] of p.retype) {
-    updates.push([{ activityId: required(state.get(pid), `ledger row ${pid}`).wf_activity_id, activityType: atype }, [pid, atype, pair]]);
-  }
-  if (updates.length) {
-    step("update", "Update changed activities", true, `${updates.length} rows`);
-    const out = await wf.update(updates.map(([u]) => u));
+
+  private async applyUpdates(updates: [Update, UpdateSource][]): Promise<void> {
+    this.step("update", "Update changed activities", true, `${updates.length} rows`);
+    const out = await this.wf.update(updates.map(([u]) => u));
     const failed = new Map<number, string>();
     out.forEach((r, n) => (r.errors ?? []).forEach((e) => failed.set(n * SMALL_CHUNK + e.index, e.message)));
     updates.forEach(([u, src], idx) => {
-      if (failed.has(idx)) log(`  update failed for ${u.activityId}: ${failed.get(idx)}`);
-      else if (u.void) {
-        state.setVoided((src as LedgerRow).plaid_id);
-        stats.voided += 1;
-      } else if (src instanceof Activity) {
-        state.record(src, String(u.activityId));
-        stats.updated += 1;
-      } else state.setPair(...(src as [string, string, string]));
+      const failure = failed.get(idx);
+      if (failure !== undefined) this.log(`  update failed for ${String(u.activityId)}: ${failure}`);
+      else this.applyUpdate(u, src);
     });
-    state.commit();
-    progress({ id: "push:update", label: "Update changed activities", state: failed.size ? "warn" : "done",
+    this.state.commit();
+    this.progress({ id: "push:update", label: "Update changed activities", state: failed.size ? "warn" : "done",
       detail: `${updates.length - failed.size} updated${failed.size ? `, ${failed.size} failed` : ""}` });
   }
-  if (p.pairs.length) step("link", "Link transfers", true, `${p.pairs.length} pairs`);
 
-  for (const [o, i] of p.pairs) {
-    const ro = state.get(o), ri = state.get(i);
-    if (!(ro && ri && ro.wf_activity_id && ri.wf_activity_id)) continue;
+  private applyUpdate(u: Update, src: UpdateSource): void {
+    if (src.kind === "void") {
+      this.state.setVoided(src.row.plaid_id);
+      this.stats.voided += 1;
+    } else if (src.kind === "activity") {
+      this.state.record(src.activity, String(u.activityId));
+      this.stats.updated += 1;
+    } else {
+      this.state.setPair(...src.pair);
+    }
+  }
+
+  private async linkPairs(): Promise<void> {
+    const { p, state } = this;
+    if (p.pairs.length) this.step("link", "Link transfers", true, `${p.pairs.length} pairs`);
+    for (const [o, i] of p.pairs) {
+      if (!(await this.linkPair(o, i))) continue;
+      state.setPair(o, "TRANSFER_OUT", i);
+      state.setPair(i, "TRANSFER_IN", o);
+      this.stats.linked += 1;
+    }
+    state.commit();
+    if (p.pairs.length) this.step("link", "Link transfers", false, `${this.stats.linked} linked`);
+  }
+
+  private async linkPair(o: string, i: string): Promise<boolean> {
+    const ro = this.state.get(o), ri = this.state.get(i);
+    if (!(ro && ri && ro.wf_activity_id && ri.wf_activity_id)) return false;
     try {
-      await wf.linkTransfers([[ro.wf_activity_id, ri.wf_activity_id]]);
+      await this.wf.linkTransfers([[ro.wf_activity_id, ri.wf_activity_id]]);
     } catch (e) {
       if (!errText(e).toLowerCase().includes("already")) {
-        log(`  link failed ${o} <-> ${i}: ${errText(e)}`);
-        continue;
+        this.log(`  link failed ${o} <-> ${i}: ${errText(e)}`);
+        return false;
       }
     }
-    state.setPair(o, "TRANSFER_OUT", i);
-    state.setPair(i, "TRANSFER_IN", o);
-    stats.linked += 1;
+    return true;
   }
-  state.commit();
-  if (p.pairs.length) step("link", "Link transfers", false, `${stats.linked} linked`);
 
-  if (p.categories.size) {
-    step("categories", "Set spending categories", true, `${p.categories.size} rows`);
-    stats.categorized = await assignCategories(wf, state, p.categories, log);
-    step("categories", "Set spending categories", false, `${stats.categorized} set`);
-  }
-  if (stats.imported) {
+  private async categorize(): Promise<void> {
+    const { p, stats } = this;
+    if (p.categories.size) {
+      this.step("categories", "Set spending categories", true, `${p.categories.size} rows`);
+      stats.categorized = await assignCategories(this.wf, this.state, p.categories, this.log);
+      this.step("categories", "Set spending categories", false, `${stats.categorized} set`);
+    }
+    if (!stats.imported) return;
     try {
-      stats.ruled = await wf.rerunRules();
+      stats.ruled = await this.wf.rerunRules();
     } catch (e) {
       if (!(e instanceof WealthfolioError)) throw e;
-      log(`  categorization rules not applied: ${e.message}`);
+      this.log(`  categorization rules not applied: ${e.message}`);
     }
   }
-
-  for (const [itemId, cur] of Object.entries(p.cursors)) state.setCursor(itemId, cur);
-  for (const [aid, d] of Object.entries(p.invLastEnd)) state.setInvLastEnd(aid, d);
-  for (const aid of p.fullHistory) state.setFullHistory(aid);
-  state.commit();
-  return stats;
 }

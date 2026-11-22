@@ -26,8 +26,14 @@ function shortName(name: string): string {
 
 const trim = (s: string, n: number) => (s.length <= n ? s : s.slice(0, Math.max(n - 1, 1)).trimEnd() + "…");
 
-export function accountName(owner: string, institution: string, plaidName: string | null | undefined, mask: string | null | undefined,
-  taken: Set<string> = new Set()): string {
+export interface AccountNaming {
+  owner: string;
+  institution: string;
+  plaidName: string | null | undefined;
+  mask: string | null | undefined;
+}
+
+export function accountName({ owner, institution, plaidName, mask }: AccountNaming, taken: Set<string> = new Set()): string {
   const head = `${owner} · `;
   let inst = shortName(institution);
   const tail = mask ? ` ••${mask}` : "";
@@ -86,7 +92,13 @@ export function jointOwners(identity: Pick<PlaidIdentityAccount, "account_id" | 
   return new Set((identity ?? []).filter((a) => a.owners.length > 1).map((a) => a.account_id));
 }
 
-export function discoverAccounts(cfg: Record<string, AccountCfg>, itemId: string, tok: ItemInfo, accounts: PlaidAccount[],
+export interface DiscoveredItem {
+  itemId: string;
+  tok: ItemInfo;
+  accounts: PlaidAccount[];
+}
+
+export function discoverAccounts(cfg: Record<string, AccountCfg>, { itemId, tok, accounts }: DiscoveredItem,
   brokerage: Set<string> = new Set(), joint: Set<string> = new Set()): string[] {
   const added: string[] = [];
   for (const a of accounts) {
@@ -105,7 +117,7 @@ export function discoverAccounts(cfg: Record<string, AccountCfg>, itemId: string
     cfg[aid] = {
       owner: tok.owner, item_id: itemId, institution: tok.institution_name, institution_id: tok.institution_id,
       plaid_name: a.name, mask, plaid_type: ptype, plaid_subtype: sub, kind: kind ?? "unsupported",
-      name: accountName(tok.owner, tok.institution_name, a.name, mask, new Set(Object.values(cfg).map((c) => String(c.name)))),
+      name: accountName({ owner: tok.owner, institution: tok.institution_name, plaidName: a.name, mask }, new Set(Object.values(cfg).map((c) => String(c.name)))),
       currency: a.balances.iso_currency_code || currencyFor(tok.country), wealthfolio_account_id: null, skip: true,
       ...(isJoint ? { joint: true } : {}),
     };

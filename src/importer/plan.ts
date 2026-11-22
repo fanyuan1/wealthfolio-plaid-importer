@@ -178,8 +178,7 @@ class Planner {
       const px = priceOn(a.securityId, a.date);
       a.unitPrice = px && !px.eq(0) ? px : ZERO;
       if (a.unitPrice.eq(0)) {
-        this.p.reviews.push(review(a.accountId, a.plaidId, a.date, "vest price unknown",
-          `${a.symbol}: no market close found; set the price in Wealthfolio`));
+        this.p.reviews.push(review({ accountId: a.accountId, plaidId: a.plaidId, date: a.date }, "vest price unknown", `${a.symbol}: no market close found; set the price in Wealthfolio`));
       }
     }
   }
@@ -190,8 +189,7 @@ class Planner {
       if (!ids.has(a.account_id) || seen.has(a.account_id) || !bal.gt(1)) continue;
       this.balanceOnly.add(a.account_id);
       if (!this.state.hasAny(a.account_id)) {
-        this.p.reviews.push(review(a.account_id, a.account_id, "", "no holdings from Plaid",
-          `balance ${String(bal)}, but Plaid sends no holdings or activity`));
+        this.p.reviews.push(review({ accountId: a.account_id, plaidId: a.account_id, date: "" }, "no holdings from Plaid", `balance ${String(bal)}, but Plaid sends no holdings or activity`));
       }
     }
   }
@@ -201,8 +199,7 @@ class Planner {
       const secName = secs[h.security_id]?.name || "";
       if (!this.p.unmapped.has(h.security_id)) this.p.unmapped.set(h.security_id, secName);
       if (BROKERAGE_WINDOW.test(secName)) {
-        this.p.reviews.push(review(h.account_id, h.security_id, "", "possible brokerage window",
-          `${secName}: if this mirrors another linked account, choose Leave out in Securities`));
+        this.p.reviews.push(review({ accountId: h.account_id, plaidId: h.security_id, date: "" }, "possible brokerage window", `${secName}: if this mirrors another linked account, choose Leave out in Securities`));
       }
     }
   }

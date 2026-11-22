@@ -671,7 +671,7 @@ describe("categorize", () => {
     await e.store.saveToken("i", "tok");
     let pulls = 0;
     const { Plaid } = await import("../../src/importer");
-    e.plaid = () => Promise.resolve(new Plaid("id", "secret", "sandbox", (url) => {
+    e.plaid = () => Promise.resolve(new Plaid({ clientId: "id", secret: "secret" }, "sandbox", (url) => {
       const ep = url.replace(/^https:\/\/[^/]+/, "");
       if (ep === "/transactions/sync") {
         pulls++;

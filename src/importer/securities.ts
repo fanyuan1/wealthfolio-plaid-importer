@@ -25,8 +25,9 @@ export interface Resolved {
   multiplier: Dec;
 }
 
-const res = (kind: Resolved["kind"], symbol: string | null = null, instrumentType: string | null = null,
-  manual = false, multiplier: Dec = D(1)): Resolved => ({ kind, symbol, instrumentType, manual, multiplier });
+const res = (kind: Exclude<Resolved["kind"], "security">): Resolved => ({ kind, symbol: null, instrumentType: null, manual: false, multiplier: D(1) });
+const held = (symbol: string, instrumentType: string | null, manual: boolean, multiplier: Dec = D(1)): Resolved =>
+  ({ kind: "security", symbol, instrumentType, manual, multiplier });
 
 const OCC = /^[A-Z][A-Z0-9.]{0,5}\d{6}[CP]\d{8}$/;
 const OPTION_MULTIPLIER = D(100);
@@ -79,26 +80,32 @@ export function resolve(security: PlaidSecurity | null | undefined, overrides: R
   if (o.exclude) return res("exclude");
   const stype = security.type;
   const mappedToStock = stype === "derivative" && Boolean(o.symbol) && !OCC.test((o.symbol ?? "").toUpperCase());
-  const itype = o.instrument_type || (mappedToStock ? "EQUITY" : INSTRUMENT_TYPE[stype ?? ""]) || null;
   const sweep = stype === "other" && (security.ticker_symbol ?? "").toUpperCase() === "DEPOSIT";
   if (!o.cash && !o.symbol && !o.track && isCrypto(security)) {
-    return res("security", cryptoSymbol(security.ticker_symbol ?? "", currency), "CRYPTO", Boolean(o.manual));
+    return held(cryptoSymbol(security.ticker_symbol ?? "", currency), "CRYPTO", Boolean(o.manual));
   }
   const isCash = o.cash || (!o.investment && (security.is_cash_equivalent || stype === "cash" || sweep));
   if (isCash) return res("cash");
-  if (stype === "derivative" && !mappedToStock) {
-    const occ = o.symbol || occSymbol(security);
-    if (!occ) return res("unmapped");
-    return res("security", occ, "OPTION", Boolean(o.manual), D(String(o.multiplier || OPTION_MULTIPLIER)));
-  }
-  if (o.track) return res("security", o.track.symbol, "EQUITY", false);
-  if (o.symbol) return res("security", o.symbol, itype, Boolean(o.manual));
+  if (stype === "derivative" && !mappedToStock) return option(security, o);
+  const itype = o.instrument_type || (mappedToStock ? "EQUITY" : INSTRUMENT_TYPE[stype ?? ""]) || null;
+  return listed(security, o, itype, currency);
+}
+
+function option(security: PlaidSecurity, o: SecurityOverride): Resolved {
+  const occ = o.symbol || occSymbol(security);
+  if (!occ) return res("unmapped");
+  return held(occ, "OPTION", Boolean(o.manual), D(String(o.multiplier || OPTION_MULTIPLIER)));
+}
+
+function listed(security: PlaidSecurity, o: SecurityOverride, itype: string | null, currency: string): Resolved {
+  if (o.track) return held(o.track.symbol, "EQUITY", false);
+  if (o.symbol) return held(o.symbol, itype, Boolean(o.manual));
   const ticker = security.ticker_symbol;
-  if (!ticker && o.manual) return res("security", manualSymbol(security), itype || "EQUITY", true);
+  if (!ticker && o.manual) return held(manualSymbol(security), itype || "EQUITY", true);
   if (!ticker) return res("unmapped");
-  if (isCrypto(security)) return res("security", cryptoSymbol(ticker, currency), "CRYPTO", Boolean(o.manual));
+  if (isCrypto(security)) return held(cryptoSymbol(ticker, currency), "CRYPTO", Boolean(o.manual));
   const suffix = MIC_SUFFIX[security.market_identifier_code || ""] ?? "";
-  return res("security", `${ticker}${suffix}`, itype, Boolean(o.manual));
+  return held(`${ticker}${suffix}`, itype, Boolean(o.manual));
 }
 
 export function yahooSymbol(sec: PlaidSecurity | null | undefined): string | null {

@@ -423,9 +423,9 @@ describe("prices and to-do", () => {
     const c = new Closes({}, () => Promise.reject(new Error("offline")), "2026-11-07");
     await c.load([["GOOG", "2024-11-08"], ["GOOG", "2024-11-09"]]);
     expect(c.close("GOOG", "2024-11-08")).toBeNull();
-    const reviews = [review("a1", "opening:a1:QQQ", "2024-11-07", "opening cost basis missing", "QQQ: priced at 1"),
-      review("a1", "reconcile:X", "", "holdings mismatch", "X: Plaid 0, computed 1"),
-      review("a1", "t9", "2025-01-02", "corporate action: merger", "merger")];
+    const reviews = [review({ accountId: "a1", plaidId: "opening:a1:QQQ", date: "2024-11-07" }, "opening cost basis missing", "QQQ: priced at 1"),
+      review({ accountId: "a1", plaidId: "reconcile:X", date: "" }, "holdings mismatch", "X: Plaid 0, computed 1"),
+      review({ accountId: "a1", plaidId: "t9", date: "2025-01-02" }, "corporate action: merger", "merger")];
     const lines = todoReport(reviews, { a1: "AB · Broker" }, c.warnings());
     expect(itemAt(lines, 0).startsWith("Warning: Yahoo Finance price lookup for GOOG failed: could not reach it")).toBe(true);
     expect(itemAt(lines, 1)).toBe("To do in Wealthfolio: 3 items");

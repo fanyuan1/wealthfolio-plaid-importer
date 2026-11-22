@@ -50,53 +50,61 @@ function sameAmount(a: Activity, e: Existing): boolean {
   return near(dec(a.amount), dec(e.amount), TOL);
 }
 
-export function findAdoptions(acts: Activity[], existing: Existing[], wf: (plaidAccount: string) => string | undefined,
-  taken: Set<string> = new Set()): Adoption[] {
+type WfAccount = (plaidAccount: string) => string | undefined;
+
+const view = (a: Activity): Adoption["row"] => ({ date: a.date, type: a.activityType, symbol: a.symbol,
+  amount: a.amount?.toFixed() ?? null, quantity: a.quantity?.toFixed() ?? null, description: a.description });
+const make = (a: Activity, how: How, e: Existing | null, extra: Partial<Adoption> = {}): Adoption =>
+  ({ key: a.plaidId, plaidId: a.plaidId, accountId: a.accountId, how, decision: how === "new" ? "add" : "discard", row: view(a), existing: e, ...extra });
+
+export function findAdoptions(acts: Activity[], existing: Existing[], wf: WfAccount, taken: Set<string> = new Set()): Adoption[] {
   const used = new Set<string>(taken);
   const pool = existing.filter((e) => !taken.has(e.id));
-  const view = (a: Activity) => ({ date: a.date, type: a.activityType, symbol: a.symbol,
-    amount: a.amount?.toFixed() ?? null, quantity: a.quantity?.toFixed() ?? null, description: a.description });
-  const make = (a: Activity, how: How, e: Existing | null, extra: Partial<Adoption> = {}): Adoption =>
-    ({ key: a.plaidId, plaidId: a.plaidId, accountId: a.accountId, how, decision: how === "new" ? "add" : "discard", row: view(a), existing: e, ...extra });
   const out = new Map<string, Adoption>();
-  const rest: Activity[] = [];
-  const noted = byNote(pool);
-  const onDay = index(pool, (e) => [`${e.accountId}|${e.date}`]);
-  const inAccount = index(pool, (e) => [e.accountId]);
+  const exact = matchById(acts, pool, wf);
+  for (const e of exact.values()) used.add(e.id);
+  const rest = acts.filter((a) => !exact.has(a.plaidId));
   for (const a of acts) {
-    const hit = noted.get(a.plaidId)?.find((e) => !used.has(e.id) && e.accountId === wf(a.accountId));
-    if (hit) {
-      used.add(hit.id);
-      out.set(a.plaidId, make(a, "exact", hit));
-    } else rest.push(a);
+    const e = exact.get(a.plaidId);
+    if (e) out.set(a.plaidId, make(a, "exact", e));
   }
-  const opening: Activity[] = [];
-  for (const a of rest) {
-    if (a.plaidId.startsWith("opening:")) { opening.push(a); continue; }
-    const cands = (onDay.get(`${wf(a.accountId)}|${a.date}`) ?? []).filter((e) => !used.has(e.id)
-      && norm(e.symbol) === norm(a.symbol) && sameAmount(a, e));
-    const sameType = cands.find((e) => e.type === a.activityType);
-    const anyType = a.activityType === "TRANSFER_IN" && a.symbol ? cands[0] : undefined;
-    const similar = cands.find((e) => group(e.type) === group(a.activityType));
-    const hit = sameType ?? anyType ?? similar;
-    if (hit) {
-      used.add(hit.id);
-      out.set(a.plaidId, make(a, sameType || anyType ? "exact" : "similar", hit));
+  const onDay = index(pool, (e) => [`${e.accountId}|${e.date}`]);
+  for (const a of rest.filter((x) => !x.plaidId.startsWith("opening:"))) {
+    const found = sameDayMatch(a, (onDay.get(`${wf(a.accountId)}|${a.date}`) ?? []).filter((e) => !used.has(e.id)));
+    if (found) {
+      used.add(found.hit.id);
+      out.set(a.plaidId, make(a, found.how, found.hit));
     }
   }
-  for (const a of opening) {
-    const w = wf(a.accountId);
-    if (!w || !a.symbol || !a.quantity) continue;
-    const parts = (inAccount.get(w) ?? []).filter((e) => !isOurs(e) && e.date < a.date && e.symbol && POSITION_SIGN[e.type]
-      && norm(e.symbol) === norm(a.symbol)).sort((x, y) => x.date.localeCompare(y.date));
-    const held = parts.reduce((s, e) => s.plus((dec(e.quantity) ?? ZERO).abs().times(POSITION_SIGN[e.type] ?? 0)), ZERO);
-    if (held.eq(0)) continue;
-    out.set(a.plaidId, make(a, a.quantity.minus(held).abs().lte(EPS) ? "exact" : "similar", null, { held: held.toFixed(), parts }));
+  const inAccount = index(pool, (e) => [e.accountId]);
+  for (const a of rest.filter((x) => x.plaidId.startsWith("opening:"))) {
+    const adoption = openingAdoption(a, inAccount, wf);
+    if (adoption) out.set(a.plaidId, adoption);
   }
   return acts.map((a) => out.get(a.plaidId) ?? make(a, "new", null));
 }
 
-export function matchById(acts: Activity[], existing: Existing[], wf: (plaidAccount: string) => string | undefined): Map<string, Existing> {
+function sameDayMatch(a: Activity, sameDay: Existing[]): { hit: Existing; how: How } | null {
+  const cands = sameDay.filter((e) => norm(e.symbol) === norm(a.symbol) && sameAmount(a, e));
+  const sameType = cands.find((e) => e.type === a.activityType);
+  const anyType = a.activityType === "TRANSFER_IN" && a.symbol ? cands[0] : undefined;
+  const exact = sameType ?? anyType;
+  if (exact) return { hit: exact, how: "exact" };
+  const similar = cands.find((e) => group(e.type) === group(a.activityType));
+  return similar ? { hit: similar, how: "similar" } : null;
+}
+
+function openingAdoption(a: Activity, inAccount: Map<string, Existing[]>, wf: WfAccount): Adoption | null {
+  const w = wf(a.accountId);
+  if (!w || !a.symbol || !a.quantity) return null;
+  const parts = (inAccount.get(w) ?? []).filter((e) => !isOurs(e) && e.date < a.date && e.symbol && POSITION_SIGN[e.type]
+    && norm(e.symbol) === norm(a.symbol)).sort((x, y) => x.date.localeCompare(y.date));
+  const held = parts.reduce((s, e) => s.plus((dec(e.quantity) ?? ZERO).abs().times(POSITION_SIGN[e.type] ?? 0)), ZERO);
+  if (held.eq(0)) return null;
+  return make(a, a.quantity.minus(held).abs().lte(EPS) ? "exact" : "similar", null, { held: held.toFixed(), parts });
+}
+
+export function matchById(acts: Activity[], existing: Existing[], wf: WfAccount): Map<string, Existing> {
   const out = new Map<string, Existing>();
   const used = new Set<string>();
   const noted = byNote(existing);

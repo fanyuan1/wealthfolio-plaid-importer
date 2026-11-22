@@ -94,9 +94,7 @@ export interface Review {
   detail: string;
 }
 
-export const review = (accountId: string, plaidId: string, date: string, reason: string, detail = ""): Review => ({
-  accountId, plaidId, date, reason, detail,
-});
+export const review = (at: Pick<Review, "accountId" | "plaidId" | "date">, reason: string, detail = ""): Review => ({ ...at, reason, detail });
 
 export interface MapResult {
   activities: Activity[];
