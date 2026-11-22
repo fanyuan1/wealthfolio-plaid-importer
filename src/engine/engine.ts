@@ -141,7 +141,7 @@ export class Engine {
   async connectSandbox(owner: string, institutionId = "ins_109508", products = ["transactions", "investments"]) {
     return this.write(async () => {
       const plaid = await this.plaid();
-      return this.finishLink(plaid, owner, await plaid.sandboxPublicToken(institutionId, products), products);
+      return this.finishLink(plaid, await plaid.sandboxPublicToken(institutionId, products), { owner, products });
     });
   }
 
@@ -160,7 +160,7 @@ export class Engine {
       const add = s.results?.item_add_results?.[0] ?? s.on_success;
       const pt = add?.public_token;
       if (pt) {
-        const itemId = await this.write(() => this.finishLink(plaid, owner, pt, add.products ?? ["transactions", "investments"], add.institution));
+        const itemId = await this.write(() => this.finishLink(plaid, pt, { owner, products: add.products ?? ["transactions", "investments"], institution: add.institution }));
         return this.linked(itemId);
       }
     }
@@ -198,7 +198,8 @@ export class Engine {
     return { url: r.hosted_link_url, linkToken: r.link_token };
   }
 
-  private async finishLink(plaid: Plaid, owner: string, publicToken: string, products: string[], institution?: PlaidInstitution | null): Promise<string> {
+  private async finishLink(plaid: Plaid, publicToken: string, link: { owner: string; products: string[]; institution?: PlaidInstitution | null | undefined }): Promise<string> {
+    const { owner, products, institution } = link;
     const { env } = await this.store.settings();
     const ex = await plaid.exchange(publicToken);
     const item = await plaid.item(ex.access_token);
@@ -311,56 +312,65 @@ export class Engine {
       const { d, env } = await this.readBackup(text);
       const over = mode === "overwrite";
       const full = d.kind === "full";
-      const current = await this.store.items(env);
       const incoming = d.items ?? {};
-      const removed = over ? Object.keys(current).filter((id) => !incoming[id]) : [];
-      for (const id of removed) await this.store.deleteToken(id);
-      const items: Record<string, ItemMeta> = over ? {} : current;
-      for (const [id, tok] of Object.entries(incoming)) {
-        const { access_token, ...meta } = tok;
-        if (over || !current[id]) {
-          await this.store.saveToken(id, access_token);
-          items[id] = meta;
-        } else if (!(await this.store.token(id))) {
-          await this.store.saveToken(id, access_token);
-        }
-      }
-      await this.store.saveItems(env, items);
+      const { items, removed } = await this.restoreItems(env, incoming, over);
       const backed = d.accounts ?? {};
       const here = await this.store.accounts(env);
       const kept = Object.fromEntries(Object.entries(here).filter(([, c]) => items[c.item_id]));
       await this.store.saveAccounts(env, over ? (full ? backed : kept) : { ...backed, ...here });
       await this.store.saveSymbols(env, over && full ? (d.symbols ?? {}) : { ...(d.symbols ?? {}), ...(await this.store.symbols(env)) });
-      const out: Restored = { kind: d.kind, items: Object.keys(incoming).length, accounts: Object.keys(backed).length, rows: 0, ledger: "none", removed: removed.length };
+      const out: Restored = { kind: d.kind, items: Object.keys(incoming).length, accounts: Object.keys(backed).length, rows: 0, ledger: "none", removed };
       if (!full) return out;
       const wf = new Set((await this.wealthfolioAccounts()).map((a) => a.id));
       if (!Object.values(backed).some((c) => c.wealthfolio_account_id && wf.has(c.wealthfolio_account_id))) {
         out.ledger = "other-wealthfolio";
         return out;
       }
-      if (over) {
-        const state = new MemoryLedger(d.ledger ?? {});
-        out.rows = state.rows.size;
-        await this.store.saveLedger(env, state);
-        await this.store.saveRemap(env, { full: d.remap?.full ?? [], dropped: d.remap?.dropped ?? {} });
-        out.ledger = "restored";
-        return out;
-      }
-      const state = await this.store.ledger(env);
-      for (const r of d.ledger?.rows ?? []) if (!state.rows.has(r.plaid_id)) { state.rows.set(r.plaid_id, r); out.rows++; }
-      for (const [k, v] of Object.entries(d.ledger?.cursors ?? {})) if (!state.cursors.has(k)) state.cursors.set(k, v);
-      for (const [k, v] of Object.entries(d.ledger?.invSync ?? {})) if (!state.invSync.has(k)) state.invSync.set(k, v);
-      for (const a of d.ledger?.invFull ?? []) state.invFull.add(a);
-      await this.store.saveLedger(env, state);
-      const remap = await this.store.remap(env);
-      const dropped = { ...remap.dropped };
-      for (const [sym, accts] of Object.entries(d.remap?.dropped ?? {})) dropped[sym] = union(dropped[sym] ?? [], accts);
-      await this.store.saveRemap(env, { full: union(remap.full, d.remap?.full ?? []), dropped });
+      out.rows = over ? await this.replaceLedger(env, d) : await this.mergeLedger(env, d);
       out.ledger = "restored";
       return out;
     });
   }
 
+  private async restoreItems(env: PlaidEnv, incoming: NonNullable<Backup["items"]>, over: boolean): Promise<{ items: Record<string, ItemMeta>; removed: number }> {
+    const current = await this.store.items(env);
+    const removed = over ? Object.keys(current).filter((id) => !incoming[id]) : [];
+    for (const id of removed) await this.store.deleteToken(id);
+    const items: Record<string, ItemMeta> = over ? {} : current;
+    for (const [id, tok] of Object.entries(incoming)) {
+      const { access_token, ...meta } = tok;
+      if (over || !current[id]) {
+        await this.store.saveToken(id, access_token);
+        items[id] = meta;
+      } else if (!(await this.store.token(id))) {
+        await this.store.saveToken(id, access_token);
+      }
+    }
+    await this.store.saveItems(env, items);
+    return { items, removed: removed.length };
+  }
+
+  private async replaceLedger(env: PlaidEnv, d: Backup): Promise<number> {
+    const state = new MemoryLedger(d.ledger ?? {});
+    await this.store.saveLedger(env, state);
+    await this.store.saveRemap(env, { full: d.remap?.full ?? [], dropped: d.remap?.dropped ?? {} });
+    return state.rows.size;
+  }
+
+  private async mergeLedger(env: PlaidEnv, d: Backup): Promise<number> {
+    const state = await this.store.ledger(env);
+    let rows = 0;
+    for (const r of d.ledger?.rows ?? []) if (!state.rows.has(r.plaid_id)) { state.rows.set(r.plaid_id, r); rows++; }
+    for (const [k, v] of Object.entries(d.ledger?.cursors ?? {})) if (!state.cursors.has(k)) state.cursors.set(k, v);
+    for (const [k, v] of Object.entries(d.ledger?.invSync ?? {})) if (!state.invSync.has(k)) state.invSync.set(k, v);
+    for (const a of d.ledger?.invFull ?? []) state.invFull.add(a);
+    await this.store.saveLedger(env, state);
+    const remap = await this.store.remap(env);
+    const dropped = { ...remap.dropped };
+    for (const [sym, accts] of Object.entries(d.remap?.dropped ?? {})) dropped[sym] = union(dropped[sym] ?? [], accts);
+    await this.store.saveRemap(env, { full: union(remap.full, d.remap?.full ?? []), dropped });
+    return rows;
+  }
 
   async refreshAccounts(itemId: string, identity = true): Promise<string[]> {
     return this.write(async () => {
@@ -593,41 +603,37 @@ export class Engine {
   private async daily(now: Date, progress: OnProgress): Promise<RunRecord> {
     const time = now.toISOString();
     try {
-      let d = await this.dryRun(() => {}, progress, true);
-      const big: string[] = [];
-      let applied = 0;
-      for (const r of d.rebases) {
-        if (r.next && r.change !== null && Math.abs(r.change) <= AUTO_RATIO_LIMIT) {
-          await this.applySecurity(r.sid, r.name, { mode: "track", track: r.next });
-          applied++;
-        } else if (r.next) big.push(r.name);
-      }
-      if (applied) d = await this.replan(d);
-      const open = d.adoptions.filter((a) => a.how !== "new").length;
-      if (open) return { time, status: "stopped", goto: "sync", message: `${open} rows may already be in Wealthfolio. Review them in Sync.` };
-      const review = d.securities.filter((s) => s.review).length;
-      if (review) return { time, status: "stopped", goto: "sync", message: `${review} securities need review. Review them in Sync.` };
-      if (d.plan.moved.size) return { time, status: "stopped", goto: "sync", message: "Pushed activities now map to another ticker, to cash or to Leave out. Fix it in Sync." };
+      const { d, big } = await this.applySmallRebases(await this.dryRun(() => {}, progress, true));
+      const blocked = dailyBlocker(d);
+      if (blocked) return { time, status: "stopped", goto: "sync", message: blocked };
       const accounts = perAccount(d.plan, d.cfg);
       const stats = await this.pushAndCategorize(d, () => {}, progress);
       const totals = { new: stats.imported, updated: stats.updated, removed: stats.voided, categorized: stats.categorized, failed: stats.failed };
-      const notes: string[] = [];
-      if (big.length) notes.push(`Ratio change to confirm in Sync: ${big.join(", ")}`);
-      if (stats.failed) notes.push(`${stats.failed} rows were not saved: ${stats.failures[0]}. Fix it in Sync`);
-      if (d.fetched.skipped.length) notes.push(`Reconnect in Connections: ${d.fetched.skipped.join(", ")}`);
+      const notes = dailyNotes(d, stats, big);
       if (d.plan.reviews.length) {
-        notes.push("See the to-do list in Sync");
         const left = await this.afterPush(d);
         this.setView({ dry: left, stale: false, result: undefined, failed: stats.failures, refused: stats.refused });
       }
       const status = stats.failed || d.fetched.skipped.length ? "stopped" : "ok";
-      return { time, status, accounts, totals, goto: d.fetched.skipped.length ? "connections" : stats.failed || big.length || d.plan.reviews.length ? "sync" : undefined,
-        message: [summary(d.plan, d.fetched, stats), ...notes].join(". ") + "." };
+      const goto = d.fetched.skipped.length ? "connections" : stats.failed || big.length || d.plan.reviews.length ? "sync" : undefined;
+      return { time, status, accounts, totals, goto, message: [summary(d.plan, d.fetched, stats), ...notes].join(". ") + "." };
     } catch (e) {
       return { time, status: "failed", message: errText(e) };
     }
   }
 
+
+  private async applySmallRebases(dry: DryRun): Promise<{ d: DryRun; big: string[] }> {
+    const big: string[] = [];
+    let applied = 0;
+    for (const r of dry.rebases) {
+      if (r.next && r.change !== null && Math.abs(r.change) <= AUTO_RATIO_LIMIT) {
+        await this.applySecurity(r.sid, r.name, { mode: "track", track: r.next });
+        applied++;
+      } else if (r.next) big.push(r.name);
+    }
+    return { d: applied ? await this.replan(dry) : dry, big };
+  }
 
   setSecurity(sid: string, name: string, o: SecurityChoice): Promise<SecurityOverride> {
     return this.write(() => this.applySecurity(sid, name, o));
@@ -660,13 +666,7 @@ export class Engine {
   }
 
   private async noteRemap(env: PlaidEnv, sid: string, before: Record<string, SecurityOverride>, after: Record<string, SecurityOverride>) {
-    let sec: PlaidSecurity | undefined;
-    const accts = new Set<string>();
-    for (const d of this.pulled?.fetched.items ?? []) {
-      sec ??= d.inv?.securities[sid] ?? d.holdings?.securities.find((s) => s.security_id === sid);
-      for (const h of d.holdings?.holdings ?? []) if (h.security_id === sid) accts.add(h.account_id);
-      for (const t of d.inv?.investment_transactions ?? []) if (t.security_id === sid) accts.add(t.account_id);
-    }
+    const { sec, accts } = pulledSecurity(this.pulled?.fetched.items ?? [], sid);
     if (!sec) return;
     const cur = sec.iso_currency_code || "USD";
     const [was, now] = [securitySymbol(resolve(sec, before, cur)), securitySymbol(resolve(sec, after, cur))];
@@ -780,14 +780,14 @@ export class Engine {
       await this.markReconnect(fetched.blocked, fetched.items.map((d) => d.itemId));
     }
     progress({ id: "plan", label: "Compare with Wealthfolio", state: "running", detail: "Prices, duplicates and changes" });
-    const d = await this.planFrom(env, fetched, cfg, state, tracked);
+    const d = await this.planFrom(env, { fetched, cfg, state, tracked });
     progress({ id: "plan", label: "Compare with Wealthfolio", state: "done" });
     return d;
   }
 
   async afterPush(d: DryRun): Promise<DryRun> {
     const [cfg, state, symbols] = await Promise.all([this.store.accounts(d.env), this.store.ledger(d.env), this.store.symbols(d.env)]);
-    return this.planFrom(d.env, d.fetched, cfg, state, trackedIds(symbols));
+    return this.planFrom(d.env, { fetched: d.fetched, cfg, state, tracked: trackedIds(symbols) });
   }
 
   async replan(d: DryRun): Promise<DryRun> {
@@ -799,7 +799,7 @@ export class Engine {
       for (const h of item.holdings?.holdings ?? []) if (added.has(h.security_id)) accts.add(h.account_id);
     }
     await this.pullHistory(d, accts);
-    return this.planFrom(d.env, d.fetched, d.cfg, d.state, now, d.adoptions);
+    return this.planFrom(d.env, { fetched: d.fetched, cfg: d.cfg, state: d.state, tracked: now }, d.adoptions);
   }
 
   private async pullHistory(d: DryRun, want: Set<string>) {
@@ -820,8 +820,8 @@ export class Engine {
     }
   }
 
-  private async planFrom(env: PlaidEnv, fetched: FetchResult, cfg: Record<string, AccountCfg>, state: MemoryLedger,
-    tracked: Set<string>, prev: Adoption[] = []): Promise<DryRun> {
+  private async planFrom(env: PlaidEnv, input: PlanInput, prev: Adoption[] = []): Promise<DryRun> {
+    const { fetched, cfg, state, tracked } = input;
     const day = today();
     const [symbols, closes, remap] = await Promise.all([this.store.symbols(env), this.closes(day), this.store.remap(env)]);
     const start = addDays(day, -HISTORY_DAYS);
@@ -867,17 +867,8 @@ export class Engine {
     const synced = state.accountIds();
     const accounts = new Set(p.new.map((a) => wfOf(a.accountId)).filter((x): x is string => Boolean(x)));
     if (!accounts.size) return [];
-    const existing: Existing[] = [];
     const lists = await Promise.all([...accounts].map((id) => this.api.activities.getAll(id)));
-    for (const list of lists) {
-      for (const a of list) {
-        if (a.status === "VOID") continue;
-        const d = a.date as unknown;
-        existing.push({ id: a.id, accountId: a.accountId, type: a.activityType, symbol: a.assetSymbol || null,
-          date: d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10),
-          quantity: a.quantity, amount: a.amount, comment: a.comment ?? null });
-      }
-    }
+    const existing = lists.flat().filter((a) => a.status !== "VOID").map(existingRow);
     const taken = new Set([...state.rows.values()].map((r) => r.wf_activity_id).filter((x): x is string => Boolean(x)));
     const known = matchById(p.new, existing.filter((e) => !taken.has(e.id)), wfOf);
     if (known.size) {
@@ -1056,6 +1047,51 @@ function addProgress(list: Progress[], p: Progress): Progress[] {
   const next = list.slice();
   next[i] = p;
   return next;
+}
+
+interface PlanInput {
+  fetched: FetchResult;
+  cfg: Record<string, AccountCfg>;
+  state: MemoryLedger;
+  tracked: Set<string>;
+}
+
+type WfActivity = Awaited<ReturnType<Api["activities"]["getAll"]>>[number];
+
+function existingRow(a: WfActivity): Existing {
+  const d = a.date as unknown;
+  return { id: a.id, accountId: a.accountId, type: a.activityType, symbol: a.assetSymbol || null,
+    date: d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10),
+    quantity: a.quantity, amount: a.amount, comment: a.comment ?? null };
+}
+
+function dailyBlocker(d: DryRun): string | null {
+  const open = d.adoptions.filter((a) => a.how !== "new").length;
+  if (open) return `${open} rows may already be in Wealthfolio. Review them in Sync.`;
+  const review = d.securities.filter((s) => s.review).length;
+  if (review) return `${review} securities need review. Review them in Sync.`;
+  if (d.plan.moved.size) return "Pushed activities now map to another ticker, to cash or to Leave out. Fix it in Sync.";
+  return null;
+}
+
+function dailyNotes(d: DryRun, stats: PushStats, big: string[]): string[] {
+  const notes: string[] = [];
+  if (big.length) notes.push(`Ratio change to confirm in Sync: ${big.join(", ")}`);
+  if (stats.failed) notes.push(`${stats.failed} rows were not saved: ${stats.failures[0]}. Fix it in Sync`);
+  if (d.fetched.skipped.length) notes.push(`Reconnect in Connections: ${d.fetched.skipped.join(", ")}`);
+  if (d.plan.reviews.length) notes.push("See the to-do list in Sync");
+  return notes;
+}
+
+function pulledSecurity(items: FetchResult["items"], sid: string): { sec: PlaidSecurity | undefined; accts: Set<string> } {
+  let sec: PlaidSecurity | undefined;
+  const accts = new Set<string>();
+  for (const d of items) {
+    sec ??= d.inv?.securities[sid] ?? d.holdings?.securities.find((s) => s.security_id === sid);
+    for (const h of d.holdings?.holdings ?? []) if (h.security_id === sid) accts.add(h.account_id);
+    for (const t of d.inv?.investment_transactions ?? []) if (t.security_id === sid) accts.add(t.account_id);
+  }
+  return { sec, accts };
 }
 
 export interface Restored { kind: BackupKind; items: number; accounts: number; rows: number; ledger: "restored" | "none" | "other-wealthfolio"; removed: number }

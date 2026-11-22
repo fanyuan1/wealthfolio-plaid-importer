@@ -1,17 +1,4 @@
 {
-  "src/engine/engine.ts": {
-    "lints/cognitive-complexity": {
-      "count": 4
-    },
-    "lints/max-params": {
-      "count": 2
-    }
-  },
-  "src/engine/writer.ts": {
-    "lints/cognitive-complexity": {
-      "count": 1
-    }
-  },
   "src/ui/accounts.tsx": {
     "lints/exhaustive-deps": {
       "count": 4
