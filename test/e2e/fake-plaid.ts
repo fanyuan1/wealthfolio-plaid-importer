@@ -40,9 +40,9 @@ export class FakePlaid {
       amount: -12.5, quantity: 0, price: 0, fees: 0, date: day(-10), name: "DIVIDEND VTI", iso_currency_code: "USD" },
   ];
   transactions: PlaidTransaction[] = [
-    bank("tx_pay", "acc_chk", -2500, day(-25), "Payroll", "INCOME", "INCOME_WAGES"),
-    bank("tx_coffee", "acc_card", 4.75, day(-5), "Blue Bottle", "FOOD_AND_DRINK", "FOOD_AND_DRINK_COFFEE"),
-    bank("tx_grocery", "acc_card", 62.1, day(-3), "Trader Joe's", "FOOD_AND_DRINK", "FOOD_AND_DRINK_GROCERIES"),
+    bank("tx_pay", "acc_chk", -2500, { date: day(-25), name: "Payroll", primary: "INCOME", detailed: "INCOME_WAGES" }),
+    bank("tx_coffee", "acc_card", 4.75, { date: day(-5), name: "Blue Bottle", primary: "FOOD_AND_DRINK", detailed: "FOOD_AND_DRINK_COFFEE" }),
+    bank("tx_grocery", "acc_card", 62.1, { date: day(-3), name: "Trader Joe's", primary: "FOOD_AND_DRINK", detailed: "FOOD_AND_DRINK_GROCERIES" }),
   ];
 
   handle(endpoint: string, body: unknown): { status: number; body: Body } {
@@ -100,7 +100,9 @@ export class FakePlaid {
   }
 }
 
-function bank(id: string, account: string, amount: number, date: string, name: string, primary: string, detailed: string): PlaidTransaction & { authorized_date: string; payment_channel: string } {
+interface BankRow { date: string; name: string; primary: string; detailed: string }
+
+function bank(id: string, account: string, amount: number, { date, name, primary, detailed }: BankRow): PlaidTransaction & { authorized_date: string; payment_channel: string } {
   return { transaction_id: id, account_id: account, amount, date, authorized_date: date, pending: false, name, merchant_name: name,
     iso_currency_code: "USD", payment_channel: "in store", personal_finance_category: { primary, detailed } };
 }

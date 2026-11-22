@@ -32,7 +32,7 @@ export class Addon {
   constructor(readonly page: Page) {}
 
   get frame(): FrameLocator {
-    return this.page.frameLocator("iframe[title], iframe").first();
+    return this.page.locator("iframe[title], iframe").first().contentFrame();
   }
 
   async open() {

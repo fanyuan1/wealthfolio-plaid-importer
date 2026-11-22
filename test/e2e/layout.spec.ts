@@ -6,15 +6,20 @@ import { expect, test } from "./fixtures";
 function uiClasses(): string[] {
   const out = new Set<string>();
   for (const f of readdirSync("src/ui").filter((n) => n.endsWith(".tsx"))) {
-    const src = readFileSync(`src/ui/${f}`, "utf8");
-    for (const m of src.matchAll(/className=(?:"([^"]*)"|\{([^}]*(?:\$\{[^}]*\}[^}]*)*)\})/g)) {
-      const attr = m[1] !== undefined ? `"${m[1]}"` : m[2] ?? "";
-      const parts = [...attr.matchAll(/([!=]==\s*)?(?:'([^']*)'|"([^"]*)")/g)].filter((q) => !q[1]).map((q) => q[2] ?? q[3]);
-      for (const b of attr.matchAll(/`([^`]*)`/g)) parts.push((b[1] ?? "").replace(/\$\{[^}]*\}/g, " "));
-      for (const t of parts.join(" ").split(/\s+/)) if (/^[a-z-][\w:/.[\]()%-]*$/.test(t)) out.add(t);
-    }
+    for (const t of classesIn(readFileSync(`src/ui/${f}`, "utf8"))) out.add(t);
   }
   return [...out];
+}
+
+function classesIn(src: string): string[] {
+  const out: string[] = [];
+  for (const m of src.matchAll(/className=(?:"([^"]*)"|\{([^}]*(?:\$\{[^}]*\}[^}]*)*)\})/g)) {
+    const attr = m[1] !== undefined ? `"${m[1]}"` : m[2] ?? "";
+    const parts = [...attr.matchAll(/([!=]==\s*)?(?:'([^']*)'|"([^"]*)")/g)].filter((q) => !q[1]).map((q) => q[2] ?? q[3]);
+    for (const b of attr.matchAll(/`([^`]*)`/g)) parts.push((b[1] ?? "").replace(/\$\{[^}]*\}/g, " "));
+    out.push(...parts.join(" ").split(/\s+/).filter((t) => /^[a-z-][\w:/.[\]()%-]*$/.test(t)));
+  }
+  return out;
 }
 
 const addonFrame = (page: import("@playwright/test").Page): Frame => required(page.frames().find((f) => f !== page.mainFrame()), "addon frame");
@@ -40,7 +45,7 @@ test.describe("on a phone", () => {
   test.use({ viewport: { width: 360, height: 800 }, isMobile: true, hasTouch: true });
 
   const strayScrolls = (frame: Frame) => frame.evaluate(() => [...document.querySelectorAll("*")].filter((el) => {
-    if (el.tagName === "TEXTAREA" || /\boverflow-/.test(String(el.className))) return false;
+    if (el.tagName === "TEXTAREA" || /\boverflow-/.test(el.getAttribute("class") ?? "")) return false;
     const cs = getComputedStyle(el);
     const x = /(auto|scroll)/.test(cs.overflowX) && el.scrollWidth > el.clientWidth + 1;
     const y = /(auto|scroll)/.test(cs.overflowY) && el.scrollHeight > el.clientHeight + 1;

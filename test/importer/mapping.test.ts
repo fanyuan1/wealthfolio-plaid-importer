@@ -20,105 +20,106 @@ const SECS: Record<string, PlaidSecurity> = {
   s_sdba: { security_id: "s_sdba", ticker_symbol: null, type: "other", name: "Self-Directed Brokerage" },
 };
 
-function tx(i: string, type: string, sub: string, amount = 0, qty = 0, price = 0, sec: string | null = null,
-  fees: number | null = null, kw: Partial<PlaidInvestmentTransaction> = {}): PlaidInvestmentTransaction {
-  return { investment_transaction_id: i, account_id: "a1", type, subtype: sub, amount, quantity: qty, price,
-    security_id: sec, fees, date: "2026-03-02", name: `${type} ${sub}`, iso_currency_code: "USD", ...kw };
+function tx(i: string, type: string, sub: string, kw: Partial<PlaidInvestmentTransaction> = {}): PlaidInvestmentTransaction {
+  return { investment_transaction_id: i, account_id: "a1", type, subtype: sub, amount: 0, quantity: 0, price: 0,
+    security_id: null, fees: null, date: "2026-03-02", name: `${type} ${sub}`, iso_currency_code: "USD", ...kw };
 }
 const one = (rows: PlaidInvestmentTransaction[], overrides: Record<string, SecurityOverride> = {}) => mapInvestmentTransactions(rows, SECS, overrides);
 
 describe("investments", () => {
   test("buy sell absolute values and fee", () => {
-    const [b, s] = take(one([tx("t1", "buy", "buy", 1004.95, 10, 100, "s_vti", 4.95), tx("t2", "sell", "sell", -500, -5, 100, "s_vti")]).activities, 2);
+    const [b, s] = take(one([tx("t1", "buy", "buy", { amount: 1004.95, quantity: 10, price: 100, security_id: "s_vti", fees: 4.95 }), tx("t2", "sell", "sell", { amount: -500, quantity: -5, price: 100, security_id: "s_vti" })]).activities, 2);
     expect([b.activityType, b.symbol, n(b.quantity), n(b.unitPrice), n(b.fee)]).toEqual(["BUY", "VTI", 10, 100, 4.95]);
     expect([s.activityType, n(s.quantity), s.amount, s.subtype]).toEqual(["SELL", 5, null, null]);
     expect(b.comment.endsWith("plaid:t1")).toBe(true);
   });
 
   test("mic suffix and crypto", () => {
-    const r = one([tx("t1", "buy", "buy", 100, 1, 100, "s_td"), tx("t2", "buy", "buy", 50, 0.001, 50000, "s_btc")]);
+    const r = one([tx("t1", "buy", "buy", { amount: 100, quantity: 1, price: 100, security_id: "s_td" }), tx("t2", "buy", "buy", { amount: 50, quantity: 0.001, price: 50000, security_id: "s_btc" })]);
     expect(r.activities.map((a) => a.symbol)).toEqual(["TD.TO", "BTC-USD"]);
     expect(itemAt(r.activities, 1).instrumentType).toBe("CRYPTO");
   });
 
   test("price derived from amount when missing", () => {
-    expect(n(itemAt(one([tx("t1", "buy", "contribution", 200, 4, 0, "s_vti")]).activities, 0).unitPrice)).toBe(50);
+    expect(n(itemAt(one([tx("t1", "buy", "contribution", { amount: 200, quantity: 4, price: 0, security_id: "s_vti" })]).activities, 0).unitPrice)).toBe(50);
   });
 
   test("sweep trades dropped and money-market dividend is interest", () => {
-    const r = one([tx("t1", "buy", "buy", 100, 100, 1, "s_spaxx"), tx("t2", "cash", "dividend", -1.23, 0, 0, "s_spaxx")]);
+    const r = one([tx("t1", "buy", "buy", { amount: 100, quantity: 100, price: 1, security_id: "s_spaxx" }), tx("t2", "cash", "dividend", { amount: -1.23, quantity: 0, price: 0, security_id: "s_spaxx" })]);
     expect(r.activities.length).toBe(1);
     expect([itemAt(r.activities, 0).activityType, n(itemAt(r.activities, 0).amount), itemAt(r.activities, 0).symbol]).toEqual(["INTEREST", 1.23, null]);
   });
 
   test("money market override as investment", () => {
-    expect(itemAt(one([tx("t1", "buy", "buy", 100, 100, 1, "s_spaxx")], { s_spaxx: { investment: true } }).activities, 0).symbol).toBe("SPAXX");
+    expect(itemAt(one([tx("t1", "buy", "buy", { amount: 100, quantity: 100, price: 1, security_id: "s_spaxx" })], { s_spaxx: { investment: true } }).activities, 0).symbol).toBe("SPAXX");
   });
 
   test("dividend subtypes, tax, fee", () => {
-    const r = one([tx("t1", "cash", "qualified dividend", -10, 0, 0, "s_vti"), tx("t2", "cash", "tax withheld", 1.5),
-      tx("t3", "fee", "margin expense", 3), tx("t4", "fee", "account fee", -2), tx("t5", "cash", "interest", -0.5)]);
+    const r = one([tx("t1", "cash", "qualified dividend", { amount: -10, quantity: 0, price: 0, security_id: "s_vti" }), tx("t2", "cash", "tax withheld", { amount: 1.5 }),
+      tx("t3", "fee", "margin expense", { amount: 3 }), tx("t4", "fee", "account fee", { amount: -2 }), tx("t5", "cash", "interest", { amount: -0.5 })]);
     expect(r.activities.map((a) => [a.activityType, a.subtype, n(a.amount)])).toEqual([["DIVIDEND", "QUALIFIED", 10],
       ["TAX", "WITHHOLDING", 1.5], ["FEE", "INTEREST_CHARGE", 3], ["CREDIT", "REFUND", 2], ["INTEREST", null, 0.5]]);
   });
 
   test("cash flows are transfer candidates", () => {
-    const r = one([tx("t1", "cash", "deposit", -1000), tx("t2", "transfer", "transfer", 250), tx("t3", "cash", "contribution", -300)]);
+    const r = one([tx("t1", "cash", "deposit", { amount: -1000 }), tx("t2", "transfer", "transfer", { amount: 250 }), tx("t3", "cash", "contribution", { amount: -300 })]);
     expect(r.activities.map((a) => [a.activityType, n(a.amount), a.transferHint])).toEqual([
       ["DEPOSIT", 1000, true], ["WITHDRAWAL", 250, true], ["DEPOSIT", 300, true]]);
   });
 
   test("security transfer in and out", () => {
-    const r = one([tx("t1", "transfer", "transfer", 0, 3, 200, "s_vti"), tx("t2", "transfer", "send", 0, -1, 200, "s_vti")]);
+    const r = one([tx("t1", "transfer", "transfer", { amount: 0, quantity: 3, price: 200, security_id: "s_vti" }), tx("t2", "transfer", "send", { amount: 0, quantity: -1, price: 200, security_id: "s_vti" })]);
     expect(r.activities.map((a) => [a.activityType, n(a.quantity)])).toEqual([["TRANSFER_IN", 3], ["TRANSFER_OUT", 1]]);
   });
 
   test("cancel drops both", () => {
-    const r = one([tx("t1", "buy", "buy", 100, 1, 100, "s_vti"),
-      tx("t2", "cancel", "cancel", -100, -1, 100, "s_vti", null, { cancel_transaction_id: "t1" })]);
+    const r = one([tx("t1", "buy", "buy", { amount: 100, quantity: 1, price: 100, security_id: "s_vti" }),
+      tx("t2", "cancel", "cancel", { amount: -100, quantity: -1, price: 100, security_id: "s_vti", fees: null, cancel_transaction_id: "t1" })]);
     expect(r.activities).toEqual([]);
     expect([...r.cancelledIds].sort()).toEqual(["t1", "t2"]);
   });
 
   test("unmapped and corporate action go to review", () => {
-    const r = one([tx("t1", "buy", "buy", 100, 1, 100, "s_cit"), tx("t3", "transfer", "merger", 0, 1, 0, "s_vti"), tx("t4", "zzz", "weird", 1)]);
+    const r = one([tx("t1", "buy", "buy", { amount: 100, quantity: 1, price: 100, security_id: "s_cit" }), tx("t3", "transfer", "merger", { amount: 0, quantity: 1, price: 0, security_id: "s_vti" }), tx("t4", "zzz", "weird", { amount: 1 })]);
     expect(r.activities).toEqual([]);
     expect(r.reviews.map((x) => x.reason)).toEqual(["unmapped security", "corporate action: merger", "unknown type zzz/weird"]);
     expect(Object.fromEntries(r.unmappedSecurities)).toEqual({ s_cit: "Target 2050 CIT" });
   });
 
   test("symbol override and exclude", () => {
-    const r = one([tx("t1", "buy", "buy", 100, 1, 100, "s_cit"), tx("t2", "buy", "buy", 100, 1, 1, "s_sdba")],
+    const r = one([tx("t1", "buy", "buy", { amount: 100, quantity: 1, price: 100, security_id: "s_cit" }), tx("t2", "buy", "buy", { amount: 100, quantity: 1, price: 1, security_id: "s_sdba" })],
       { s_cit: { symbol: "VFF2050" }, s_sdba: { exclude: true } });
     expect(r.activities.map((a) => a.symbol)).toEqual(["VFF2050"]);
     expect(r.reviews).toEqual([]);
   });
 
   test("split ratio from position", () => {
-    const r = one([tx("t1", "transfer", "split", 0, 30, 0, "s_vti", null, { date: "2026-03-05" })]);
+    const r = one([tx("t1", "transfer", "split", { amount: 0, quantity: 30, price: 0, security_id: "s_vti", fees: null, date: "2026-03-05" })]);
     expect(resolveSplits(r.activities, new Map([[hkey("a1", "VTI"), D(10)]]))).toEqual([]);
     expect(n(itemAt(r.activities, 0).amount)).toBe(4);
-    const r2 = one([tx("t1", "transfer", "split", 0, 30, 0, "s_vti")]);
+    const r2 = one([tx("t1", "transfer", "split", { amount: 0, quantity: 30, price: 0, security_id: "s_vti" })]);
     expect(itemAt(resolveSplits(r2.activities), 0).reason).toBe("split with unknown position");
   });
 });
 
-function bank(i: string, acct: string, amount: number, primary = "", detailed = "", kw: Partial<PlaidTransaction> = {}): PlaidTransaction {
+type BankFields = Partial<PlaidTransaction> & { primary?: string; detailed?: string };
+
+function bank(i: string, acct: string, amount: number, { primary = "", detailed = "", ...kw }: BankFields = {}): PlaidTransaction {
   return { transaction_id: i, account_id: acct, amount, date: "2026-03-02", pending: false, name: `n${i}`,
     merchant_name: `M${i}`, iso_currency_code: "USD", personal_finance_category: { primary, detailed }, ...kw };
 }
 const KINDS = { chk: "cash", card: "credit", brk: "investment" };
-const act = (accountId: string, plaidId: string, date: string, activityType: string, amount: string, kw: Partial<Activity> = {}) =>
-  new Activity({ accountId, plaidId, date, activityType, amount: D(amount), transferHint: true, ...kw });
+const act = (at: Pick<Activity, "accountId" | "plaidId" | "date">, activityType: string, amount: string, kw: Partial<Activity> = {}) =>
+  new Activity({ ...at, activityType, amount: D(amount), transferHint: true, ...kw });
 
 describe("bank and transfers", () => {
   test("bank and card mapping", () => {
     const txns = [
-      bank("1", "chk", 12.5, "FOOD_AND_DRINK", "FOOD_AND_DRINK_COFFEE"), bank("2", "chk", -2000, "INCOME", "INCOME_WAGES"),
-      bank("3", "chk", -0.4, "INCOME", "INCOME_INTEREST_EARNED"), bank("4", "card", 50, "GENERAL_MERCHANDISE", "GENERAL_MERCHANDISE_OTHER"),
-      bank("5", "card", -20, "GENERAL_MERCHANDISE", "GENERAL_MERCHANDISE_OTHER"),
-      bank("6", "card", -300, "LOAN_PAYMENTS", "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"), bank("7", "chk", 5, "", "", { pending: true }),
-      bank("8", "brk", 100), bank("9", "card", 25, "BANK_FEES", "BANK_FEES_INTEREST_CHARGE"),
+      bank("1", "chk", 12.5, { primary: "FOOD_AND_DRINK", detailed: "FOOD_AND_DRINK_COFFEE" }), bank("2", "chk", -2000, { primary: "INCOME", detailed: "INCOME_WAGES" }),
+      bank("3", "chk", -0.4, { primary: "INCOME", detailed: "INCOME_INTEREST_EARNED" }), bank("4", "card", 50, { primary: "GENERAL_MERCHANDISE", detailed: "GENERAL_MERCHANDISE_OTHER" }),
+      bank("5", "card", -20, { primary: "GENERAL_MERCHANDISE", detailed: "GENERAL_MERCHANDISE_OTHER" }),
+      bank("6", "card", -300, { primary: "LOAN_PAYMENTS", detailed: "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT" }), bank("7", "chk", 5, { primary: "", detailed: "", pending: true }),
+      bank("8", "brk", 100), bank("9", "card", 25, { primary: "BANK_FEES", detailed: "BANK_FEES_INTEREST_CHARGE" }),
     ];
     const kinds: Record<string, string> = KINDS;
     const r = { activities: txns.filter((t) => kinds[t.account_id] === "cash" || kinds[t.account_id] === "credit")
@@ -131,40 +132,40 @@ describe("bank and transfers", () => {
   });
 
   test("transfer matching within three days", () => {
-    const acts = [act("chk", "p1", "2026-03-01", "WITHDRAWAL", "300"), act("card", "p2", "2026-03-03", "DEPOSIT", "300"),
-      act("chk", "p3", "2026-03-01", "WITHDRAWAL", "99"), act("brk", "p4", "2026-03-09", "DEPOSIT", "99"),
-      act("chk", "p5", "2026-03-01", "WITHDRAWAL", "40", { transferHint: false }), act("card", "p6", "2026-03-01", "DEPOSIT", "40")];
+    const acts = [act({ accountId: "chk", plaidId: "p1", date: "2026-03-01" }, "WITHDRAWAL", "300"), act({ accountId: "card", plaidId: "p2", date: "2026-03-03" }, "DEPOSIT", "300"),
+      act({ accountId: "chk", plaidId: "p3", date: "2026-03-01" }, "WITHDRAWAL", "99"), act({ accountId: "brk", plaidId: "p4", date: "2026-03-09" }, "DEPOSIT", "99"),
+      act({ accountId: "chk", plaidId: "p5", date: "2026-03-01" }, "WITHDRAWAL", "40", { transferHint: false }), act({ accountId: "card", plaidId: "p6", date: "2026-03-01" }, "DEPOSIT", "40")];
     expect(matchTransfers(acts).map(([o, i]) => [o.plaidId, i.plaidId])).toEqual([["p1", "p2"]]);
     expect([itemAt(acts, 0).activityType, itemAt(acts, 1).activityType, itemAt(acts, 2).activityType]).toEqual(["TRANSFER_OUT", "TRANSFER_IN", "WITHDRAWAL"]);
   });
 
   test("transfer prefers closest date", () => {
-    const acts = [act("chk", "o", "2026-03-01", "WITHDRAWAL", "5"), act("brk", "far", "2026-03-04", "DEPOSIT", "5"),
-      act("card", "near", "2026-03-02", "DEPOSIT", "5")];
+    const acts = [act({ accountId: "chk", plaidId: "o", date: "2026-03-01" }, "WITHDRAWAL", "5"), act({ accountId: "brk", plaidId: "far", date: "2026-03-04" }, "DEPOSIT", "5"),
+      act({ accountId: "card", plaidId: "near", date: "2026-03-02" }, "DEPOSIT", "5")];
     expect(itemAt(matchTransfers(acts), 0)[1].plaidId).toBe("near");
   });
 
   test("transfer prefers shared reference number", () => {
-    const acts = [act("chk2", "A_bkrg", "2026-03-01", "WITHDRAWAL", "5000", { description: "Manual DB-Bkrg 03/01" }),
-      act("chk2", "z_xfer", "2026-03-01", "WITHDRAWAL", "5000", { description: "Online Transfer to CHK ...1234 transaction#: 12345678901 03/01" }),
-      act("chk1", "in", "2026-03-01", "DEPOSIT", "5000", { description: "Online Transfer from CHK ...5678 transaction#: 12345678901" })];
+    const acts = [act({ accountId: "chk2", plaidId: "A_bkrg", date: "2026-03-01" }, "WITHDRAWAL", "5000", { description: "Manual DB-Bkrg 03/01" }),
+      act({ accountId: "chk2", plaidId: "z_xfer", date: "2026-03-01" }, "WITHDRAWAL", "5000", { description: "Online Transfer to CHK ...1234 transaction#: 12345678901 03/01" }),
+      act({ accountId: "chk1", plaidId: "in", date: "2026-03-01" }, "DEPOSIT", "5000", { description: "Online Transfer from CHK ...5678 transaction#: 12345678901" })];
     const pairs = matchTransfers(acts);
     expect(pairs.map(([o, i]) => [o.plaidId, i.plaidId])).toEqual([["z_xfer", "in"]]);
     expect(itemAt(acts, 0).activityType).toBe("WITHDRAWAL");
   });
 
   test("bilt housing pair dropped and bank card payment is transfer", () => {
-    const rows = [bank("c1", "card", -2500.0, "INCOME", "INCOME_RENTAL", { date: "2026-11-02", name: "Payment - Bilt Housing" }),
-      bank("h1", "card", 2500.0, "RENT_AND_UTILITIES", "RENT_AND_UTILITIES_RENT", { date: "2026-11-02", name: "Bilt Housing Payment", merchant_name: "Bilt Housing Payment" }),
-      bank("h2", "card", 40, "RENT_AND_UTILITIES", "RENT_AND_UTILITIES_RENT", { name: "Bilt Rewards", merchant_name: "Bilt Rewards" })];
+    const rows = [bank("c1", "card", -2500.0, { primary: "INCOME", detailed: "INCOME_RENTAL", date: "2026-11-02", name: "Payment - Bilt Housing" }),
+      bank("h1", "card", 2500.0, { primary: "RENT_AND_UTILITIES", detailed: "RENT_AND_UTILITIES_RENT", date: "2026-11-02", name: "Bilt Housing Payment", merchant_name: "Bilt Housing Payment" }),
+      bank("h2", "card", 40, { primary: "RENT_AND_UTILITIES", detailed: "RENT_AND_UTILITIES_RENT", name: "Bilt Rewards", merchant_name: "Bilt Rewards" })];
     expect([...biltPassthrough(rows)].sort()).toEqual(["c1", "h1"]);
-    const a = required(mapBankTransaction(bank("p1", "chk", 2540.0, "RENT_AND_UTILITIES", "RENT_AND_UTILITIES_RENT", { name: "BILT CARD PMT PPD ID: 1" }), "cash"), "mapped row");
+    const a = required(mapBankTransaction(bank("p1", "chk", 2540.0, { primary: "RENT_AND_UTILITIES", detailed: "RENT_AND_UTILITIES_RENT", name: "BILT CARD PMT PPD ID: 1" }), "cash"), "mapped row");
     expect([a.transferHint, a.category]).toEqual([true, null]);
   });
 
   test("card statement credit is credit", () => {
-    const paze = bank("p", "card", -10, "TRANSFER_IN", "TRANSFER_IN_ACCOUNT_TRANSFER", { name: "$10 PAZE CREDIT THANK YOU" });
-    const pay = bank("q", "card", -500, "TRANSFER_IN", "TRANSFER_IN_ACCOUNT_TRANSFER", { name: "AUTOMATIC PAYMENT - THANK" });
+    const paze = bank("p", "card", -10, { primary: "TRANSFER_IN", detailed: "TRANSFER_IN_ACCOUNT_TRANSFER", name: "$10 PAZE CREDIT THANK YOU" });
+    const pay = bank("q", "card", -500, { primary: "TRANSFER_IN", detailed: "TRANSFER_IN_ACCOUNT_TRANSFER", name: "AUTOMATIC PAYMENT - THANK" });
     expect(required(mapBankTransaction(paze, "credit"), "paze").activityType).toBe("CREDIT");
     expect(required(mapBankTransaction(pay, "credit"), "pay").activityType).toBe("TRANSFER_IN");
   });
@@ -175,7 +176,7 @@ describe("positions", () => {
     const [hs, cash] = holdingsBySymbol([
       { account_id: "a1", security_id: "s_vti", quantity: 15, cost_basis: 1500, institution_price: 250, institution_value: 3750 },
       { account_id: "a1", security_id: "s_spaxx", quantity: 400, institution_value: 400, institution_price: 1 }], SECS, {});
-    const acts = one([tx("t1", "buy", "buy", 1000, 10, 100, "s_vti"), tx("t2", "cash", "deposit", -1200)]).activities;
+    const acts = one([tx("t1", "buy", "buy", { amount: 1000, quantity: 10, price: 100, security_id: "s_vti" }), tx("t2", "cash", "deposit", { amount: -1200 })]).activities;
     const [opening, reviews] = openingActivities({ accountId: "a1", date: "2024-11-05", cash: entryAt(cash, "a1") }, hs, acts);
     expect(reviews).toEqual([]);
     const [pos, c] = take(opening, 2);
@@ -205,8 +206,8 @@ describe("positions", () => {
 
   test("opening missing cost basis and negative", () => {
     const [hs] = holdingsBySymbol([{ account_id: "a1", security_id: "s_vti", quantity: 2, cost_basis: null, institution_price: 250, institution_value: 500 }], SECS, {});
-    const acts = one([tx("t1", "buy", "buy", 1, 3, 100, "s_td"), tx("t2", "sell", "sell", 1, -3, 100, "s_td"),
-      tx("t3", "sell", "sell", 1, -1, 100, "s_td")]).activities;
+    const acts = one([tx("t1", "buy", "buy", { amount: 1, quantity: 3, price: 100, security_id: "s_td" }), tx("t2", "sell", "sell", { amount: 1, quantity: -3, price: 100, security_id: "s_td" }),
+      tx("t3", "sell", "sell", { amount: 1, quantity: -1, price: 100, security_id: "s_td" })]).activities;
     const [opening, reviews] = openingActivities({ accountId: "a1", date: "2024-11-05", cash: null }, hs, acts);
     expect(opening.map((o) => [o.symbol, n(o.quantity), n(o.unitPrice)])).toEqual([["TD.TO", 1, 100], ["VTI", 2, 250]]);
     expect(new Set(reviews.map((r) => r.reason))).toEqual(new Set(["opening cost basis missing"]));
@@ -236,7 +237,7 @@ describe("positions", () => {
   });
 
   test("manual quote flag and symbol", () => {
-    const [td, cit] = take(one([tx("t1", "buy", "buy", 100, 1, 100, "s_td"), tx("t2", "buy", "buy", 100, 2, 50, "s_cit")],
+    const [td, cit] = take(one([tx("t1", "buy", "buy", { amount: 100, quantity: 1, price: 100, security_id: "s_td" }), tx("t2", "buy", "buy", { amount: 100, quantity: 2, price: 50, security_id: "s_cit" })],
       { s_td: { manual: true }, s_cit: { manual: true } }).activities, 2);
     expect([td.symbol, td.quoteManual, cit.symbol, cit.quoteManual]).toEqual(["TD.TO", true, "TARGET2050CIT-S_CI", true]);
   });
@@ -252,9 +253,9 @@ const OPT_SECS: Record<string, PlaidSecurity> = {
 describe("options and plans", () => {
   test("option trades in contracts with open/close", () => {
     const r = mapInvestmentTransactions([
-      tx("o1", "buy", "buy", 305, 300, 1.0, "o_occ", 5), tx("o2", "sell", "sell", -200, -200, 1.0, "o_occ"),
-      tx("o3", "sell", "sell short", -150, -100, 1.5, "o_built"), tx("o4", "buy", "buy to cover", 50, 100, 0.5, "o_built"),
-      tx("o5", "transfer", "expire", 0, -100, 0, "o_occ"), tx("o6", "buy", "buy", 10, 100, 0.1, "o_bad")], OPT_SECS, {});
+      tx("o1", "buy", "buy", { amount: 305, quantity: 300, price: 1.0, security_id: "o_occ", fees: 5 }), tx("o2", "sell", "sell", { amount: -200, quantity: -200, price: 1.0, security_id: "o_occ" }),
+      tx("o3", "sell", "sell short", { amount: -150, quantity: -100, price: 1.5, security_id: "o_built" }), tx("o4", "buy", "buy to cover", { amount: 50, quantity: 100, price: 0.5, security_id: "o_built" }),
+      tx("o5", "transfer", "expire", { amount: 0, quantity: -100, price: 0, security_id: "o_occ" }), tx("o6", "buy", "buy", { amount: 10, quantity: 100, price: 0.1, security_id: "o_bad" })], OPT_SECS, {});
     expect(r.activities.map((a) => [a.activityType, a.subtype, a.symbol, a.instrumentType, n(a.quantity), n(a.unitPrice)])).toEqual([
       ["BUY", "POSITION_OPEN", "NFLX180201C00355000", "OPTION", 3, 1],
       ["SELL", "POSITION_CLOSE", "NFLX180201C00355000", "OPTION", 2, 1],
@@ -266,9 +267,9 @@ describe("options and plans", () => {
   });
 
   test("option price from amount and multiplier override", () => {
-    const a = itemAt(mapInvestmentTransactions([tx("o1", "buy", "buy", 46, 4600, 0, "o_occ")], OPT_SECS, {}).activities, 0);
+    const a = itemAt(mapInvestmentTransactions([tx("o1", "buy", "buy", { amount: 46, quantity: 4600, price: 0, security_id: "o_occ" })], OPT_SECS, {}).activities, 0);
     expect([n(a.quantity), n(a.unitPrice)]).toEqual([46, 0.01]);
-    const mini = itemAt(mapInvestmentTransactions([tx("o1", "buy", "buy", 10, 100, 0.1, "o_occ")], OPT_SECS, { o_occ: { multiplier: 10 } }).activities, 0);
+    const mini = itemAt(mapInvestmentTransactions([tx("o1", "buy", "buy", { amount: 10, quantity: 100, price: 0.1, security_id: "o_occ" })], OPT_SECS, { o_occ: { multiplier: 10 } }).activities, 0);
     expect(n(mini.quantity)).toBe(10);
   });
 
@@ -280,8 +281,7 @@ describe("options and plans", () => {
     const overrides = { ant_order: { symbol: "ANT" } };
     expect(resolve(secs.ant_order, overrides)).toMatchObject({ kind: "security", symbol: "ANT", instrumentType: "EQUITY" });
     expect(n(resolve(secs.ant_order, overrides).multiplier)).toBe(1);
-    const [buy] = take(mapInvestmentTransactions([tx("p", "buy", "buy", 166, 42, 83, "ant_order", null,
-      { name: "buy 42.000000 shares of Anthropic for $83.00 each. This order is partially filled. - PURCHASED" })], secs, overrides).activities, 1);
+    const [buy] = take(mapInvestmentTransactions([tx("p", "buy", "buy", { amount: 166, quantity: 42, price: 83, security_id: "ant_order", fees: null, name: "buy 42.000000 shares of Anthropic for $83.00 each. This order is partially filled. - PURCHASED" })], secs, overrides).activities, 1);
     expect([buy.activityType, buy.subtype, buy.symbol, buy.instrumentType, n(buy.quantity), n(buy.unitPrice)])
       .toEqual(["BUY", null, "ANT", "EQUITY", 2, 83]);
     const [hs, cash] = holdingsBySymbol([
@@ -292,13 +292,12 @@ describe("options and plans", () => {
   });
 
   test("partial fill on an option compares contracts with contracts", () => {
-    const [a] = take(mapInvestmentTransactions([tx("o1", "buy", "buy", 100, 300, 1.0, "o_occ", null,
-      { name: "buy 3 contracts. This order is partially filled." })], OPT_SECS, {}).activities, 1);
+    const [a] = take(mapInvestmentTransactions([tx("o1", "buy", "buy", { amount: 100, quantity: 300, price: 1.0, security_id: "o_occ", fees: null, name: "buy 3 contracts. This order is partially filled." })], OPT_SECS, {}).activities, 1);
     expect(n(a.quantity)).toBe(1);
   });
 
   test("equity short uses position subtypes", () => {
-    const r = one([tx("t1", "sell", "sell short", -100, -1, 100, "s_vti"), tx("t2", "buy", "buy to cover", 90, 1, 90, "s_vti")]);
+    const r = one([tx("t1", "sell", "sell short", { amount: -100, quantity: -1, price: 100, security_id: "s_vti" }), tx("t2", "buy", "buy to cover", { amount: 90, quantity: 1, price: 90, security_id: "s_vti" })]);
     expect(r.activities.map((a) => a.subtype)).toEqual(["POSITION_OPEN", "POSITION_CLOSE"]);
   });
 
@@ -311,9 +310,9 @@ describe("options and plans", () => {
   });
 
   test("stock plan vests in, journals out, cash journal", () => {
-    const rows = [tx("v1", "cash", "withdrawal", 0, 10.956, 1, "s_vti", null, { name: "RESTRICTED STOCK DEPOSIT" }),
-      tx("j1", "transfer", "transfer", 0, 1551.191, 0, "s_vti", null, { name: "JOURNAL - TRANSFER" }),
-      tx("j2", "transfer", "transfer", 571.38, 0, 0, "s_vti", null, { name: "Journal To Account 07E3 - JRNLFUND" })];
+    const rows = [tx("v1", "cash", "withdrawal", { amount: 0, quantity: 10.956, price: 1, security_id: "s_vti", fees: null, name: "RESTRICTED STOCK DEPOSIT" }),
+      tx("j1", "transfer", "transfer", { amount: 0, quantity: 1551.191, price: 0, security_id: "s_vti", fees: null, name: "JOURNAL - TRANSFER" }),
+      tx("j2", "transfer", "transfer", { amount: 571.38, quantity: 0, price: 0, security_id: "s_vti", fees: null, name: "Journal To Account 07E3 - JRNLFUND" })];
     const [v, j, c] = take(mapInvestmentTransactions(rows, SECS, {}, { stockPlan: new Set(["a1"]) }).activities, 3);
     expect([v.activityType, v.symbol, n(v.quantity), n(v.unitPrice)]).toEqual(["TRANSFER_IN", "VTI", 10.956, 0]);
     expect([j.activityType, n(j.quantity)]).toEqual(["TRANSFER_OUT", 1551.191]);
@@ -322,43 +321,42 @@ describe("options and plans", () => {
   });
 
   test("plan contribution is shares in, not a buy", () => {
-    const [a] = take(one([tx("c1", "buy", "contribution", 1420, 11.732, 121.04, "s_vti")]).activities, 1);
+    const [a] = take(one([tx("c1", "buy", "contribution", { amount: 1420, quantity: 11.732, price: 121.04, security_id: "s_vti" })]).activities, 1);
     expect([a.activityType, n(a.quantity), n(a.unitPrice)]).toEqual(["TRANSFER_IN", 11.732, 121.04]);
   });
 
   test("partial fill uses the filled amount", () => {
-    const [a] = take(one([tx("p1", "buy", "buy", 135, 40, 135, "s_vti", null,
-      { name: "buy 40.000000 shares for $135.00 each. This order is partially filled." })]).activities, 1);
+    const [a] = take(one([tx("p1", "buy", "buy", { amount: 135, quantity: 40, price: 135, security_id: "s_vti", fees: null, name: "buy 40.000000 shares for $135.00 each. This order is partially filled." })]).activities, 1);
     expect(n(a.quantity)).toBe(1);
   });
 
   test("fidelity split distribution and merrill sweep", () => {
-    const [a] = take(one([tx("d1", "cash", "deposit", -12345.67, 120.5, 0, "s_vti", null, { name: "EXAMPLE SECTOR ETF - DISTRIBUTION" })]).activities, 1);
+    const [a] = take(one([tx("d1", "cash", "deposit", { amount: -12345.67, quantity: 120.5, price: 0, security_id: "s_vti", fees: null, name: "EXAMPLE SECTOR ETF - DISTRIBUTION" })]).activities, 1);
     expect([a.activityType, n(a.splitDelta), a.amount]).toEqual(["SPLIT", 120.5, null]);
     expect(resolve({ security_id: "m", ticker_symbol: "Deposit", type: "other", name: "Ml Direct Deposit Progrm" }, {}).kind).toBe("cash");
   });
 
   test("merrill reinvestment memo dropped when fill present", () => {
-    const r = one([tx("m", "buy", "dividend reinvestment", 50.0, 0, 0, "s_vti", null, { date: "2026-09-25" }),
-      tx("f", "buy", "dividend reinvestment", 50.0, 0.5, 100, "s_vti", null, { date: "2026-09-29" }),
-      tx("lone", "buy", "dividend reinvestment", 5, 0, 0, "s_vti")]);
+    const r = one([tx("m", "buy", "dividend reinvestment", { amount: 50.0, quantity: 0, price: 0, security_id: "s_vti", fees: null, date: "2026-09-25" }),
+      tx("f", "buy", "dividend reinvestment", { amount: 50.0, quantity: 0.5, price: 100, security_id: "s_vti", fees: null, date: "2026-09-29" }),
+      tx("lone", "buy", "dividend reinvestment", { amount: 5, quantity: 0, price: 0, security_id: "s_vti" })]);
     expect(r.activities.map((a) => a.plaidId)).toEqual(["f"]);
     expect(r.reviews.map((x) => x.reason)).toEqual(["trade with zero quantity"]);
   });
 
   test("same-day reversals, merrill split and unpriced transfer", () => {
-    const r = one([tx("c", "buy", "contribution", 1000.0, 25, 40, "s_vti"), tx("i", "transfer", "transfer", -1000.0, 25, 40, "s_vti"),
-      tx("o", "transfer", "transfer", 1000.0, -25, 40, "s_vti"),
-      tx("s", "cash", "withdrawal", 0, 300, 0, "s_vti", null, { date: "2026-04-21" }),
-      tx("rv", "cash", "withdrawal", 0, -300, 0, "s_vti", null, { date: "2026-04-22" }),
-      tx("rp", "cash", "withdrawal", 0, 300, 0, "s_vti", null, { date: "2026-04-22" }),
-      tx("j", "transfer", "transfer", 0, 203, 0, "s_vti", null, { date: "2026-02-25" })]);
+    const r = one([tx("c", "buy", "contribution", { amount: 1000.0, quantity: 25, price: 40, security_id: "s_vti" }), tx("i", "transfer", "transfer", { amount: -1000.0, quantity: 25, price: 40, security_id: "s_vti" }),
+      tx("o", "transfer", "transfer", { amount: 1000.0, quantity: -25, price: 40, security_id: "s_vti" }),
+      tx("s", "cash", "withdrawal", { amount: 0, quantity: 300, price: 0, security_id: "s_vti", fees: null, date: "2026-04-21" }),
+      tx("rv", "cash", "withdrawal", { amount: 0, quantity: -300, price: 0, security_id: "s_vti", fees: null, date: "2026-04-22" }),
+      tx("rp", "cash", "withdrawal", { amount: 0, quantity: 300, price: 0, security_id: "s_vti", fees: null, date: "2026-04-22" }),
+      tx("j", "transfer", "transfer", { amount: 0, quantity: 203, price: 0, security_id: "s_vti", fees: null, date: "2026-02-25" })]);
     expect(r.activities.map((a) => [a.plaidId, a.activityType])).toEqual([["c", "TRANSFER_IN"], ["s", "SPLIT"], ["j", "TRANSFER_IN"]]);
     expect([n(itemAt(r.activities, 1).splitDelta), itemAt(r.activities, 2).marketPrice]).toEqual([300, true]);
   });
 
   test("vest stays a vest in a stock plan", () => {
-    const [a] = take(mapInvestmentTransactions([tx("v", "cash", "withdrawal", 0, 10, 0, "s_vti")], SECS, {}, { stockPlan: new Set(["a1"]) }).activities, 1);
+    const [a] = take(mapInvestmentTransactions([tx("v", "cash", "withdrawal", { amount: 0, quantity: 10, price: 0, security_id: "s_vti" })], SECS, {}, { stockPlan: new Set(["a1"]) }).activities, 1);
     expect([a.activityType, a.marketPrice]).toEqual(["TRANSFER_IN", true]);
   });
 });
@@ -368,7 +366,7 @@ describe("tracking", () => {
     const t = entry("voo", "2026-11-06", D("100.00"), D("500.00"));
     expect([t.symbol, t.ratio]).toEqual(["VOO", 0.2]);
     const symbols = { s_cit: { name: "Target 2050 CIT", symbol: null, track: t } };
-    const [rows, holds, secs] = convert([tx("b", "buy", "contribution", 1000.0, 10, 100.0, "s_cit"), tx("v", "buy", "buy", 100, 1, 100, "s_vti")],
+    const [rows, holds, secs] = convert([tx("b", "buy", "contribution", { amount: 1000.0, quantity: 10, price: 100.0, security_id: "s_cit" }), tx("v", "buy", "buy", { amount: 100, quantity: 1, price: 100, security_id: "s_vti" })],
       [{ account_id: "a1", security_id: "s_cit", quantity: 50, institution_price: 100.0, cost_basis: 5000, institution_value: 5000 }], SECS, symbols);
     expect([n(itemAt(rows, 0).quantity), n(itemAt(rows, 0).price), itemAt(rows, 0).amount]).toEqual([2, 500, 1000]);
     expect([itemAt(rows, 1).quantity, valueAt(SECS, "s_cit").ticker_symbol]).toEqual([1, null]);

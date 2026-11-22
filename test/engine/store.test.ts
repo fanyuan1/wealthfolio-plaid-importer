@@ -433,8 +433,8 @@ describe("refreshStale", () => {
       fresh: { owner: "AB", institution_name: "A", checked: new Date(now - 3600_000).toISOString() },
       old: { owner: "AB", institution_name: "B", products: ["identity"], checked: new Date(now - 2 * 86400_000).toISOString() },
     });
-    const calls: [string, boolean][] = [];
-    e.refreshAccounts = (id, identity = true) => { calls.push([id, identity]); return Promise.resolve(["x"]); };
+    const calls: [string, boolean | undefined][] = [];
+    e.refreshAccounts = (id: string, identity?: boolean) => { calls.push([id, identity]); return Promise.resolve(["x"]); };
     expect(await e.refreshStale(() => {}, now)).toEqual({ added: 1, failed: [] });
     expect(calls).toEqual([["old", false]]);
   });

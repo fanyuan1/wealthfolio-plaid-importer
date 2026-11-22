@@ -53,38 +53,5 @@
     "lints/max-lines-per-function": {
       "count": 2
     }
-  },
-  "test/e2e/fake-plaid.ts": {
-    "lints/max-params": {
-      "count": 1
-    }
-  },
-  "test/e2e/fixtures.ts": {
-    "lints/no-deprecated": {
-      "count": 1
-    }
-  },
-  "test/e2e/layout.spec.ts": {
-    "lints/cognitive-complexity": {
-      "count": 1
-    },
-    "lints/no-unnecessary-type-conversion": {
-      "count": 1
-    }
-  },
-  "test/engine/store.test.ts": {
-    "lints/no-useless-default-assignment": {
-      "count": 1
-    }
-  },
-  "test/importer/mapping.test.ts": {
-    "lints/max-params": {
-      "count": 3
-    }
-  },
-  "test/importer/sync.test.ts": {
-    "lints/max-params": {
-      "count": 3
-    }
   }
 }
