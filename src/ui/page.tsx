@@ -1,7 +1,7 @@
 import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { AddonContext } from '@wealthfolio/addon-sdk';
 import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Icons, Page, PageContent, PageHeader, Tabs, TabsContent, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@wealthfolio/ui';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Engine } from '../engine/engine';
 import { type PlaidEnv, required } from '../importer';
 import { host, msg, Problem, type Step, TITLE } from './common';
@@ -19,6 +19,7 @@ function PlaidImporter({ ctx }: { ctx: AddonContext }) {
   const [version, setVersion] = useState(0);
   const [step, setStep] = useState<Step>();
   const [tick, setTick] = useState(0);
+  const bumpTick = useCallback(() => setTick((t) => t + 1), []);
   const [ready, setReady] = useState(false);
   const [done, setDone] = useState<Partial<Record<Step, boolean>>>({});
   const [spendingOff, setSpendingOff] = useState<SpendingOff>({ names: [], available: true });
@@ -70,7 +71,7 @@ function PlaidImporter({ ctx }: { ctx: AddonContext }) {
               <Connections engine={engine} env={env} onChange={() => setVersion((v) => v + 1)} onStep={go} />
             </TabsContent>
             <TabsContent value="accounts">
-              <Accounts engine={engine} env={env} version={version} onChange={() => setTick((t) => t + 1)} onSpendingOff={setSpendingOff} />
+              <Accounts engine={engine} env={env} version={version} onChange={bumpTick} onSpendingOff={setSpendingOff} />
             </TabsContent>
             <TabsContent value="sync"><Sync engine={engine} env={env} onStep={go} /></TabsContent>
             <TabsContent value="daily"><Daily engine={engine} env={env} onStep={go} /></TabsContent>
@@ -78,28 +79,8 @@ function PlaidImporter({ ctx }: { ctx: AddonContext }) {
               <Backup engine={engine} env={env} ready={ready} onChange={() => setVersion((v) => v + 1)} />
             </TabsContent>
           </Tabs>
-          <Dialog open={Boolean(leaving)} onOpenChange={(o) => { if (!o) setLeaving(undefined); }}>
-            <DialogContent>
-              <DialogHeader>
-                <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-amber-500/15">
-                  <Icons.AlertTriangle className="h-5 w-5 text-amber-600" />
-                </div>
-                <DialogTitle>Turn on spending first</DialogTitle>
-                <DialogDescription>
-                  {spendingOff.names.length} bank or card account{spendingOff.names.length === 1 ? ' has' : 's have'} spending{' '}
-                  {spendingOff.available ? 'off' : 'not available'}. Without it, their rows are pushed with no spending category.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="bg-muted/50 rounded-md p-3 text-sm">
-                Turn it on in <span className="font-medium">Wealthfolio → Settings → Spending</span>. The Spend tracking column shows which accounts.
-                Categories are filled in on a later push once it is on.
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setLeaving(undefined)}>Stay here</Button>
-                <Button onClick={() => { setStep(leaving); setLeaving(undefined); }}>Continue anyway</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <SpendingOffDialog leaving={leaving} spendingOff={spendingOff} onStay={() => setLeaving(undefined)}
+                             onContinue={() => { setStep(leaving); setLeaving(undefined); }} />
         </div>
       </PageContent>
     </Page>
@@ -107,6 +88,34 @@ function PlaidImporter({ ctx }: { ctx: AddonContext }) {
 }
 
 const LOCKED = 'Link every selected account in step 3 first.';
+
+function SpendingOffDialog({ leaving, spendingOff, onStay, onContinue }: { leaving: Step | undefined; spendingOff: SpendingOff;
+  onStay: () => void; onContinue: () => void }) {
+  return (
+    <Dialog open={Boolean(leaving)} onOpenChange={(o) => { if (!o) onStay(); }}>
+      <DialogContent>
+        <DialogHeader>
+          <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-amber-500/15">
+            <Icons.AlertTriangle className="h-5 w-5 text-amber-600" />
+          </div>
+          <DialogTitle>Turn on spending first</DialogTitle>
+          <DialogDescription>
+            {spendingOff.names.length} bank or card account{spendingOff.names.length === 1 ? ' has' : 's have'} spending{' '}
+            {spendingOff.available ? 'off' : 'not available'}. Without it, their rows are pushed with no spending category.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="bg-muted/50 rounded-md p-3 text-sm">
+          Turn it on in <span className="font-medium">Wealthfolio → Settings → Spending</span>. The Spend tracking column shows which accounts.
+          Categories are filled in on a later push once it is on.
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onStay}>Stay here</Button>
+          <Button onClick={onContinue}>Continue anyway</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 const STEPS: [Step, string][] = [['setup', 'Setup'], ['connections', 'Connections'], ['accounts', 'Accounts'], ['sync', 'Sync'],
   ['daily', 'Daily sync'], ['backup', 'Backup']];
 

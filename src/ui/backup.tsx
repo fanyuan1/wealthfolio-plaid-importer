@@ -9,27 +9,24 @@ const KINDS: [BackupKind, string, string][] = [
   ['connections', 'Connections backup', 'Connections and their access tokens.'],
 ];
 
+type Busy = ReturnType<typeof useBusy>;
+
 export function Backup({ engine, env, ready, onChange }: { engine: Engine; env: PlaidEnv; ready: boolean; onChange: () => void }) {
+  const busy = useBusy();
+  const restoreTask = useTask(engine, 'restore');
+  return (
+    <div className="flex flex-col gap-4">
+      <MakeBackup engine={engine} env={env} busy={busy} />
+      <RestoreBackup engine={engine} ready={ready} onChange={onChange} busy={busy} restoreTask={restoreTask} />
+      <Problem error={busy.error ?? restoreTask.error} />
+    </div>
+  );
+}
+
+function MakeBackup({ engine, env, busy: { busy, run } }: { engine: Engine; env: PlaidEnv; busy: Busy }) {
   const [made, setMade] = useState<{ kind: BackupKind; text: string; copied?: boolean }>();
   const [saved, flashSaved] = useFlash();
-  const [paste, setPaste] = useState('');
-  const [picked, setPicked] = useState<{ name: string; text: string }>();
-  const [confirm, setConfirm] = useState(false);
-  const [overwrite, setOverwrite] = useState<string[]>();
-  const source = picked?.text ?? paste;
-  const file = useRef<HTMLInputElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
-  const { busy, error, run } = useBusy();
-  const { task, busy: restoring, error: restoreError, start } = useTask(engine, 'restore');
-  const restored = task && !task.running && !task.error ? task.result as Restored : undefined;
-
-  const restore = (text: string, mode: 'merge' | 'overwrite' = 'merge') => start('restore', async () => {
-    const r = await engine.restore(text, mode);
-    setPaste('');
-    setPicked(undefined);
-    onChange();
-    return r;
-  });
   const copy = async () => {
     if (made) setMade({ ...made, copied: await copyText(made.text, box.current) });
   };
@@ -39,52 +36,70 @@ export function Backup({ engine, env, ready, onChange }: { engine: Engine; env: 
     const ok = await required(host.ctx, 'addon context').api.files.openSaveDialog(made.text, name);
     if (ok !== false) flashSaved();
   });
-
   return (
-    <div className="flex flex-col gap-4">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Step 6: Back up</CardTitle>
-          <CardDescription>A backup holds your access tokens. Anyone with the access tokens and your Plaid client ID and secret can read your account data. The backup does not hold the Plaid keys. Keep it in a password manager.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2">
-          {KINDS.map(([kind, title, text]) => (
-            <div key={kind} className={`flex flex-col gap-3 rounded-lg border p-4 ${kind === 'full' ? 'border-primary/50' : ''}`}>
-              <div className="flex items-center gap-2 font-medium">
-                <Icons.DatabaseBackup className="h-4 w-4" />{title}
-                {kind === 'full' && <Badge variant="success-subtle" className="ms-auto">Recommended</Badge>}
-              </div>
-              <p className="text-muted-foreground flex-1 text-sm">{text}</p>
-              <div>
-                <Button variant={kind === 'full' ? 'default' : 'outline'} disabled={Boolean(busy)}
-                        onClick={() => void run(`backup-${kind}`, async () => setMade({ kind, text: await engine.backup(kind) }))}>
-                  <Spin on={busy === `backup-${kind}`} />Make {kind === 'connections' ? 'connections' : 'full'} backup
-                </Button>
-              </div>
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg">Step 6: Back up</CardTitle>
+        <CardDescription>A backup holds your access tokens. Anyone with the access tokens and your Plaid client ID and secret can read your account data. The backup does not hold the Plaid keys. Keep it in a password manager.</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3 md:grid-cols-2">
+        {KINDS.map(([kind, title, text]) => (
+          <div key={kind} className={`flex flex-col gap-3 rounded-lg border p-4 ${kind === 'full' ? 'border-primary/50' : ''}`}>
+            <div className="flex items-center gap-2 font-medium">
+              <Icons.DatabaseBackup className="h-4 w-4" />{title}
+              {kind === 'full' && <Badge variant="success-subtle" className="ms-auto">Recommended</Badge>}
             </div>
-          ))}
+            <p className="text-muted-foreground flex-1 text-sm">{text}</p>
+            <div>
+              <Button variant={kind === 'full' ? 'default' : 'outline'} disabled={Boolean(busy)}
+                      onClick={() => void run(`backup-${kind}`, async () => setMade({ kind, text: await engine.backup(kind) }))}>
+                <Spin on={busy === `backup-${kind}`} />Make {kind === 'connections' ? 'connections' : 'full'} backup
+              </Button>
+            </div>
+          </div>
+        ))}
+      </CardContent>
+      {made && (
+        <CardContent className="flex flex-col gap-2 border-t pt-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium">{made.kind === 'full' ? 'Full backup' : 'Connections backup'} ready</span>
+            <span className="text-muted-foreground text-xs">{(made.text.length / 1024).toFixed(made.text.length < 10240 ? 1 : 0)} KB</span>
+            <div className="ms-auto flex flex-wrap gap-2">
+              <Button size="sm" className="min-w-20" onClick={() => void copy()}><Icons.Copy className="h-3 w-3" />{made.copied ? 'Copied' : 'Copy'}</Button>
+              <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => void saveFile()}
+                      className="min-w-32">
+                <Spin on={busy === 'save'} />
+                <FlashLabel on={saved} done="Saved" small><Icons.Download className="h-3 w-3" />Save as file…</FlashLabel>
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setMade(undefined)}>Hide</Button>
+            </div>
+          </div>
+          {made.copied === false && <span className="text-destructive text-xs">Copy did not work here. Select the text below and copy it.</span>}
+          <textarea ref={box} readOnly value={made.text} className="bg-muted h-24 rounded p-2 font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
         </CardContent>
-        {made && (
-          <CardContent className="flex flex-col gap-2 border-t pt-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-medium">{made.kind === 'full' ? 'Full backup' : 'Connections backup'} ready</span>
-              <span className="text-muted-foreground text-xs">{(made.text.length / 1024).toFixed(made.text.length < 10240 ? 1 : 0)} KB</span>
-              <div className="ms-auto flex flex-wrap gap-2">
-                <Button size="sm" className="min-w-20" onClick={() => void copy()}><Icons.Copy className="h-3 w-3" />{made.copied ? 'Copied' : 'Copy'}</Button>
-                <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => void saveFile()}
-                        className="min-w-32">
-                  <Spin on={busy === 'save'} />
-                  <FlashLabel on={saved} done="Saved" small><Icons.Download className="h-3 w-3" />Save as file…</FlashLabel>
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setMade(undefined)}>Hide</Button>
-              </div>
-            </div>
-            {made.copied === false && <span className="text-destructive text-xs">Copy did not work here. Select the text below and copy it.</span>}
-            <textarea ref={box} readOnly value={made.text} className="bg-muted h-24 rounded p-2 font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
-          </CardContent>
-        )}
-      </Card>
+      )}
+    </Card>
+  );
+}
 
+function RestoreBackup({ engine, ready, onChange, busy: { run }, restoreTask }: { engine: Engine; ready: boolean; onChange: () => void; busy: Busy;
+  restoreTask: ReturnType<typeof useTask> }) {
+  const [paste, setPaste] = useState('');
+  const [picked, setPicked] = useState<{ name: string; text: string }>();
+  const source = picked?.text ?? paste;
+  const file = useRef<HTMLInputElement>(null);
+  const { task, busy: restoring, start } = restoreTask;
+  const restored = task && !task.running && !task.error ? task.result as Restored : undefined;
+  const restore = (text: string, mode: 'merge' | 'overwrite' = 'merge') => start('restore', async () => {
+    const r = await engine.restore(text, mode);
+    setPaste('');
+    setPicked(undefined);
+    onChange();
+    return r;
+  });
+  const [confirm, setConfirm] = useState(false);
+  return (
+    <>
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Restore</CardTitle>
@@ -112,23 +127,36 @@ export function Backup({ engine, env, ready, onChange }: { engine: Engine; env: 
                    }} />
             <Button variant="outline" disabled={Boolean(restoring)} onClick={() => file.current?.click()}><Icons.Upload className="h-4 w-4" />Choose a file</Button>
           </div>
-          {restored && (
-            <Alert>
-              <Icons.CheckCircle className="h-4 w-4 text-green-600" />
-              <AlertTitle>Restored {plural(restored.items, 'connection')} and {plural(restored.accounts, 'account')}</AlertTitle>
-              <AlertDescription className="flex flex-col gap-2">
-                {restored.removed > 0 && <span>Removed {plural(restored.removed, 'connection')} the backup did not have.</span>}
-                {restored.ledger === 'restored' && <span>Also restored the record of {restored.rows} pushed rows.</span>}
-                {restored.ledger === 'other-wealthfolio' && (
-                  <span>None of its accounts are in this Wealthfolio, so the transaction records were left out. The first push to each account checks for rows Wealthfolio already has.</span>
-                )}
-                {!ready && <span className="text-muted-foreground text-xs">Some accounts point to Wealthfolio accounts that are not here. Link them in step 3.</span>}
-              </AlertDescription>
-            </Alert>
-          )}
+          {restored && <RestoredNote restored={restored} ready={ready} />}
         </CardContent>
       </Card>
-      <Problem error={error ?? restoreError} />
+      <RestoreDialogs engine={engine} source={source} confirm={confirm} setConfirm={setConfirm} restore={restore} />
+    </>
+  );
+}
+
+function RestoredNote({ restored, ready }: { restored: Restored; ready: boolean }) {
+  return (
+    <Alert>
+      <Icons.CheckCircle className="h-4 w-4 text-green-600" />
+      <AlertTitle>Restored {plural(restored.items, 'connection')} and {plural(restored.accounts, 'account')}</AlertTitle>
+      <AlertDescription className="flex flex-col gap-2">
+        {restored.removed > 0 && <span>Removed {plural(restored.removed, 'connection')} the backup did not have.</span>}
+        {restored.ledger === 'restored' && <span>Also restored the record of {restored.rows} pushed rows.</span>}
+        {restored.ledger === 'other-wealthfolio' && (
+          <span>None of its accounts are in this Wealthfolio, so the transaction records were left out. The first push to each account checks for rows Wealthfolio already has.</span>
+        )}
+        {!ready && <span className="text-muted-foreground text-xs">Some accounts point to Wealthfolio accounts that are not here. Link them in step 3.</span>}
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+function RestoreDialogs({ engine, source, confirm, setConfirm, restore }: { engine: Engine; source: string; confirm: boolean;
+  setConfirm: (open: boolean) => void; restore: (text: string, mode?: 'merge' | 'overwrite') => unknown }) {
+  const [overwrite, setOverwrite] = useState<string[]>();
+  return (
+    <>
       <AlertDialog open={confirm} onOpenChange={setConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -172,7 +200,7 @@ export function Backup({ engine, env, ready, onChange }: { engine: Engine; env: 
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </>
   );
 }
 

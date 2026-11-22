@@ -68,7 +68,7 @@ export interface Plan {
   moved: Map<string, Set<string>>;
 }
 
-export type ClosesFn = (symbol: string | null, day: string) => Dec | null;
+type ClosesFn = (symbol: string | null, day: string) => Dec | null;
 
 function earliest(acts: Activity[], aid: string, today: string): string {
   const ds = acts.filter((a) => a.accountId === aid).map((a) => a.date);

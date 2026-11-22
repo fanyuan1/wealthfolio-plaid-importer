@@ -199,7 +199,7 @@ export function useEngine<T>(engine: Engine, pick: (e: Engine) => T): T {
 type TaskIO = Parameters<Parameters<Engine['task']>[2]>[0];
 
 export function useTask(engine: Engine, key: string) {
-  const task = useEngine(engine, (e) => e.tasks[key]) as Task | undefined;
+  const task = useEngine<Task | undefined>(engine, (e) => e.tasks[key]);
   const start = useCallback(<T,>(label: string, fn: (io: TaskIO) => Promise<T>) =>
     engine.task(key, label, fn).catch((e: unknown): undefined => { host.ctx?.api.logger.error(`plaid-importer: ${key}: ${msg(e)}`); return undefined; }), [engine, key]);
   return { task, busy: task?.running ? task.label : undefined, error: task?.error, start };

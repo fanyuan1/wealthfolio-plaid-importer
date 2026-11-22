@@ -17,9 +17,6 @@ export function Connections({ engine, env, onChange, onStep }: { engine: Engine;
   const [link, setLinkState] = useState<Pending | undefined>(engine.pendingLink);
   const [linked, setLinkedState] = useState(engine.lastLinked);
   const setLinked = (l?: typeof linked) => { engine.lastLinked = l; setLinkedState(l); };
-  const [added, flashAdded] = useFlash();
-  const [tokOwner, setTokOwner] = useState('');
-  const [token, setToken] = useState('');
   const [removing, setRemoving] = useState<string>();
   const { busy, error, run, fail } = useBusy();
   const load = useCallback(() => engine.store.items(env).then(setItems), [engine, env]);
@@ -84,96 +81,121 @@ export function Connections({ engine, env, onChange, onStep }: { engine: Engine;
       </Card>
 
       {Object.keys(items).length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Connections</CardTitle>
-            <CardDescription>Initials name the accounts not yet created in Wealthfolio. Existing accounts need to be renamed manually in Wealthfolio.</CardDescription>
-          </CardHeader>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="ps-6">Initials</TableHead>
-                  <TableHead>Institution</TableHead>
-                  <TableHead>Products</TableHead>
-                  <TableHead>Accounts checked</TableHead>
-                  <TableHead className="pe-6 text-end">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {Object.entries(items).map(([id, m]) => (
-                  <TableRow key={id}>
-                    <TableCell className="ps-6"><OwnerCell engine={engine} itemId={id} value={m.owner} onSaved={reload} /></TableCell>
-                    <TableCell>
-                      {m.institution_name}
-                      {m.reconnect && <Badge variant="destructive" className="ms-2">Reconnect needed</Badge>}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">{(m.products ?? []).join(', ')}</TableCell>
-                    <TableCell className="text-muted-foreground text-sm">{ago(m.checked)}</TableCell>
-                    <TableCell className="pe-6 text-end">
-                      <div className="flex justify-end gap-2">
-                        <Button variant={m.reconnect ? 'default' : 'outline'} size="sm" disabled={Boolean(busy) || Boolean(link)} onClick={() => void start(() => engine.startReconnect(id), m.owner, id)}>
-                          Reconnect
-                        </Button>
-                        <Button variant="ghost" size="sm" disabled={Boolean(busy)} aria-label={`Remove ${m.institution_name}`} onClick={() => setRemoving(id)}>
-                          <Icons.Trash className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+        <ConnectionsTable engine={engine} items={items} busy={busy} linking={Boolean(link)} reload={reload}
+                          onReconnect={(id, o) => void start(() => engine.startReconnect(id), o, id)} onRemove={setRemoving} />
       )}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Add an existing connection</CardTitle>
-          <CardDescription>Paste one access token. Does not use a new Plaid connection.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap items-end gap-3">
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-1">
-            <Label htmlFor="tok">Access token</Label>
-            <Input id="tok" value={token} onChange={(e) => setToken(e.target.value)} spellCheck={false} autoComplete="off"
-                   placeholder={`access-${env}-…`} className="font-mono text-xs" />
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="tok-owner">Initials</Label>
-            <Input id="tok-owner" className="w-28" maxLength={4} value={tokOwner} onChange={(e) => setTokOwner(e.target.value.toUpperCase())} />
-          </div>
-          {}
-          <Button className="min-w-32" disabled={!added && (!token.trim() || !tokOwner || Boolean(busy))}
-                  onClick={() => { if (!added) void run('existing', async () => {
-                    await engine.addToken(tokOwner, token);
-                    setToken('');
-                    flashAdded();
-                    await done();
-                  }); }}>
-            <Spin on={busy === 'existing'} /><FlashLabel on={added} done="Added">Add</FlashLabel>
-          </Button>
-        </CardContent>
-      </Card>
+      <AddExisting engine={engine} env={env} busy={busy} run={run} done={done} />
       <Problem error={error} />
-      <AlertDialog open={Boolean(removing)} onOpenChange={(o) => { if (!o) setRemoving(undefined); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove {removing && items[removing]?.institution_name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The addon forgets this connection and its account settings. Activities in Wealthfolio stay. Make a backup first if you
-              may need the access token again.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep it</AlertDialogCancel>
-            <AlertDialogAction variant="destructive"
-                               onClick={() => { if (removing) void run('remove', async () => { await engine.removeItem(removing); await done(); }); }}>
-              Remove
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <RemoveDialog name={removing && items[removing]?.institution_name} onClose={() => setRemoving(undefined)}
+                    onRemove={() => { if (removing) void run('remove', async () => { await engine.removeItem(removing); await done(); }); }} />
     </div>
+  );
+}
+
+type Busy = ReturnType<typeof useBusy>;
+
+function ConnectionsTable({ engine, items, busy, linking, reload, onReconnect, onRemove }: { engine: Engine; items: Record<string, ItemMeta>;
+  busy: string | undefined; linking: boolean; reload: () => void; onReconnect: (id: string, owner: string) => void; onRemove: (id: string) => void }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg">Connections</CardTitle>
+        <CardDescription>Initials name the accounts not yet created in Wealthfolio. Existing accounts need to be renamed manually in Wealthfolio.</CardDescription>
+      </CardHeader>
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="ps-6">Initials</TableHead>
+              <TableHead>Institution</TableHead>
+              <TableHead>Products</TableHead>
+              <TableHead>Accounts checked</TableHead>
+              <TableHead className="pe-6 text-end">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {Object.entries(items).map(([id, m]) => (
+              <TableRow key={id}>
+                <TableCell className="ps-6"><OwnerCell engine={engine} itemId={id} value={m.owner} onSaved={reload} /></TableCell>
+                <TableCell>
+                  {m.institution_name}
+                  {m.reconnect && <Badge variant="destructive" className="ms-2">Reconnect needed</Badge>}
+                </TableCell>
+                <TableCell className="text-muted-foreground text-sm">{(m.products ?? []).join(', ')}</TableCell>
+                <TableCell className="text-muted-foreground text-sm">{ago(m.checked)}</TableCell>
+                <TableCell className="pe-6 text-end">
+                  <div className="flex justify-end gap-2">
+                    <Button variant={m.reconnect ? 'default' : 'outline'} size="sm" disabled={Boolean(busy) || linking} onClick={() => onReconnect(id, m.owner)}>
+                      Reconnect
+                    </Button>
+                    <Button variant="ghost" size="sm" disabled={Boolean(busy)} aria-label={`Remove ${m.institution_name}`} onClick={() => onRemove(id)}>
+                      <Icons.Trash className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AddExisting({ engine, env, busy, run, done }: { engine: Engine; env: PlaidEnv; busy: string | undefined; run: Busy['run']; done: () => Promise<void> }) {
+  const [added, flashAdded] = useFlash();
+  const [tokOwner, setTokOwner] = useState('');
+  const [token, setToken] = useState('');
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg">Add an existing connection</CardTitle>
+        <CardDescription>Paste one access token. Does not use a new Plaid connection.</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-wrap items-end gap-3">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-1">
+          <Label htmlFor="tok">Access token</Label>
+          <Input id="tok" value={token} onChange={(e) => setToken(e.target.value)} spellCheck={false} autoComplete="off"
+                 placeholder={`access-${env}-…`} className="font-mono text-xs" />
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="tok-owner">Initials</Label>
+          <Input id="tok-owner" className="w-28" maxLength={4} value={tokOwner} onChange={(e) => setTokOwner(e.target.value.toUpperCase())} />
+        </div>
+        <Button className="min-w-32" disabled={!added && (!token.trim() || !tokOwner || Boolean(busy))}
+                onClick={() => { if (!added) void run('existing', async () => {
+                  await engine.addToken(tokOwner, token);
+                  setToken('');
+                  flashAdded();
+                  await done();
+                }); }}>
+          <Spin on={busy === 'existing'} /><FlashLabel on={added} done="Added">Add</FlashLabel>
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function RemoveDialog({ name, onClose, onRemove }: { name: string | undefined; onClose: () => void; onRemove: () => void }) {
+  return (
+    <AlertDialog open={Boolean(name)} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Remove {name}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            The addon forgets this connection and its account settings. Activities in Wealthfolio stay. Make a backup first if you
+            may need the access token again.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Keep it</AlertDialogCancel>
+          <AlertDialogAction variant="destructive"
+                             onClick={onRemove}>
+            Remove
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

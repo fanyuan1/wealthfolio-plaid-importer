@@ -1,57 +1,12 @@
 {
-  "src/ui/accounts.tsx": {
-    "lints/exhaustive-deps": {
-      "count": 4
-    },
-    "lints/max-lines-per-function": {
-      "count": 1
-    },
-    "react-hooks/exhaustive-deps": {
-      "count": 4
-    }
-  },
-  "src/ui/backup.tsx": {
-    "lints/max-lines-per-function": {
-      "count": 1
-    }
-  },
   "src/ui/common.tsx": {
     "lints/no-deprecated": {
-      "count": 1
-    },
-    "lints/no-unnecessary-type-assertion": {
       "count": 1
     }
   },
   "src/ui/connections.tsx": {
-    "lints/max-lines-per-function": {
-      "count": 1
-    },
     "lints/no-deprecated": {
       "count": 1
-    }
-  },
-  "src/ui/matches.tsx": {
-    "lints/max-lines-per-function": {
-      "count": 1
-    }
-  },
-  "src/ui/page.tsx": {
-    "lints/max-lines-per-function": {
-      "count": 1
-    }
-  },
-  "src/ui/securities.tsx": {
-    "lints/max-lines-per-function": {
-      "count": 2
-    },
-    "lints/max-params": {
-      "count": 1
-    }
-  },
-  "src/ui/sync.tsx": {
-    "lints/max-lines-per-function": {
-      "count": 2
     }
   }
 }

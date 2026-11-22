@@ -3,7 +3,7 @@ import ABBREV_DATA from "./abbreviations.json";
 import type { AccountCfg } from "./plan";
 import type { HoldingsData, PlaidAccount, PlaidIdentityAccount } from "./plaidTypes";
 
-export interface ItemInfo {
+interface ItemInfo {
   owner: string; institution_name: string; institution_id?: string | null | undefined; products?: string[] | undefined; country?: string;
 }
 

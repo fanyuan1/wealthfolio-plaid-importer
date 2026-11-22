@@ -15,7 +15,7 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
   const secs = dry?.securities ?? [];
   const { stale, result, failed, refused } = view;
   const set = (p: Partial<SyncView>) => engine.setView(p);
-  const [moving, setMoving] = useState<[string, Set<string>]>();
+  const [moving, setMoving] = useState<Moving>();
   const [attention, setAttention] = useState(0);
   const [last, setLast] = useState<{ time: string; message: string } | null>(null);
   const { error: loadError, fail } = useBusy();
@@ -24,8 +24,6 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
   const pushing = task?.label === 'push' ? task.progress : [];
 
   const names = accountNames(dry?.cfg ?? {});
-  const byType = new Map<string, number>();
-  for (const a of dry?.plan.new ?? []) byType.set(a.activityType, (byType.get(a.activityType) ?? 0) + 1);
   const stages = dry ? [dry.plan.new.length, dry.plan.updates.length + dry.plan.voids.length + dry.plan.retype.length, dry.plan.pairs.length, dry.plan.categories.size]
     .filter((n) => n > 0).length : 0;
   const groups = dry ? todoGroups(dry.todo) : [];
@@ -48,92 +46,18 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
 
   return (
     <div className="flex flex-col gap-4">
-      <Card>
-        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-4 space-y-0">
-          <div className="flex flex-col gap-1.5">
-            <CardTitle className="text-lg">Step 4: Pull new data</CardTitle>
-            <CardDescription>
-              Dry run shows what would change. Push sends exactly that.{' '}
-              {last ? `Last push ${new Date(last.time).toLocaleString()}.` : 'Nothing pushed yet.'}
-            </CardDescription>
-          </div>
-          <div className={ACTIONS}>
-            <Button variant="outline" disabled={Boolean(busy)} onClick={() => void dryRun()}>
-              <Spin on={busy === 'dry'} /><Icons.RefreshCw className="h-4 w-4" />Dry run
-            </Button>
-            <Button disabled={!dry || stale || attention > 0 || Boolean(busy)} onClick={() => void push()}>
-              <Spin on={busy === 'push'} /><Icons.Upload className="h-4 w-4" />Push to Wealthfolio
-            </Button>
-          </div>
-        </CardHeader>
-        {(progress.length > 0 || dry) && (
-          <CardContent className="flex flex-col gap-4">
-            <ProgressList list={progress} />
-            {dry?.fetched.pulledAt && !busy && (
-              <span className="text-muted-foreground text-xs">
-                Plaid data from {new Date(dry.fetched.pulledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. Dry run reuses it for 15 minutes.{' '}
-                <button type="button" className="text-primary underline underline-offset-2" onClick={() => void dryRun(true)}>Pull fresh from Plaid</button>
-              </span>
-            )}
-            {dry && (
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-medium">Push would make:</span>
-                <Badge variant="info-subtle">{dry.plan.new.length} new</Badge>
-                <Badge variant="secondary">{dry.plan.updates.length} updated</Badge>
-                <Badge variant="secondary">{dry.plan.voids.length} removed</Badge>
-                <Badge variant="secondary">{dry.plan.pairs.length} transfers</Badge>
-                <Badge variant="secondary">{dry.plan.categories.size} categorized</Badge>
-                {[...byType].map(([t, n]) => <Badge key={t} variant="outline">{t} {n}</Badge>)}
-              </div>
-            )}
-          </CardContent>
-        )}
-      </Card>
+      <PullCard dry={dry} busy={busy} last={last} progress={progress} canPush={Boolean(dry) && !stale && attention === 0}
+                onDryRun={(fresh) => void dryRun(fresh)} onPush={() => void push()} />
 
-      {dry && dry.fetched.skipped.length > 0 && (
-        <Alert variant="destructive">
-          <Icons.AlertCircle className="h-4 w-4" />
-          <AlertTitle>Reconnect needed</AlertTitle>
-          <AlertDescription className="flex flex-col gap-2">
-            <span>{dry.fetched.skipped.join(', ')}. These were skipped. The others can be pushed.</span>
-            <div><Button size="sm" variant="outline" onClick={() => onStep('connections')}>Go to Connections</Button></div>
-          </AlertDescription>
-        </Alert>
-      )}
-      {dry && dry.plan.moved.size > 0 && (
-        <Alert variant="destructive">
-          <Icons.AlertTriangle className="h-4 w-4" />
-          <AlertTitle>Do not push yet</AlertTitle>
-          <AlertDescription className="flex flex-col gap-2">
-            <span>Pushed activities now map to another ticker, to cash or to Leave out. Delete them; the next push imports them again as set now.</span>
-            <div className="flex flex-wrap gap-2">
-              {[...dry.plan.moved].map(([sym, accts]) => (
-                <Button key={sym} size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => setMoving([sym, accts])}>
-                  Delete pushed {sym} activities
-                </Button>
-              ))}
-            </div>
-          </AlertDescription>
-        </Alert>
-      )}
+      {dry && <PlanAlerts dry={dry} busy={busy} onStep={onStep} onMove={(sym, accts) => setMoving([sym, accts])} />}
       {dry && dry.rebases.map((r) => (
         <RatioProposal key={r.sid} engine={engine} p={r} onDone={() => set({ stale: true })} />
       ))}
       {result && <Alert><Icons.CheckCircle className="h-4 w-4 text-green-600" /><AlertTitle>Pushed</AlertTitle><AlertDescription>{result}</AlertDescription></Alert>}
       <Problem error={error ?? loadError} />
       {stale && (
-        <Alert>
-          <AlertTitle>Securities changed</AlertTitle>
-          <AlertDescription className="flex flex-col gap-2">
-            <span>When you finish, update the preview. Push is off until then.</span>
-            <div>
-              <Button size="sm" disabled={!dry || Boolean(busy)}
-                      onClick={() => void start('replan', async () => { const d = await engine.replan(required(dry, 'dry run')); set({ dry: d, stale: false }); })}>
-                <Spin on={busy === 'replan'} /><Icons.RefreshCw className="h-3 w-3" />Update preview
-              </Button>
-            </div>
-          </AlertDescription>
-        </Alert>
+        <StaleAlert disabled={!dry || Boolean(busy)} busy={busy}
+                    onUpdate={() => void start('replan', async () => { const d = await engine.replan(required(dry, 'dry run')); set({ dry: d, stale: false }); })} />
       )}
       {attention > 0 && <Alert><AlertTitle>Review {attention} securities before you push</AlertTitle><AlertDescription>Push stays off until Needs attention is empty.</AlertDescription></Alert>}
       {secs.length > 0 && (
@@ -151,50 +75,170 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
         : <Matches list={dry.adoptions} names={names} onChange={(adoptions) => set({ dry: { ...dry, adoptions } })} />)}
       {groups.length > 0 && <TodoCards groups={groups} />}
 
-      <Dialog open={busy === 'push'} disablePointerDismissal>
-        <DialogContent showCloseButton={false} className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Spin on />Pushing to Wealthfolio…</DialogTitle>
-            <DialogDescription>Keep Wealthfolio open until it finishes. Closing it now can stop the push half way.</DialogDescription>
-          </DialogHeader>
-          <Bar value={stages ? Math.min(100, (100 * pushing.filter((p) => p.state !== 'running').length) / stages) : null} />
-          <ProgressList list={pushing} />
-        </DialogContent>
-      </Dialog>
-      <Dialog open={failed.length > 0} onOpenChange={(o) => { if (!o) set({ failed: [] }); }}>
-        <DialogContent className="max-h-[80dvh] max-w-3xl overflow-auto">
-          <DialogHeader>
-            <DialogTitle className="text-destructive">{failed.length === 1 ? '1 row was' : `${failed.length} rows were`} not saved</DialogTitle>
-            <DialogDescription>Wealthfolio rejected these rows, so they are missing. They stay in the preview: fix the cause below, then Update preview and push again.</DialogDescription>
-          </DialogHeader>
-          <FailedRows list={failed} />
-          <DialogFooter><Button onClick={() => set({ failed: [] })}>OK</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <AlertDialog open={Boolean(moving)} onOpenChange={(o) => { if (!o) setMoving(undefined); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete pushed {moving?.[0]} activities?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Wealthfolio cannot move an activity to another ticker. The addon deletes the {moving?.[0]} activities it pushed. Rows you
-              had before or edited stay. Then click Dry run: the next push imports them as the security is set now.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={() => {
-              if (!moving) return;
-              const [sym, accts] = moving;
-              void start('retrack', async () => {
-                const n = await engine.retrack(sym, accts);
-                set({ dry: undefined, result: `Deleted ${n} ${sym} activities. Click Dry run.` });
-                host.ctx?.api.query.invalidateQueries(['activities']);
-              });
-            }}>Delete</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <PushDialog open={busy === 'push'} stages={stages} pushing={pushing} />
+      <FailedDialog failed={failed} onClose={() => set({ failed: [] })} />
+      <MoveDialog moving={moving} onClose={() => setMoving(undefined)} onConfirm={([sym, accts]) => {
+        void start('retrack', async () => {
+          const n = await engine.retrack(sym, accts);
+          set({ dry: undefined, result: `Deleted ${n} ${sym} activities. Click Dry run.` });
+          host.ctx?.api.query.invalidateQueries(['activities']);
+        });
+      }} />
     </div>
+  );
+}
+
+type Dry = NonNullable<SyncView['dry']>;
+type Moving = [string, Set<string>];
+type ProgressRows = Parameters<typeof ProgressList>[0]['list'];
+
+function PullCard({ dry, busy, last, progress, canPush, onDryRun, onPush }: { dry: Dry | undefined; busy: string | undefined;
+  last: { time: string } | null; progress: ProgressRows; canPush: boolean; onDryRun: (fresh: boolean) => void; onPush: () => void }) {
+  const byType = new Map<string, number>();
+  for (const a of dry?.plan.new ?? []) byType.set(a.activityType, (byType.get(a.activityType) ?? 0) + 1);
+  return (
+    <Card>
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-4 space-y-0">
+        <div className="flex flex-col gap-1.5">
+          <CardTitle className="text-lg">Step 4: Pull new data</CardTitle>
+          <CardDescription>
+            Dry run shows what would change. Push sends exactly that.{' '}
+            {last ? `Last push ${new Date(last.time).toLocaleString()}.` : 'Nothing pushed yet.'}
+          </CardDescription>
+        </div>
+        <div className={ACTIONS}>
+          <Button variant="outline" disabled={Boolean(busy)} onClick={() => onDryRun(false)}>
+            <Spin on={busy === 'dry'} /><Icons.RefreshCw className="h-4 w-4" />Dry run
+          </Button>
+          <Button disabled={!canPush || Boolean(busy)} onClick={onPush}>
+            <Spin on={busy === 'push'} /><Icons.Upload className="h-4 w-4" />Push to Wealthfolio
+          </Button>
+        </div>
+      </CardHeader>
+      {(progress.length > 0 || dry) && (
+        <CardContent className="flex flex-col gap-4">
+          <ProgressList list={progress} />
+          {dry?.fetched.pulledAt && !busy && (
+            <span className="text-muted-foreground text-xs">
+              Plaid data from {new Date(dry.fetched.pulledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. Dry run reuses it for 15 minutes.{' '}
+              <button type="button" className="text-primary underline underline-offset-2" onClick={() => onDryRun(true)}>Pull fresh from Plaid</button>
+            </span>
+          )}
+          {dry && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium">Push would make:</span>
+              <Badge variant="info-subtle">{dry.plan.new.length} new</Badge>
+              <Badge variant="secondary">{dry.plan.updates.length} updated</Badge>
+              <Badge variant="secondary">{dry.plan.voids.length} removed</Badge>
+              <Badge variant="secondary">{dry.plan.pairs.length} transfers</Badge>
+              <Badge variant="secondary">{dry.plan.categories.size} categorized</Badge>
+              {[...byType].map(([t, n]) => <Badge key={t} variant="outline">{t} {n}</Badge>)}
+            </div>
+          )}
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
+function PlanAlerts({ dry, busy, onStep, onMove }: { dry: Dry; busy: string | undefined; onStep: (s: Step) => void;
+  onMove: (sym: string, accts: Set<string>) => void }) {
+  return (
+    <>
+      {dry.fetched.skipped.length > 0 && (
+        <Alert variant="destructive">
+          <Icons.AlertCircle className="h-4 w-4" />
+          <AlertTitle>Reconnect needed</AlertTitle>
+          <AlertDescription className="flex flex-col gap-2">
+            <span>{dry.fetched.skipped.join(', ')}. These were skipped. The others can be pushed.</span>
+            <div><Button size="sm" variant="outline" onClick={() => onStep('connections')}>Go to Connections</Button></div>
+          </AlertDescription>
+        </Alert>
+      )}
+      {dry.plan.moved.size > 0 && (
+        <Alert variant="destructive">
+          <Icons.AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Do not push yet</AlertTitle>
+          <AlertDescription className="flex flex-col gap-2">
+            <span>Pushed activities now map to another ticker, to cash or to Leave out. Delete them; the next push imports them again as set now.</span>
+            <div className="flex flex-wrap gap-2">
+              {[...dry.plan.moved].map(([sym, accts]) => (
+                <Button key={sym} size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => onMove(sym, accts)}>
+                  Delete pushed {sym} activities
+                </Button>
+              ))}
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+    </>
+  );
+}
+
+function StaleAlert({ disabled, busy, onUpdate }: { disabled: boolean; busy: string | undefined; onUpdate: () => void }) {
+  return (
+    <Alert>
+      <AlertTitle>Securities changed</AlertTitle>
+      <AlertDescription className="flex flex-col gap-2">
+        <span>When you finish, update the preview. Push is off until then.</span>
+        <div>
+          <Button size="sm" disabled={disabled}
+                  onClick={onUpdate}>
+            <Spin on={busy === 'replan'} /><Icons.RefreshCw className="h-3 w-3" />Update preview
+          </Button>
+        </div>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+function PushDialog({ open, stages, pushing }: { open: boolean; stages: number; pushing: ProgressRows }) {
+  return (
+    <Dialog open={open} disablePointerDismissal>
+      <DialogContent showCloseButton={false} className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><Spin on />Pushing to Wealthfolio…</DialogTitle>
+          <DialogDescription>Keep Wealthfolio open until it finishes. Closing it now can stop the push half way.</DialogDescription>
+        </DialogHeader>
+        <Bar value={stages ? Math.min(100, (100 * pushing.filter((p) => p.state !== 'running').length) / stages) : null} />
+        <ProgressList list={pushing} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function FailedDialog({ failed, onClose }: { failed: string[]; onClose: () => void }) {
+  return (
+    <Dialog open={failed.length > 0} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-h-[80dvh] max-w-3xl overflow-auto">
+        <DialogHeader>
+          <DialogTitle className="text-destructive">{failed.length === 1 ? '1 row was' : `${failed.length} rows were`} not saved</DialogTitle>
+          <DialogDescription>Wealthfolio rejected these rows, so they are missing. They stay in the preview: fix the cause below, then Update preview and push again.</DialogDescription>
+        </DialogHeader>
+        <FailedRows list={failed} />
+        <DialogFooter><Button onClick={onClose}>OK</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function MoveDialog({ moving, onClose, onConfirm }: { moving: Moving | undefined; onClose: () => void; onConfirm: (m: Moving) => void }) {
+  return (
+    <AlertDialog open={Boolean(moving)} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete pushed {moving?.[0]} activities?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Wealthfolio cannot move an activity to another ticker. The addon deletes the {moving?.[0]} activities it pushed. Rows you
+            had before or edited stay. Then click Dry run: the next push imports them as the security is set now.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" onClick={() => { if (moving) onConfirm(moving); }}>Delete</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -348,25 +392,29 @@ export function Daily({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; 
         </CardContent>
       </Card>
       {latest && <LastRun r={latest} onStep={onStep} />}
-      {rec.runs && rec.runs.length > 1 && (
-        <Card>
-          <CardHeader><CardTitle className="text-base">Recent runs</CardTitle></CardHeader>
-          <CardContent className="p-0">
-            <Table>
-              <TableBody>
-                {rec.runs.map((r) => (
-                  <TableRow key={r.time}>
-                    <TableCell className="whitespace-nowrap ps-6 text-sm">{new Date(r.time).toLocaleString()}</TableCell>
-                    <TableCell className="w-28"><Badge variant={STATUS[r.status][1]}>{STATUS[r.status][0]}</Badge></TableCell>
-                    <TableCell className="text-muted-foreground min-w-56 pe-6 text-sm">{r.message}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+      {rec.runs && rec.runs.length > 1 && <RecentRuns runs={rec.runs} />}
     </div>
+  );
+}
+
+function RecentRuns({ runs }: { runs: RunRecord[] }) {
+  return (
+    <Card>
+      <CardHeader><CardTitle className="text-base">Recent runs</CardTitle></CardHeader>
+      <CardContent className="p-0">
+        <Table>
+          <TableBody>
+            {runs.map((r) => (
+              <TableRow key={r.time}>
+                <TableCell className="whitespace-nowrap ps-6 text-sm">{new Date(r.time).toLocaleString()}</TableCell>
+                <TableCell className="w-28"><Badge variant={STATUS[r.status][1]}>{STATUS[r.status][0]}</Badge></TableCell>
+                <TableCell className="text-muted-foreground min-w-56 pe-6 text-sm">{r.message}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 }
 

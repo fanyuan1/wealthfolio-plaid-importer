@@ -9,18 +9,17 @@ const ORDER: How[] = ['new', 'similar', 'exact'];
 const line = (r: { date: string; type: string; symbol: string | null; amount: string | null; quantity: string | null }) =>
   `${r.date} · ${r.type}${r.symbol ? ` ${r.symbol}` : ''} · ${r.quantity && r.symbol ? `${r.quantity} sh` : (r.amount ?? '—')}`;
 
+type Decide = (keys: Set<string>, decision: Adoption['decision']) => void;
+
 export function Matches({ list, names, onChange }: { list: Adoption[]; names: Record<string, string>; onChange: (next: Adoption[]) => void }) {
-  const [toggled, setToggled] = useState<Partial<Record<How, boolean>>>({});
   const [compare, setCompare] = useState<string>();
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [shown, setShown] = useState<Partial<Record<How, number>>>({});
   if (!list.length) return null;
-  const set = (keys: Set<string>, decision: Adoption['decision']) => {
+  const set: Decide = (keys, decision) => {
     onChange(list.map((a) => (keys.has(a.key) ? { ...a, decision } : a)));
     setPicked(new Set());
   };
   const adding = list.filter((a) => a.decision === 'add').length;
-  const flip = (k: Set<string>, key: string) => { const n = new Set(k); if (!n.delete(key)) n.add(key); return n; };
 
   return (
     <Card>
@@ -37,85 +36,112 @@ export function Matches({ list, names, onChange }: { list: Adoption[]; names: Re
         {ORDER.map((how) => {
           const rows = list.filter((a) => a.how === how).sort((a, b) => b.row.date.localeCompare(a.row.date) || a.key.localeCompare(b.key));
           if (!rows.length) return null;
-          const open = toggled[how] ?? true;
-          const added = rows.filter((a) => a.decision === 'add').length;
-          const mine = new Set(rows.filter((a) => picked.has(a.key)).map((a) => a.key));
-          const pick = (keys: string[]) => setPicked((p) => new Set([...[...p].filter((k) => !rows.some((a) => a.key === k)), ...keys]));
-          const limit = shown[how] ?? PAGE;
-          return (
-            <div key={how} className="border-t">
-              <button type="button" className="hover:bg-muted/50 flex w-full items-center gap-2 px-6 py-3 text-start"
-                      onClick={() => setToggled((t) => ({ ...t, [how]: !open }))}>
-                {open ? <Icons.ChevronDown className="h-4 w-4" /> : <Icons.ChevronRight className="h-4 w-4" />}
-                <span className="font-medium">{HOW[how]}</span>
-                <Badge variant="secondary">{rows.length}</Badge>
-                <Badge variant={added ? 'info-subtle' : 'secondary'}>{added} to add</Badge>
-              </button>
-              {open && (
-                <>
-                  <div className="flex flex-wrap items-center gap-2 px-6 pb-3">
-                    <Button size="sm" variant="outline" onClick={() => pick(rows.map((a) => a.key))}>Select all</Button>
-                    <Button size="sm" variant="outline" disabled={!mine.size} onClick={() => pick([])}>Clear</Button>
-                    <span className="text-muted-foreground text-sm">{mine.size} selected</span>
-                    <Button size="sm" disabled={!mine.size} onClick={() => set(mine, 'add')}>Add</Button>
-                    <Button size="sm" disabled={!mine.size} onClick={() => set(mine, 'discard')}>Discard</Button>
-                  </div>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-10 ps-6"></TableHead>
-                        <TableHead>Account</TableHead>
-                        <TableHead>From Plaid</TableHead>
-                        <TableHead>Already in Wealthfolio</TableHead>
-                        <TableHead className="pe-6 text-end"></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {rows.slice(0, limit).map((a) => (
-                        <Fragment key={a.key}>
-                        <TableRow>
-                          <TableCell className="ps-6">
-                            <input type="checkbox" aria-label="Select" checked={picked.has(a.key)} onChange={() => setPicked((p) => flip(p, a.key))} />
-                          </TableCell>
-                          <TableCell>{names[a.accountId] ?? a.accountId}</TableCell>
-                          <TableCell>{line(a.row)}</TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {a.existing ? line(a.existing)
-                              : a.held !== undefined ? `Holds ${a.held} sh before ${a.row.date}${a.how === 'exact' ? ' · same as Plaid' : ''}` : '—'}
-                          </TableCell>
-                          <TableCell className="pe-6 text-end">
-                            <div className="flex justify-end gap-2">
-                              {a.how !== 'new' && (
-                                <Button size="sm" variant="ghost" onClick={() => setCompare(compare === a.key ? undefined : a.key)}>
-                                  {compare === a.key ? 'Hide' : 'Compare'}
-                                </Button>
-                              )}
-                              <Button size="sm" variant={a.decision === 'add' ? 'default' : 'outline'} onClick={() => set(new Set([a.key]), 'add')}>Add</Button>
-                              <Button size="sm" variant={a.decision === 'discard' ? 'default' : 'outline'} onClick={() => set(new Set([a.key]), 'discard')}>Discard</Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                        {compare === a.key && (
-                          <TableRow>
-                            <TableCell colSpan={5} className="px-6"><Versions a={a} /></TableCell>
-                          </TableRow>
-                        )}
-                        </Fragment>
-                      ))}
-                    </TableBody>
-                  </Table>
-                  {rows.length > limit && (
-                    <div className="p-3 text-center">
-                      <Button size="sm" variant="ghost" onClick={() => setShown((s) => ({ ...s, [how]: limit + PAGE }))}>Show more ({rows.length - limit} left)</Button>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          );
+          return <MatchGroup key={how} how={how} rows={rows} names={names} picked={picked} setPicked={setPicked} set={set}
+                             compare={compare} setCompare={setCompare} />;
         })}
       </CardContent>
     </Card>
+  );
+}
+
+const flip = (k: Set<string>, key: string) => { const n = new Set(k); if (!n.delete(key)) n.add(key); return n; };
+
+interface GroupProps {
+  how: How;
+  rows: Adoption[];
+  names: Record<string, string>;
+  picked: Set<string>;
+  setPicked: (f: (p: Set<string>) => Set<string>) => void;
+  set: Decide;
+  compare: string | undefined;
+  setCompare: (key: string | undefined) => void;
+}
+
+function MatchGroup({ how, rows, names, picked, setPicked, set, compare, setCompare }: GroupProps) {
+  const [open, setOpen] = useState(true);
+  const [limit, setLimit] = useState(PAGE);
+  const added = rows.filter((a) => a.decision === 'add').length;
+  const mine = new Set(rows.filter((a) => picked.has(a.key)).map((a) => a.key));
+  const pick = (keys: string[]) => setPicked((p) => new Set([...[...p].filter((k) => !rows.some((a) => a.key === k)), ...keys]));
+  return (
+    <div className="border-t">
+      <button type="button" className="hover:bg-muted/50 flex w-full items-center gap-2 px-6 py-3 text-start"
+              onClick={() => setOpen(!open)}>
+        {open ? <Icons.ChevronDown className="h-4 w-4" /> : <Icons.ChevronRight className="h-4 w-4" />}
+        <span className="font-medium">{HOW[how]}</span>
+        <Badge variant="secondary">{rows.length}</Badge>
+        <Badge variant={added ? 'info-subtle' : 'secondary'}>{added} to add</Badge>
+      </button>
+      {open && (
+        <>
+          <div className="flex flex-wrap items-center gap-2 px-6 pb-3">
+            <Button size="sm" variant="outline" onClick={() => pick(rows.map((a) => a.key))}>Select all</Button>
+            <Button size="sm" variant="outline" disabled={!mine.size} onClick={() => pick([])}>Clear</Button>
+            <span className="text-muted-foreground text-sm">{mine.size} selected</span>
+            <Button size="sm" disabled={!mine.size} onClick={() => set(mine, 'add')}>Add</Button>
+            <Button size="sm" disabled={!mine.size} onClick={() => set(mine, 'discard')}>Discard</Button>
+          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-10 ps-6"></TableHead>
+                <TableHead>Account</TableHead>
+                <TableHead>From Plaid</TableHead>
+                <TableHead>Already in Wealthfolio</TableHead>
+                <TableHead className="pe-6 text-end"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.slice(0, limit).map((a) => (
+                <MatchRow key={a.key} a={a} name={names[a.accountId] ?? a.accountId} selected={picked.has(a.key)}
+                          onSelect={() => setPicked((p) => flip(p, a.key))} comparing={compare === a.key}
+                          onCompare={() => setCompare(compare === a.key ? undefined : a.key)} set={set} />
+              ))}
+            </TableBody>
+          </Table>
+          {rows.length > limit && (
+            <div className="p-3 text-center">
+              <Button size="sm" variant="ghost" onClick={() => setLimit(limit + PAGE)}>Show more ({rows.length - limit} left)</Button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function MatchRow({ a, name, selected, onSelect, comparing, onCompare, set }: { a: Adoption; name: string; selected: boolean; onSelect: () => void;
+  comparing: boolean; onCompare: () => void; set: Decide }) {
+  return (
+    <Fragment>
+      <TableRow>
+        <TableCell className="ps-6">
+          <input type="checkbox" aria-label="Select" checked={selected} onChange={onSelect} />
+        </TableCell>
+        <TableCell>{name}</TableCell>
+        <TableCell>{line(a.row)}</TableCell>
+        <TableCell className="text-muted-foreground">
+          {a.existing ? line(a.existing)
+            : a.held !== undefined ? `Holds ${a.held} sh before ${a.row.date}${a.how === 'exact' ? ' · same as Plaid' : ''}` : '—'}
+        </TableCell>
+        <TableCell className="pe-6 text-end">
+          <div className="flex justify-end gap-2">
+            {a.how !== 'new' && (
+              <Button size="sm" variant="ghost" onClick={onCompare}>
+                {comparing ? 'Hide' : 'Compare'}
+              </Button>
+            )}
+            <Button size="sm" variant={a.decision === 'add' ? 'default' : 'outline'} onClick={() => set(new Set([a.key]), 'add')}>Add</Button>
+            <Button size="sm" variant={a.decision === 'discard' ? 'default' : 'outline'} onClick={() => set(new Set([a.key]), 'discard')}>Discard</Button>
+          </div>
+        </TableCell>
+      </TableRow>
+      {comparing && (
+        <TableRow>
+          <TableCell colSpan={5} className="px-6"><Versions a={a} /></TableCell>
+        </TableRow>
+      )}
+    </Fragment>
   );
 }
 
