@@ -6,54 +6,22 @@
     "lints/max-params": {
       "count": 2
     },
-    "lints/no-base-to-string": {
-      "count": 2
-    },
-    "lints/no-dynamic-delete": {
-      "count": 4
-    },
     "lints/no-non-null-assertion": {
-      "count": 16
+      "count": 10
     },
     "lints/no-unnecessary-condition": {
-      "count": 3
+      "count": 1
     },
     "lints/no-unnecessary-template-expression": {
       "count": 1
     },
     "lints/no-unnecessary-type-assertion": {
-      "count": 3
+      "count": 1
     },
     "lints/no-unnecessary-type-conversion": {
       "count": 2
     },
-    "lints/no-unsafe-argument": {
-      "count": 33
-    },
-    "lints/no-unsafe-assignment": {
-      "count": 30
-    },
-    "lints/no-unsafe-call": {
-      "count": 4
-    },
-    "lints/no-unsafe-member-access": {
-      "count": 49
-    },
-    "lints/no-unsafe-return": {
-      "count": 5
-    },
     "lints/no-unused-vars": {
-      "count": 1
-    }
-  },
-  "src/engine/store.ts": {
-    "lints/no-unsafe-argument": {
-      "count": 1
-    },
-    "lints/no-unsafe-assignment": {
-      "count": 1
-    },
-    "lints/no-unsafe-member-access": {
       "count": 1
     }
   },
@@ -74,24 +42,6 @@
   "src/importer/accounts.ts": {
     "lints/max-params": {
       "count": 2
-    },
-    "lints/no-base-to-string": {
-      "count": 1
-    },
-    "lints/no-unsafe-argument": {
-      "count": 14
-    },
-    "lints/no-unsafe-assignment": {
-      "count": 3
-    },
-    "lints/no-unsafe-call": {
-      "count": 6
-    },
-    "lints/no-unsafe-member-access": {
-      "count": 10
-    },
-    "lints/no-unsafe-return": {
-      "count": 4
     }
   },
   "src/importer/adopt.ts": {
@@ -109,39 +59,13 @@
   },
   "src/importer/fetch.ts": {
     "lints/cognitive-complexity": {
-      "count": 2
+      "count": 1
     },
     "lints/max-params": {
       "count": 2
     },
     "lints/no-console": {
       "count": 1
-    },
-    "lints/no-unnecessary-condition": {
-      "count": 3
-    },
-    "lints/no-unsafe-argument": {
-      "count": 2
-    },
-    "lints/no-unsafe-assignment": {
-      "count": 5
-    },
-    "lints/no-unsafe-call": {
-      "count": 2
-    },
-    "lints/no-unsafe-member-access": {
-      "count": 7
-    },
-    "lints/no-unsafe-return": {
-      "count": 1
-    },
-    "lints/restrict-plus-operands": {
-      "count": 2
-    }
-  },
-  "src/importer/ledger.ts": {
-    "lints/no-base-to-string": {
-      "count": 2
     }
   },
   "src/importer/mapInvestments.ts": {
@@ -154,21 +78,6 @@
     "lints/max-params": {
       "count": 2
     },
-    "lints/no-non-null-assertion": {
-      "count": 10
-    },
-    "lints/no-unsafe-argument": {
-      "count": 16
-    },
-    "lints/no-unsafe-assignment": {
-      "count": 9
-    },
-    "lints/no-unsafe-member-access": {
-      "count": 1
-    },
-    "lints/no-unsafe-return": {
-      "count": 1
-    },
     "lints/restrict-template-expressions": {
       "count": 2
     }
@@ -176,49 +85,16 @@
   "src/importer/mapTransactions.ts": {
     "lints/cognitive-complexity": {
       "count": 1
-    },
-    "lints/no-non-null-assertion": {
-      "count": 4
-    },
-    "lints/no-unsafe-argument": {
-      "count": 3
-    },
-    "lints/no-unsafe-assignment": {
-      "count": 6
-    },
-    "lints/no-unsafe-member-access": {
-      "count": 2
     }
   },
   "src/importer/models.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
     "lints/max-params": {
-      "count": 1
-    },
-    "lints/no-explicit-any": {
       "count": 1
     }
   },
   "src/importer/plaid.ts": {
     "lints/max-params": {
       "count": 2
-    },
-    "lints/no-non-null-assertion": {
-      "count": 5
-    },
-    "lints/no-unsafe-argument": {
-      "count": 6
-    },
-    "lints/no-unsafe-assignment": {
-      "count": 4
-    },
-    "lints/no-unsafe-member-access": {
-      "count": 3
-    },
-    "lints/no-unsafe-return": {
-      "count": 3
     }
   },
   "src/importer/plan.ts": {
@@ -234,24 +110,6 @@
     "lints/max-params": {
       "count": 1
     },
-    "lints/no-non-null-assertion": {
-      "count": 3
-    },
-    "lints/no-unnecessary-type-conversion": {
-      "count": 1
-    },
-    "lints/no-unsafe-argument": {
-      "count": 18
-    },
-    "lints/no-unsafe-assignment": {
-      "count": 9
-    },
-    "lints/no-unsafe-member-access": {
-      "count": 10
-    },
-    "lints/no-unsafe-return": {
-      "count": 2
-    },
     "lints/prefer-const": {
       "count": 1
     },
@@ -266,34 +124,8 @@
     "lints/max-params": {
       "count": 3
     },
-    "lints/no-non-null-assertion": {
-      "count": 10
-    },
-    "lints/no-unnecessary-type-assertion": {
-      "count": 5
-    },
-    "lints/no-unsafe-argument": {
-      "count": 5
-    },
-    "lints/no-unsafe-assignment": {
-      "count": 5
-    },
-    "lints/no-unsafe-member-access": {
-      "count": 1
-    },
     "lints/restrict-template-expressions": {
       "count": 13
-    }
-  },
-  "src/importer/prices.ts": {
-    "lints/no-unsafe-assignment": {
-      "count": 2
-    },
-    "lints/no-unsafe-call": {
-      "count": 1
-    },
-    "lints/no-unsafe-member-access": {
-      "count": 4
     }
   },
   "src/importer/push.ts": {
@@ -328,24 +160,6 @@
     },
     "lints/max-params": {
       "count": 1
-    },
-    "lints/no-non-null-assertion": {
-      "count": 4
-    },
-    "lints/no-unnecessary-type-assertion": {
-      "count": 4
-    },
-    "lints/no-unsafe-argument": {
-      "count": 10
-    },
-    "lints/no-unsafe-assignment": {
-      "count": 7
-    },
-    "lints/no-unsafe-member-access": {
-      "count": 11
-    },
-    "lints/restrict-plus-operands": {
-      "count": 1
     }
   },
   "src/importer/todo.ts": {
@@ -359,33 +173,10 @@
   "src/importer/tracking.ts": {
     "lints/max-params": {
       "count": 1
-    },
-    "lints/no-non-null-assertion": {
-      "count": 2
-    },
-    "lints/no-unnecessary-condition": {
-      "count": 1
-    },
-    "lints/no-unsafe-argument": {
-      "count": 8
-    },
-    "lints/no-unsafe-assignment": {
-      "count": 1
-    },
-    "lints/no-unsafe-member-access": {
-      "count": 5
     }
   },
   "src/importer/transfers.ts": {
     "lints/no-unnecessary-condition": {
-      "count": 1
-    }
-  },
-  "src/index.tsx": {
-    "lints/no-misused-promises": {
-      "count": 2
-    },
-    "lints/use-unknown-in-catch-callback-variable": {
       "count": 1
     }
   },
@@ -399,14 +190,8 @@
     "lints/no-implicit-coercion": {
       "count": 5
     },
-    "lints/no-misused-promises": {
-      "count": 3
-    },
     "lints/no-non-null-assertion": {
       "count": 2
-    },
-    "lints/use-unknown-in-catch-callback-variable": {
-      "count": 1
     },
     "react-hooks/exhaustive-deps": {
       "count": 4
@@ -419,31 +204,13 @@
     "lints/no-implicit-coercion": {
       "count": 7
     },
-    "lints/no-misused-promises": {
-      "count": 6
-    },
     "lints/no-non-null-assertion": {
-      "count": 1
-    },
-    "lints/no-unsafe-argument": {
-      "count": 1
-    },
-    "lints/no-unsafe-assignment": {
-      "count": 1
-    },
-    "lints/no-unsafe-member-access": {
-      "count": 6
-    },
-    "lints/use-unknown-in-catch-callback-variable": {
       "count": 1
     }
   },
   "src/ui/common.tsx": {
     "lints/no-deprecated": {
       "count": 1
-    },
-    "lints/no-misused-promises": {
-      "count": 2
     },
     "lints/no-unnecessary-type-assertion": {
       "count": 1
@@ -452,9 +219,6 @@
       "count": 1
     },
     "lints/no-unused-vars": {
-      "count": 1
-    },
-    "lints/use-unknown-in-catch-callback-variable": {
       "count": 1
     }
   },
@@ -468,13 +232,7 @@
     "lints/no-implicit-coercion": {
       "count": 7
     },
-    "lints/no-misused-promises": {
-      "count": 8
-    },
     "lints/no-non-null-assertion": {
-      "count": 1
-    },
-    "lints/use-unknown-in-catch-callback-variable": {
       "count": 1
     }
   },
@@ -490,14 +248,8 @@
     "lints/no-implicit-coercion": {
       "count": 1
     },
-    "lints/no-misused-promises": {
-      "count": 1
-    },
     "lints/no-non-null-assertion": {
       "count": 2
-    },
-    "lints/use-unknown-in-catch-callback-variable": {
-      "count": 1
     }
   },
   "src/ui/securities.tsx": {
@@ -510,28 +262,13 @@
     "lints/no-implicit-coercion": {
       "count": 3
     },
-    "lints/no-misused-promises": {
-      "count": 2
-    },
     "lints/no-non-null-assertion": {
       "count": 5
-    },
-    "lints/no-unsafe-argument": {
-      "count": 4
-    },
-    "lints/no-unsafe-member-access": {
-      "count": 4
     }
   },
   "src/ui/setup.tsx": {
     "lints/no-implicit-coercion": {
       "count": 2
-    },
-    "lints/no-misused-promises": {
-      "count": 1
-    },
-    "lints/use-unknown-in-catch-callback-variable": {
-      "count": 1
     }
   },
   "src/ui/sync.tsx": {
@@ -541,36 +278,12 @@
     "lints/no-implicit-coercion": {
       "count": 7
     },
-    "lints/no-misused-promises": {
-      "count": 6
-    },
     "lints/no-non-null-assertion": {
       "count": 6
-    },
-    "lints/use-unknown-in-catch-callback-variable": {
-      "count": 2
     }
   },
   "test/e2e/fake-plaid.ts": {
     "lints/max-params": {
-      "count": 1
-    },
-    "lints/no-explicit-any": {
-      "count": 1
-    },
-    "lints/no-non-null-assertion": {
-      "count": 1
-    },
-    "lints/no-unsafe-argument": {
-      "count": 4
-    },
-    "lints/no-unsafe-assignment": {
-      "count": 3
-    },
-    "lints/no-unsafe-member-access": {
-      "count": 1
-    },
-    "lints/restrict-plus-operands": {
       "count": 1
     }
   },
@@ -579,9 +292,6 @@
       "count": 1
     },
     "lints/no-meaningless-void-operator": {
-      "count": 1
-    },
-    "lints/no-unsafe-argument": {
       "count": 1
     },
     "lints/rules-of-hooks": {
@@ -605,17 +315,6 @@
   "test/e2e/startup.spec.ts": {
     "lints/no-meaningless-void-operator": {
       "count": 1
-    }
-  },
-  "test/e2e/wealthfolio.ts": {
-    "lints/no-unsafe-assignment": {
-      "count": 1
-    },
-    "lints/no-unsafe-member-access": {
-      "count": 3
-    },
-    "lints/no-unsafe-return": {
-      "count": 2
     }
   },
   "test/engine/store.test.ts": {
@@ -650,12 +349,6 @@
     }
   },
   "test/importer/accounts.test.ts": {
-    "lints/no-explicit-any": {
-      "count": 1
-    },
-    "lints/no-unsafe-member-access": {
-      "count": 2
-    },
     "lints/require-await": {
       "count": 1
     }
@@ -671,12 +364,6 @@
     },
     "lints/no-non-null-assertion": {
       "count": 12
-    },
-    "lints/no-unsafe-argument": {
-      "count": 6
-    },
-    "lints/no-unsafe-member-access": {
-      "count": 2
     },
     "lints/prefer-const": {
       "count": 1

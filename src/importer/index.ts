@@ -11,6 +11,8 @@ export * from "./ledger";
 export * from "./plan";
 export * from "./push";
 export * from "./plaid";
+export * from "./plaidTypes";
+export * from "./json";
 export * from "./fetch";
 export * from "./prices";
 export * from "./todo";

@@ -4,9 +4,10 @@ import { type Dec, dec, ZERO } from "./dec";
 import { type Ledger, type LedgerRow, differs } from "./ledger";
 import { mapInvestmentTransactions } from "./mapInvestments";
 import { biltPassthrough, mapBankTransaction } from "./mapTransactions";
-import { Activity, type Review, review, type Row } from "./models";
+import { Activity, type Review, review } from "./models";
+import type { HoldingsData, InvestmentData, PlaidBalances, PlaidSecurity, TransactionsData } from "./plaidTypes";
 import { fixSplitPrices, type HoldingMap, holdingsBySymbol, openingActivities, positions, reconcile, resolveSplits } from "./positions";
-import { yahooSymbol } from "./securities";
+import { type SecurityOverride, yahooSymbol } from "./securities";
 import { convert } from "./tracking";
 import { MAX_DAYS, matchTransfers } from "./transfers";
 
@@ -28,11 +29,12 @@ export function openingDay(state: Ledger, windowStart: string): string {
 }
 
 export interface AccountCfg {
-  item_id: string; kind: string; skip?: boolean; currency?: string; plaid_subtype?: string; name?: string;
-  wealthfolio_account_id?: string | null; match?: string; [k: string]: unknown;
+  item_id: string; kind: string; skip?: boolean; currency?: string; plaid_subtype?: string; plaid_type?: string; name?: string;
+  wealthfolio_account_id?: string | null; match?: string; owner?: string; institution?: string; institution_id?: string | null | undefined;
+  plaid_name?: string; mask?: string; joint?: boolean; not_joint?: boolean;
 }
 
-export const accountLabel = (cfg: Record<string, AccountCfg>, aid: string) => String(cfg[aid]?.name ?? aid);
+export const accountLabel = (cfg: Record<string, AccountCfg>, aid: string) => cfg[aid]?.name ?? aid;
 export const accountNames = (cfg: Record<string, AccountCfg>) => Object.fromEntries(Object.keys(cfg).map((aid) => [aid, accountLabel(cfg, aid)]));
 
 export function activeAccounts(cfg: Record<string, AccountCfg>, itemId: string): Record<string, AccountCfg> {
@@ -43,12 +45,12 @@ export interface ItemData {
   itemId: string;
   owner: string;
   institution: string;
-  inv?: Row | null;
-  holdings?: Row | null;
+  inv?: InvestmentData | null;
+  holdings?: HoldingsData | null;
   invStart: Record<string, string>;
-  tx?: Row | null;
+  tx?: TransactionsData | null;
   firstTxSync?: boolean;
-  balances?: Record<string, Row>;
+  balances?: Record<string, PlaidBalances>;
 }
 
 export interface Plan {
@@ -73,7 +75,7 @@ function earliest(acts: Activity[], aid: string, today: string): string {
   return ds.length ? ds.reduce((m, d) => (d < m ? d : m)) : today;
 }
 
-export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>, symbols: Record<string, Row>,
+export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>, symbols: Record<string, SecurityOverride>,
   state: Ledger, today: string, backfill: Set<string> = new Set(), closes?: ClosesFn): Plan {
   const p: Plan = {
     new: [], updates: [], voids: [], retype: [], pairs: [], categories: new Map(), reviews: [],
@@ -91,11 +93,11 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
     if (d.inv != null) {
       const ids = new Set(Object.keys(accts).filter((a) => valueAt(accts, a).kind === "investment"));
       for (const a of ids) invAccounts.add(a);
-      let secs: Record<string, Row> = { ...d.inv.securities };
+      let secs: Record<string, PlaidSecurity> = { ...d.inv.securities };
       for (const s of d.holdings?.securities ?? []) secs[s.security_id] = s;
-      let rows: Row[] = (d.inv.investment_transactions as Row[]).filter((t) => ids.has(t.account_id)
-        && String(t.date) >= valueAt(d.invStart, t.account_id));
-      let allHoldings: Row[] = d.holdings?.holdings ?? [];
+      let rows = d.inv.investment_transactions.filter((t) => ids.has(t.account_id)
+        && t.date >= valueAt(d.invStart, t.account_id));
+      let allHoldings = d.holdings?.holdings ?? [];
       [rows, allHoldings, secs] = convert(rows, allHoldings, secs, symbols);
       const plans = new Set([...ids].filter((a) => valueAt(accts, a).plaid_subtype === "stock plan"));
       const r = mapInvestmentTransactions(rows, secs, symbols, "USD", plans);
@@ -104,11 +106,11 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
       const priceOn = (sid: string, day: string): Dec | null => {
         if (!closes) return null;
         const o = symbols[sid] ?? {};
-        return closes(yahooSymbol(s[sid]) || (!o.manual ? o.symbol ?? null : null), day);
+        return closes(yahooSymbol(s[sid]) || (o.manual ? null : o.symbol ?? null), day);
       };
       for (const a of r.activities) {
-        if (a.marketPrice) {
-          const px = priceOn(a.securityId!, a.date);
+        if (a.marketPrice && a.securityId !== null) {
+          const px = priceOn(a.securityId, a.date);
           a.unitPrice = px && !px.eq(0) ? px : ZERO;
           if (a.unitPrice.eq(0)) {
             p.reviews.push(review(a.accountId, a.plaidId, a.date, "vest price unknown",
@@ -121,9 +123,9 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
       for (const [k, v] of r.unmappedSecurities) p.unmapped.set(k, v);
       const holdings = allHoldings.filter((h) => ids.has(h.account_id));
       const seen = new Set([...holdings.map((h) => h.account_id),
-        ...(d.inv.investment_transactions as Row[]).map((t) => t.account_id)]);
+        ...d.inv.investment_transactions.map((t) => t.account_id)]);
       for (const a of d.holdings?.accounts ?? []) {
-        const bal = dec(a.balances?.current) ?? ZERO;
+        const bal = dec(a.balances.current) ?? ZERO;
         if (ids.has(a.account_id) && !seen.has(a.account_id) && bal.gt(1)) {
           balanceOnly.add(a.account_id);
           if (!state.hasAny(a.account_id)) {
@@ -135,11 +137,11 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
       const [hs, cash, unmappedH] = holdingsBySymbol(holdings, secs, symbols);
       for (const [k, v] of hs) holdingsAll.set(k, v);
       for (const h of unmappedH) {
-        const sec = secs[h.security_id] ?? {};
-        if (!p.unmapped.has(h.security_id)) p.unmapped.set(h.security_id, sec.name || "");
-        if (BROKERAGE_WINDOW.test(sec.name || "")) {
+        const secName = secs[h.security_id]?.name || "";
+        if (!p.unmapped.has(h.security_id)) p.unmapped.set(h.security_id, secName);
+        if (BROKERAGE_WINDOW.test(secName)) {
           p.reviews.push(review(h.account_id, h.security_id, "", "possible brokerage window",
-            `${sec.name}: if this mirrors another linked account, choose Leave out in Securities`));
+            `${secName}: if this mirrors another linked account, choose Leave out in Securities`));
         }
       }
       for (const aid of ids) {
@@ -166,7 +168,7 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
     if (d.tx != null) {
       const kinds: Record<string, string> = {};
       for (const [a, c] of Object.entries(accts)) if (c.kind === "cash" || c.kind === "credit") kinds[a] = c.kind;
-      const rows: Row[] = [...d.tx.added, ...d.tx.modified];
+      const rows = [...d.tx.added, ...d.tx.modified];
       const drop = biltPassthrough(rows);
       let acts: Activity[] = [];
       for (const t of rows) {
@@ -174,7 +176,7 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
         const x = mapBankTransaction(t, valueAt(kinds, t.account_id));
         if (x) acts.push(x);
       }
-      for (const t of d.tx.removed as Row[]) removed.add(t.transaction_id);
+      for (const t of d.tx.removed) removed.add(t.transaction_id);
       if (d.firstTxSync) {
         for (const [aid, kind] of Object.entries(kinds)) {
           if (state.hasOpening(aid)) continue;
@@ -208,8 +210,8 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
       if (row.pair_plaid_id) a.activityType = row.activity_type;
       const fields = differs(row, a);
       if (fields.includes("symbol") && row.symbol) {
-        if (!p.moved.has(row.symbol)) p.moved.set(row.symbol, new Set());
-        p.moved.get(row.symbol)!.add(a.accountId);
+        const moved = p.moved.get(row.symbol) ?? new Set<string>();
+        p.moved.set(row.symbol, moved.add(a.accountId));
       } else if (fields.length) {
         p.updates.push([row, a, fields]);
       }
@@ -227,7 +229,7 @@ export function plan(items: ItemData[], accountsCfg: Record<string, AccountCfg>,
     const newIds = new Set(p.new.map((a) => a.plaidId));
     for (const [o, i] of matchTransfers([...p.new, ...existing])) {
       p.pairs.push([o.plaidId, i.plaidId]);
-      for (const leg of [o, i]) if (!newIds.has(leg.plaidId)) p.retype.push([leg.plaidId, leg.activityType, leg.pairId!]);
+      for (const leg of [o, i]) if (!newIds.has(leg.plaidId) && leg.pairId !== null) p.retype.push([leg.plaidId, leg.activityType, leg.pairId]);
     }
   }
 

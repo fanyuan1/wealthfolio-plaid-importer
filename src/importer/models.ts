@@ -109,7 +109,6 @@ export const mapResult = (): MapResult => ({
   activities: [], reviews: [], cancelledIds: new Set(), unmappedSecurities: new Map(),
 });
 
-export type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 export interface Progress {
   id: string; label: string; parent?: string;

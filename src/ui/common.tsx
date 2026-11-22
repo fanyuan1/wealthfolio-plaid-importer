@@ -73,7 +73,7 @@ export function CopyLink({ url, hint = true }: { url: string; hint?: boolean }) 
     <div className="flex flex-col gap-1.5">
       <div className="flex gap-2">
         <Input ref={box} readOnly value={url} className="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
-        <Button variant="outline" className="min-w-32" onClick={copy}><Icons.Copy className="h-4 w-4" />{copied ? 'Copied' : 'Copy link'}</Button>
+        <Button variant="outline" className="min-w-32" onClick={() => void copy()}><Icons.Copy className="h-4 w-4" />{copied ? 'Copied' : 'Copy link'}</Button>
       </div>
       {hint && (
         <span className="text-muted-foreground text-xs">
@@ -164,7 +164,7 @@ export function SaveMark({ status, children }: { status: SaveState; children: Re
 
 export function WithSave({ children }: { children: (save: (fn: () => Promise<unknown>) => void) => ReactNode }) {
   const { status, save } = useSave();
-  return <SaveMark status={status}>{children(save)}</SaveMark>;
+  return <SaveMark status={status}>{children((fn) => void save(fn))}</SaveMark>;
 }
 
 export function useFlash(ms = 2500): [boolean, () => void] {
@@ -199,6 +199,6 @@ export function useEngine<T>(engine: Engine, pick: (e: Engine) => T): T {
 export function useTask(engine: Engine, key: string) {
   const task = useEngine(engine, (e) => e.tasks[key]) as Task | undefined;
   const start = useCallback(<T,>(label: string, fn: Parameters<Engine['task']>[2]) =>
-    engine.task(key, label, fn as never).catch((e) => { host.ctx?.api.logger.error(`plaid-importer: ${key}: ${msg(e)}`); return undefined as T | undefined; }), [engine, key]);
+    engine.task(key, label, fn as never).catch((e: unknown) => { host.ctx?.api.logger.error(`plaid-importer: ${key}: ${msg(e)}`); return undefined as T | undefined; }), [engine, key]);
   return { task, busy: task?.running ? task.label : undefined, error: task?.error, start };
 }

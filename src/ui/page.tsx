@@ -39,7 +39,7 @@ function PlaidImporter({ ctx }: { ctx: AddonContext }) {
       setEnv((await engine.store.settings()).env);
       const { env } = await engine.store.settings();
       setStep((await engine.store.lastSync(env)) ? 'sync' : 'setup');
-    })().catch((e) => setBootError(msg(e)));
+    })().catch((e: unknown) => setBootError(msg(e)));
   }, [engine]);
   if (!env || !step) return <Problem error={bootError} />;
   const go = (to: Step) => {
@@ -65,7 +65,7 @@ function PlaidImporter({ ctx }: { ctx: AddonContext }) {
             <div className="py-2">
               <Stepper step={step} done={done} locked={ready ? {} : { sync: LOCKED, daily: LOCKED }} onStep={go} />
             </div>
-            <TabsContent value="setup"><Setup engine={engine} env={env} onEnv={changeEnv} /></TabsContent>
+            <TabsContent value="setup"><Setup engine={engine} env={env} onEnv={(e) => void changeEnv(e)} /></TabsContent>
             <TabsContent value="connections">
               <Connections engine={engine} env={env} onChange={() => setVersion((v) => v + 1)} onStep={go} />
             </TabsContent>

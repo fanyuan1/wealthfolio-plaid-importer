@@ -1,13 +1,28 @@
 import { execFileSync, execSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { arrayOf, type Guard, isNumber, isString, nullable, shape } from "../../src/importer/json";
+
+function read<T>(what: string, v: unknown, guard: Guard<T>): T {
+  if (!guard(v)) throw new Error(`unexpected ${what}`);
+  return v;
+}
+const readJson = (path: string): unknown => JSON.parse(readFileSync(path, "utf8"));
 
 const PORT = Number(process.env.E2E_WF_PORT ?? 18088);
 export const BASE = `http://127.0.0.1:${PORT}`;
 const API = `${BASE}/api/v1`;
 const PROJECT = "plaid-importer-e2e";
-const ZIP = `dist/plaid-importer-${JSON.parse(readFileSync("package.json", "utf8")).version}.zip`;
-const HOSTS = JSON.parse(readFileSync("manifest.json", "utf8")).network.allowedHosts as string[];
+const ZIP = `dist/plaid-importer-${read("package.json", readJson("package.json"), shape<{ version: string }>({ version: isString })).version}.zip`;
+const HOSTS = read("manifest.json", readJson("manifest.json"),
+  shape<{ network: { allowedHosts: string[] } }>({ network: shape<{ allowedHosts: string[] }>({ allowedHosts: arrayOf(isString) }) })).network.allowedHosts;
+
+type WfAccount = { id: string; name: string; accountType: string; currency: string };
+type WfActivity = { id: string; accountId: string; activityType: string; amount: string | number | null; date: string; comment?: string | null };
+const isWfAccount = shape<WfAccount>({ id: isString, name: isString, accountType: isString, currency: isString });
+const isWfActivity = shape<WfActivity>({ id: isString, accountId: isString, activityType: isString,
+  amount: (v): v is string | number | null => v === null || isString(v) || isNumber(v), date: isString, comment: nullable(isString) });
+const isActivityPage = shape<{ data: WfActivity[] }>({ data: arrayOf(isWfActivity) });
 
 export function dockerRunning(): boolean {
   try {
@@ -25,11 +40,12 @@ function compose(...args: string[]) {
   });
 }
 
-async function call(method: string, path: string, body?: unknown) {
+async function call(method: string, path: string, body?: unknown): Promise<unknown> {
   const r = await fetch(`${API}${path}`, { method, headers: { "Content-Type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   if (!r.ok) throw new Error(`${method} ${path}: ${r.status} ${await r.text()}`);
   const text = await r.text();
-  return text ? JSON.parse(text) : null;
+  const parsed: unknown = text ? JSON.parse(text) : null;
+  return parsed;
 }
 
 export async function freshWealthfolio() {
@@ -45,9 +61,7 @@ export function stopWealthfolio() {
 }
 
 export const wf = {
-  accounts: (): Promise<{ id: string; name: string; accountType: string; currency: string }[]> => call("GET", "/accounts"),
-  activities: async (): Promise<{ id: string; accountId: string; activityType: string; amount: string | number | null; date: string; comment?: string }[]> => {
-    const r = await call("POST", "/activities/search", { page: 0, pageSize: 1000 });
-    return r.data;
-  },
+  accounts: async (): Promise<WfAccount[]> => read("accounts", await call("GET", "/accounts"), arrayOf(isWfAccount)),
+  activities: async (): Promise<WfActivity[]> =>
+    read("activities", await call("POST", "/activities/search", { page: 0, pageSize: 1000 }), isActivityPage).data,
 };

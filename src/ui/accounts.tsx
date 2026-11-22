@@ -29,7 +29,7 @@ export function Accounts({ engine, env, version, onChange, onSpendingOff }: { en
     setPushed(await engine.pushedAccounts());
     onChange();
   }, [engine, env]); // eslint-disable-line react-hooks/exhaustive-deps
-  const reload = useCallback(() => { load().catch((e) => fail('load', e)); }, [load, fail]);
+  const reload = useCallback(() => { load().catch((e: unknown) => fail('load', e)); }, [load, fail]);
   useEffect(() => { reload(); }, [reload, version]);
   useEffect(() => {
     if (!engine.tasks.refresh?.running) engine.task('refresh', 'refresh', (io) => engine.refreshStale(io.progress)).catch(() => {});
@@ -71,7 +71,7 @@ export function Accounts({ engine, env, version, onChange, onSpendingOff }: { en
         <span className="flex items-center gap-2 text-sm">
           {name}
           <button type="button" className="text-primary text-xs underline underline-offset-2" disabled={!!busy}
-                  onClick={() => save(async () => { await engine.unlinkAccount(id); await load(); })}>Change</button>
+                  onClick={() => void save(async () => { await engine.unlinkAccount(id); await load(); })}>Change</button>
         </span>
       );
     }
@@ -109,11 +109,11 @@ export function Accounts({ engine, env, version, onChange, onSpendingOff }: { en
           </div>
           <div className={ACTIONS}>
           <Button variant="outline" className="min-w-32" disabled={!rows.some(([, c]) => c.kind !== 'unsupported') || !!busy}
-                  onClick={() => save(async () => { await engine.setSyncAll(!allOn); await load(); flashAll(); })}>
+                  onClick={() => void save(async () => { await engine.setSyncAll(!allOn); await load(); flashAll(); })}>
             <FlashLabel on={allSaved} done="Saved">{allOn ? 'Clear all' : 'Select all'}</FlashLabel>
           </Button>
           <Button disabled={!missing || !!busy}
-                  onClick={() => start('create', async () => {
+                  onClick={() => void start('create', async () => {
                     const n = await engine.createAccounts();
                     host.ctx?.api.query.invalidateQueries(['accounts']);
                     return n ? `${plural(n, 'account')} created in Wealthfolio.` : 'Accounts linked.';

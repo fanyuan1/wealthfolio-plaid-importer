@@ -1,7 +1,8 @@
 import { itemAt } from "../../src/importer";
 import { describe, expect, test } from "vitest";
 import {
-  Activity, D, type ImportRow, type ItemData, MemoryLedger, openingDay, plan, push, type Row,
+  Activity, D, type ImportRow, type ItemData, MemoryLedger, openingDay, plan, push, type PlaidHolding,
+  type PlaidInvestmentTransaction, type PlaidSecurity, type PlaidTransaction,
   toImportRow, type Update, type Writer,
 } from "../../src/importer";
 
@@ -12,25 +13,25 @@ const ACCOUNTS = {
   card: { item_id: "i_boa", kind: "credit", name: "AB · BoA Card", wealthfolio_account_id: "wf_card" },
   old: { item_id: "i_boa", kind: "cash", skip: true, name: "skipped" },
 };
-const SECS: Record<string, Row> = {
+const SECS: Record<string, PlaidSecurity> = {
   s_vti: { security_id: "s_vti", ticker_symbol: "VTI", type: "etf" },
   s_cash: { security_id: "s_cash", ticker_symbol: "CUR:USD", type: "cash", is_cash_equivalent: true },
 };
 
-const invTx = (i: string, type: string, sub: string, amount: number, qty = 0, price = 0, sec: string | null = null, d = "2026-10-01", kw: Row = {}): Row =>
+const invTx = (i: string, type: string, sub: string, amount: number, qty = 0, price = 0, sec: string | null = null, d = "2026-10-01", kw: Partial<PlaidInvestmentTransaction> = {}): PlaidInvestmentTransaction =>
   ({ investment_transaction_id: i, account_id: "brk", type, subtype: sub, amount, quantity: qty, price, security_id: sec,
     fees: null, date: d, name: sub, iso_currency_code: "USD", ...kw });
 
-const bank = (i: string, acct: string, amount: number, primary = "", detailed = "", d = "2026-10-02"): Row =>
+const bank = (i: string, acct: string, amount: number, primary = "", detailed = "", d = "2026-10-02"): PlaidTransaction =>
   ({ transaction_id: i, account_id: acct, amount, date: d, pending: false, name: i, merchant_name: null,
     iso_currency_code: "USD", personal_finance_category: { primary, detailed } });
 
-function items(invTxns: Row[], holdings: Row[], added: Row[], modified: Row[] = [], removed: string[] = [], first = true,
+function items(invTxns: PlaidInvestmentTransaction[], holdings: PlaidHolding[], added: PlaidTransaction[], modified: PlaidTransaction[] = [], removed: string[] = [], first = true,
   start = "2024-11-06", secs = SECS): ItemData[] {
   return [
     { itemId: "i_schwab", owner: "AB", institution: "Schwab", invStart: { brk: start },
       inv: { investment_transactions: invTxns, securities: secs, accounts: [] },
-      holdings: { holdings, securities: Object.values(secs) } },
+      holdings: { holdings, securities: Object.values(secs), accounts: [] } },
     { itemId: "i_boa", owner: "AB", institution: "BoA", invStart: {}, firstTxSync: first,
       tx: { added, modified, removed: removed.map((r) => ({ transaction_id: r })), next_cursor: "c1" },
       balances: first ? { chk: { current: 700 }, card: { current: 40 } } : {} },
@@ -66,8 +67,8 @@ describe("sync", () => {
     const first = items(
       [invTx("t1", "buy", "buy", 1000, 10, 100, "s_vti"), invTx("t2", "cash", "deposit", -500, 0, 0, null, "2026-10-03"),
         invTx("t3", "buy", "buy", 50, 50, 1, "s_cash")],
-      [{ account_id: "brk", security_id: "s_vti", quantity: 12, cost_basis: 1240, institution_price: 110 },
-        { account_id: "brk", security_id: "s_cash", quantity: 300, institution_value: 300 }],
+      [{ account_id: "brk", security_id: "s_vti", quantity: 12, cost_basis: 1240, institution_price: 110, institution_value: 0 },
+        { account_id: "brk", security_id: "s_cash", quantity: 300, institution_value: 300, institution_price: 1 }],
       [bank("b1", "chk", 500, "TRANSFER_OUT", "TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS"),
         bank("b2", "card", 25, "FOOD_AND_DRINK", "FOOD_AND_DRINK_COFFEE"), bank("b3", "old", 1)]);
     const p = plan(first, ACCOUNTS, {}, state, TODAY);
@@ -86,7 +87,7 @@ describe("sync", () => {
 
     const second = items(
       [invTx("t1", "buy", "buy", 1000, 10, 100, "s_vti"), invTx("t4", "cancel", "cancel", 0, 0, 0, "s_vti", "2026-10-20", { cancel_transaction_id: "t1" })],
-      [{ account_id: "brk", security_id: "s_vti", quantity: 2, cost_basis: 240, institution_price: 110 }],
+      [{ account_id: "brk", security_id: "s_vti", quantity: 2, cost_basis: 240, institution_price: 110, institution_value: 0 }],
       [bank("b5", "card", -30, "LOAN_PAYMENTS", "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT", "2026-10-21")],
       [bank("b2", "card", 26, "FOOD_AND_DRINK", "FOOD_AND_DRINK_COFFEE")], [], false, "2026-09-17");
     state.record(new Activity({ accountId: "chk", plaidId: "b4", date: "2026-10-20", activityType: "WITHDRAWAL", amount: D(30), transferHint: true }), "wf_old");
@@ -101,7 +102,7 @@ describe("sync", () => {
     expect(wf.deleted.length > 0 && !wf.updates.some((u) => u.void)).toBe(true);
     expect([state.get("t1")!.voided, state.get("t1")!.wf_activity_id, state.get("b4")!.pair_plaid_id]).toEqual([1, null, "b5"]);
 
-    const p3 = plan(items([invTx("t1", "buy", "buy", 1000, 10, 100, "s_vti")], [{ account_id: "brk", security_id: "s_vti", quantity: 2 }],
+    const p3 = plan(items([invTx("t1", "buy", "buy", 1000, 10, 100, "s_vti")], [{ account_id: "brk", security_id: "s_vti", quantity: 2, institution_value: 0, institution_price: 0 }],
       [], [], [], false, "2026-09-17"), ACCOUNTS, {}, state, TODAY);
     expect([p3.new, p3.updates, p3.voids, p3.pairs]).toEqual([[], [], [], []]);
   });
@@ -112,9 +113,9 @@ describe("sync", () => {
     const secs = { ...SECS, s_fund: { security_id: "s_fund", ticker_symbol: null, type: "mutual fund", name: "Plan Fund" } };
     const txns = [invTx("t1", "buy", "buy", 1000, 10, 100, "s_vti"), invTx("f1", "buy", "buy", 50, 5, 10, "s_fund", "2025-01-10"),
       invTx("f2", "buy", "buy", 50, 5, 10, "s_fund", "2025-02-10")];
-    const holdings = [{ account_id: "brk", security_id: "s_vti", quantity: 10, cost_basis: 1000 },
-      { account_id: "brk", security_id: "s_fund", quantity: 12, cost_basis: 120 },
-      { account_id: "brk", security_id: "s_cash", quantity: 500, institution_value: 500 }];
+    const holdings = [{ account_id: "brk", security_id: "s_vti", quantity: 10, cost_basis: 1000, institution_value: 0, institution_price: 0 },
+      { account_id: "brk", security_id: "s_fund", quantity: 12, cost_basis: 120, institution_value: 0, institution_price: 0 },
+      { account_id: "brk", security_id: "s_cash", quantity: 500, institution_value: 500, institution_price: 1 }];
     const p1 = plan(items(txns, holdings, [], [], [], true, "2024-11-06", secs), ACCOUNTS, {}, state, TODAY);
     expect(new Set(p1.reviews.map((r) => r.reason))).toEqual(new Set(["unmapped security"]));
     await run(p1, wf, state);
@@ -135,7 +136,7 @@ describe("sync", () => {
     const state = new MemoryLedger();
     state.setInvLastEnd("brk", "2026-11-01");
     const p = plan(items([invTx("t1", "buy", "buy", 600, 6, 100, "s_vti", "2026-11-03")],
-      [{ account_id: "brk", security_id: "s_vti", quantity: 3289, cost_basis: 1240 }], [], [], [], false), ACCOUNTS, {}, state, TODAY);
+      [{ account_id: "brk", security_id: "s_vti", quantity: 3289, cost_basis: 1240, institution_value: 0, institution_price: 0 }], [], [], [], false), ACCOUNTS, {}, state, TODAY);
     expect(p.new.find((a) => a.plaidId === "opening:brk:VTI")!.quantity!.toNumber()).toBe(3283);
     expect(p.reviews.filter((r) => r.reason === "holdings mismatch")).toEqual([]);
   });
@@ -143,9 +144,9 @@ describe("sync", () => {
   test("the positions check counts the updated quantity of a pushed row", async () => {
     const state = new MemoryLedger();
     const buy = (qty: number) => invTx("t1", "buy", "buy", 1000, qty, 1000 / qty, "s_vti");
-    await run(plan(items([buy(10)], [{ account_id: "brk", security_id: "s_vti", quantity: 12, cost_basis: 1240 }], []),
+    await run(plan(items([buy(10)], [{ account_id: "brk", security_id: "s_vti", quantity: 12, cost_basis: 1240, institution_value: 0, institution_price: 0 }], []),
       ACCOUNTS, {}, state, TODAY), new FakeWF(), state);
-    const p = plan(items([buy(20)], [{ account_id: "brk", security_id: "s_vti", quantity: 22, cost_basis: 1240 }], [], [], [], false),
+    const p = plan(items([buy(20)], [{ account_id: "brk", security_id: "s_vti", quantity: 22, cost_basis: 1240, institution_value: 0, institution_price: 0 }], [], [], [], false),
       ACCOUNTS, {}, state, TODAY);
     expect(p.updates.map(([r]) => r.plaid_id)).toEqual(["t1"]);
     expect(p.reviews.filter((r) => r.reason === "holdings mismatch")).toEqual([]);
@@ -153,18 +154,18 @@ describe("sync", () => {
 
   test("a mismatch lists the rows this pull adds", async () => {
     const state = new MemoryLedger();
-    await run(plan(items([], [{ account_id: "brk", security_id: "s_vti", quantity: 12, cost_basis: 1240 }], []),
+    await run(plan(items([], [{ account_id: "brk", security_id: "s_vti", quantity: 12, cost_basis: 1240, institution_value: 0, institution_price: 0 }], []),
       ACCOUNTS, {}, state, TODAY), new FakeWF(), state);
     const p = plan(items([invTx("t9", "transfer", "transfer", 0, 5, 0, "s_vti", TODAY)],
-      [{ account_id: "brk", security_id: "s_vti", quantity: 12, cost_basis: 1240 }], [], [], [], false), ACCOUNTS, {}, state, TODAY);
+      [{ account_id: "brk", security_id: "s_vti", quantity: 12, cost_basis: 1240, institution_value: 0, institution_price: 0 }], [], [], [], false), ACCOUNTS, {}, state, TODAY);
     expect(p.reviews.filter((r) => r.reason === "holdings mismatch").map((r) => r.detail))
       .toEqual([`VTI: Plaid 12, computed 17, diff -5; this pull adds ${TODAY} TRANSFER_IN 5`]);
   });
 
   test("a trade reported after the opening was computed comes out of the opening", async () => {
     const state = new MemoryLedger();
-    const holdings = [{ account_id: "brk", security_id: "s_vti", quantity: 12, cost_basis: 1200 },
-      { account_id: "brk", security_id: "s_cash", quantity: 300, institution_value: 300 }];
+    const holdings = [{ account_id: "brk", security_id: "s_vti", quantity: 12, cost_basis: 1200, institution_value: 0, institution_price: 0 },
+      { account_id: "brk", security_id: "s_cash", quantity: 300, institution_value: 300, institution_price: 1 }];
     await run(plan(items([], holdings, []), ACCOUNTS, {}, state, TODAY), new FakeWF(), state);
     const p = plan(items([invTx("late", "buy", "buy", 500, 5, 100, "s_vti", "2026-11-03")], holdings, [], [], [], false),
       ACCOUNTS, {}, state, "2026-11-08");
@@ -177,7 +178,7 @@ describe("sync", () => {
     const state = new MemoryLedger();
     state.record(new Activity({ accountId: "brk", plaidId: "recent", date: "2026-10-30", activityType: "INTEREST", amount: D(1) }), "wf1");
     state.setInvLastEnd("brk", "2026-11-01");
-    const holdings = [{ account_id: "brk", security_id: "s_vti", quantity: 2, cost_basis: 200 }];
+    const holdings = [{ account_id: "brk", security_id: "s_vti", quantity: 2, cost_basis: 200, institution_value: 0, institution_price: 0 }];
     const p = plan(items([invTx("old", "buy", "buy", 200, 2, 100, "s_vti", "2024-11-29")], holdings, [], [], [], false), ACCOUNTS, {}, state, TODAY);
     expect(p.new.map((a) => a.plaidId)).toContain("old");
     expect(p.reviews.filter((r) => r.reason === "holdings mismatch")).toEqual([]);
@@ -190,7 +191,7 @@ describe("sync", () => {
     const state = new MemoryLedger();
     expect(openingDay(state, "2024-11-08")).toBe("2024-11-08");
     state.record(new Activity({ accountId: "chk", plaidId: "opening:chk:cash", date: "2024-11-07", activityType: "TRANSFER_IN", amount: D(1) }), "wf1");
-    const p = plan(items([invTx("t1", "buy", "buy", 1000, 10, 100, "s_vti")], [{ account_id: "brk", security_id: "s_vti", quantity: 12, cost_basis: 1240 }],
+    const p = plan(items([invTx("t1", "buy", "buy", 1000, 10, 100, "s_vti")], [{ account_id: "brk", security_id: "s_vti", quantity: 12, cost_basis: 1240, institution_value: 0, institution_price: 0 }],
       [], [], [], false, "2024-11-08"), ACCOUNTS, {}, state, TODAY);
     expect(p.new.filter((a) => a.plaidId.startsWith("opening:")).map((a) => [a.plaidId, a.date])).toEqual([["opening:brk:VTI", "2024-11-07"]]);
     expect(openingDay(state, "2025-06-01")).toBe("2025-06-01");

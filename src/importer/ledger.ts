@@ -68,7 +68,7 @@ function rowToActivity(r: LedgerRow): Activity {
   });
 }
 
-function norm(f: string, v: unknown): string | null {
+function norm(f: string, v: string | Dec | null | undefined): string | null {
   if (v === null || v === undefined || v === "") return null;
   if (NUMERIC.has(f)) {
     const x = D(String(v)).round(COMPARE_DP, 2);
@@ -77,7 +77,7 @@ function norm(f: string, v: unknown): string | null {
   return String(v);
 }
 
-const activityField = (a: Activity, f: (typeof FIELDS)[number]): unknown => ({
+const activityField = (a: Activity, f: (typeof FIELDS)[number]): string | Dec | null => ({
   activity_type: a.activityType, date: a.date, symbol: a.symbol, quantity: a.quantity,
   unit_price: a.unitPrice, amount: a.amount, fee: a.fee, currency: a.currency,
 })[f];

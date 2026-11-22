@@ -4,12 +4,13 @@ import { describe, expect, test } from "vitest";
 import {
   Activity, D, type Dec, INCOME, SPENDING, biltPassthrough, convert, entry, fixSplitPrices, holdingsBySymbol, hkey, mapBankTransaction,
   mapCategory, mapInvestmentTransactions, matchTransfers, openingActivities, positions,
-  rebases, reconcile, resolve, resolveSplits, yahooSymbol, type Row,
+  rebases, reconcile, resolve, resolveSplits, yahooSymbol, type PlaidInvestmentTransaction, type PlaidSecurity, type PlaidTransaction,
+  type Scaled, type SecurityOverride,
 } from "../../src/importer";
 
-const n = (v: Dec | null | undefined) => (v == null ? null : v.toNumber());
+const n = (v: Dec | Scaled | null | undefined) => (v == null ? null : typeof v === "number" ? v : v.toNumber());
 
-const SECS: Record<string, Row> = {
+const SECS: Record<string, PlaidSecurity> = {
   s_vti: { security_id: "s_vti", ticker_symbol: "VTI", type: "etf", market_identifier_code: "ARCX" },
   s_td: { security_id: "s_td", ticker_symbol: "TD", type: "equity", market_identifier_code: "XTSE" },
   s_spaxx: { security_id: "s_spaxx", ticker_symbol: "SPAXX", type: "mutual fund", is_cash_equivalent: true },
@@ -20,11 +21,11 @@ const SECS: Record<string, Row> = {
 };
 
 function tx(i: string, type: string, sub: string, amount = 0, qty = 0, price = 0, sec: string | null = null,
-  fees: number | null = null, kw: Row = {}): Row {
+  fees: number | null = null, kw: Partial<PlaidInvestmentTransaction> = {}): PlaidInvestmentTransaction {
   return { investment_transaction_id: i, account_id: "a1", type, subtype: sub, amount, quantity: qty, price,
     security_id: sec, fees, date: "2026-03-02", name: `${type} ${sub}`, iso_currency_code: "USD", ...kw };
 }
-const one = (rows: Row[], overrides: Record<string, Row> = {}) => mapInvestmentTransactions(rows, SECS, overrides);
+const one = (rows: PlaidInvestmentTransaction[], overrides: Record<string, SecurityOverride> = {}) => mapInvestmentTransactions(rows, SECS, overrides);
 
 describe("investments", () => {
   test("buy sell absolute values and fee", () => {
@@ -102,7 +103,7 @@ describe("investments", () => {
   });
 });
 
-function bank(i: string, acct: string, amount: number, primary = "", detailed = "", kw: Row = {}): Row {
+function bank(i: string, acct: string, amount: number, primary = "", detailed = "", kw: Partial<PlaidTransaction> = {}): PlaidTransaction {
   return { transaction_id: i, account_id: acct, amount, date: "2026-03-02", pending: false, name: `n${i}`,
     merchant_name: `M${i}`, iso_currency_code: "USD", personal_finance_category: { primary, detailed }, ...kw };
 }
@@ -172,8 +173,8 @@ describe("bank and transfers", () => {
 describe("positions", () => {
   test("opening positions and cash", () => {
     const [hs, cash] = holdingsBySymbol([
-      { account_id: "a1", security_id: "s_vti", quantity: 15, cost_basis: 1500, institution_price: 250 },
-      { account_id: "a1", security_id: "s_spaxx", quantity: 400, institution_value: 400 }], SECS, {});
+      { account_id: "a1", security_id: "s_vti", quantity: 15, cost_basis: 1500, institution_price: 250, institution_value: 3750 },
+      { account_id: "a1", security_id: "s_spaxx", quantity: 400, institution_value: 400, institution_price: 1 }], SECS, {});
     const acts = one([tx("t1", "buy", "buy", 1000, 10, 100, "s_vti"), tx("t2", "cash", "deposit", -1200)]).activities;
     const [opening, reviews] = openingActivities("a1", "2024-11-05", hs, cash.get("a1")!, acts);
     expect(reviews).toEqual([]);
@@ -183,7 +184,7 @@ describe("positions", () => {
   });
 
   test("opening price is per share held at the opening, across a later split", () => {
-    const [hs] = holdingsBySymbol([{ account_id: "a1", security_id: "s_vti", quantity: 80, cost_basis: 4000, institution_price: 60 }], SECS, {});
+    const [hs] = holdingsBySymbol([{ account_id: "a1", security_id: "s_vti", quantity: 80, cost_basis: 4000, institution_price: 60, institution_value: 4800 }], SECS, {});
     const split = new Activity({ accountId: "a1", plaidId: "sp", date: "2026-04-21", activityType: "SPLIT", symbol: "VTI", splitDelta: D(70) });
     let [opening] = openingActivities("a1", "2024-11-05", hs, null, [split]);
     expect([n(itemAt(opening, 0).quantity), n(itemAt(opening, 0).unitPrice)]).toEqual([10, 400]);
@@ -203,7 +204,7 @@ describe("positions", () => {
   });
 
   test("opening missing cost basis and negative", () => {
-    const [hs] = holdingsBySymbol([{ account_id: "a1", security_id: "s_vti", quantity: 2, cost_basis: null, institution_price: 250 }], SECS, {});
+    const [hs] = holdingsBySymbol([{ account_id: "a1", security_id: "s_vti", quantity: 2, cost_basis: null, institution_price: 250, institution_value: 500 }], SECS, {});
     const acts = one([tx("t1", "buy", "buy", 1, 3, 100, "s_td"), tx("t2", "sell", "sell", 1, -3, 100, "s_td"),
       tx("t3", "sell", "sell", 1, -1, 100, "s_td")]).activities;
     let [opening, reviews] = openingActivities("a1", "2024-11-05", hs, null, acts);
@@ -219,7 +220,7 @@ describe("positions", () => {
 
   test("reconcile flags mismatch", () => {
     const acts = [new Activity({ accountId: "a1", plaidId: "x", date: "2026-01-01", activityType: "BUY", symbol: "VTI", quantity: D(10), unitPrice: D(1) })];
-    const hs = new Map<string, Row>([[hkey("a1", "VTI"), { quantity: 9 }], [hkey("a1", "VXUS"), { quantity: 1 }]]);
+    const hs = new Map([[hkey("a1", "VTI"), { quantity: D(9) }], [hkey("a1", "VXUS"), { quantity: D(1) }]]);
     expect(reconcile(new Set(["a1"]), positions(acts), hs).map((r) => r.plaidId)).toEqual(["reconcile:VTI", "reconcile:VXUS"]);
   });
 
@@ -241,7 +242,7 @@ describe("positions", () => {
   });
 });
 
-const OPT_SECS: Record<string, Row> = {
+const OPT_SECS: Record<string, PlaidSecurity> = {
   o_occ: { security_id: "o_occ", ticker_symbol: "NFLX180201C00355000", type: "derivative", name: "Nflx Feb 01'18 $355 Call" },
   o_built: { security_id: "o_built", ticker_symbol: null, type: "derivative", name: "SPY put",
     option_contract: { contract_type: "put", expiration_date: "2026-12-18", strike_price: 450.5, underlying_security_ticker: "SPY" } },
@@ -272,7 +273,7 @@ describe("options and plans", () => {
   });
 
   test("derivative mapped to a stock ticker imports as shares, partial fill included", () => {
-    const secs: Record<string, Row> = {
+    const secs: Record<string, PlaidSecurity> = {
       ant_order: { security_id: "ant_order", ticker_symbol: null, type: "derivative", name: "Anthropic" },
       ant: { security_id: "ant", ticker_symbol: "ANT", type: "equity", market_identifier_code: "XNAS" },
     };
@@ -284,8 +285,8 @@ describe("options and plans", () => {
     expect([buy.activityType, buy.subtype, buy.symbol, buy.instrumentType, n(buy.quantity), n(buy.unitPrice)])
       .toEqual(["BUY", null, "ANT", "EQUITY", 2, 83]);
     const [hs, cash] = holdingsBySymbol([
-      { account_id: "a1", security_id: "ant", quantity: 2, cost_basis: 166, institution_price: 88.91 },
-      { account_id: "a1", security_id: "s_spaxx", quantity: 0, institution_value: 0 }], { ...SECS, ...secs }, {});
+      { account_id: "a1", security_id: "ant", quantity: 2, cost_basis: 166, institution_price: 88.91, institution_value: 177.82 },
+      { account_id: "a1", security_id: "s_spaxx", quantity: 0, institution_value: 0, institution_price: 1 }], { ...SECS, ...secs }, {});
     const [opening] = openingActivities("a1", "2024-11-09", hs, cash.get("a1")!, [buy]);
     expect(opening.map((a) => [a.symbol, a.activityType, n(a.amount)])).toEqual([[null, "TRANSFER_IN", 166]]);
   });
@@ -302,7 +303,7 @@ describe("options and plans", () => {
   });
 
   test("option holdings scaled and opening price per share", () => {
-    const [hs] = holdingsBySymbol([{ account_id: "a1", security_id: "o_occ", quantity: 10000, cost_basis: 100, institution_price: 0.011 }], OPT_SECS, {});
+    const [hs] = holdingsBySymbol([{ account_id: "a1", security_id: "o_occ", quantity: 10000, cost_basis: 100, institution_price: 0.011, institution_value: 110 }], OPT_SECS, {});
     expect(n(hs.get(hkey("a1", "NFLX180201C00355000"))!.quantity)).toBe(100);
     const [opening, reviews] = openingActivities("a1", "2024-11-05", hs, null, []);
     expect(reviews).toEqual([]);
@@ -368,7 +369,7 @@ describe("tracking", () => {
     expect([t.symbol, t.ratio]).toEqual(["VOO", 0.2]);
     const symbols = { s_cit: { name: "Target 2050 CIT", symbol: null, track: t } };
     const [rows, holds, secs] = convert([tx("b", "buy", "contribution", 1000.0, 10, 100.0, "s_cit"), tx("v", "buy", "buy", 100, 1, 100, "s_vti")],
-      [{ security_id: "s_cit", quantity: 50, institution_price: 100.0, cost_basis: 5000 }], SECS, symbols);
+      [{ account_id: "a1", security_id: "s_cit", quantity: 50, institution_price: 100.0, cost_basis: 5000, institution_value: 5000 }], SECS, symbols);
     expect([n(itemAt(rows, 0).quantity), n(itemAt(rows, 0).price), itemAt(rows, 0).amount]).toEqual([2, 500, 1000]);
     expect([itemAt(rows, 1).quantity, valueAt(SECS, "s_cit").ticker_symbol]).toEqual([1, null]);
     expect([n(itemAt(holds, 0).quantity), n(itemAt(holds, 0).institution_price), itemAt(holds, 0).cost_basis]).toEqual([10, 500, 5000]);

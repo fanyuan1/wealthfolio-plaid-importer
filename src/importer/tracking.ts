@@ -1,6 +1,7 @@
 import { valueAt } from "./at";
 import { D, type Dec, dec } from "./dec";
-import type { Row } from "./models";
+import type { PlaidHolding, PlaidInvestmentTransaction, PlaidSecurity, Scaled } from "./plaidTypes";
+import type { SecurityOverride } from "./securities";
 
 export interface Track { symbol: string; date: string; price: number; close: number; ratio: number }
 
@@ -11,56 +12,57 @@ export function entry(symbol: string, day: string, price: Dec, close: Dec): Trac
   };
 }
 
-function ratios(symbols: Record<string, Row>): Map<string, [Dec, string]> {
+function ratios(symbols: Record<string, SecurityOverride>): Map<string, [Dec, string]> {
   const out = new Map<string, [Dec, string]>();
   for (const [sid, e] of Object.entries(symbols)) {
-    if (e?.track && !e.exclude) out.set(sid, [D(String(e.track.ratio)), e.track.symbol]);
+    if (e.track && !e.exclude) out.set(sid, [D(String(e.track.ratio)), e.track.symbol]);
   }
   return out;
 }
 
 const QTY_DP = 10, PRICE_DP = 6;
 
-function scale(row: Row, r: Dec, qty: string, price: string[]): Row {
-  const out = { ...row };
-  const q = dec(row[qty]);
-  if (q !== null) out[qty] = q.times(r).round(QTY_DP, 2);
-  for (const k of price) {
-    const p = dec(row[k]);
-    if (p !== null) out[k] = p.div(r).round(PRICE_DP, 2);
-  }
-  return out;
-}
+const times = (v: Scaled, r: Dec): Dec => D(String(v)).times(r).round(QTY_DP, 2);
+const over = (v: Scaled, r: Dec): Dec => D(String(v)).div(r).round(PRICE_DP, 2);
 
-export function convert(txns: Row[], holdings: Row[], securities: Record<string, Row>, symbols: Record<string, Row>):
-  [Row[], Row[], Record<string, Row>] {
+export function convert(txns: PlaidInvestmentTransaction[], holdings: PlaidHolding[], securities: Record<string, PlaidSecurity>,
+  symbols: Record<string, SecurityOverride>): [PlaidInvestmentTransaction[], PlaidHolding[], Record<string, PlaidSecurity>] {
   const rs = ratios(symbols);
   if (!rs.size) return [txns, holdings, securities];
   const secs = { ...securities };
   for (const [sid, [r, target]] of rs) {
-    if (sid in secs) {
-      secs[sid] = scale({ ...secs[sid], ticker_symbol: target, market_identifier_code: null, type: "etf",
-        is_cash_equivalent: false }, r, "_", ["close_price"]);
+    const s = secs[sid];
+    if (s) {
+      secs[sid] = { ...s, ticker_symbol: target, market_identifier_code: null, type: "etf", is_cash_equivalent: false,
+        ...(s.close_price == null ? {} : { close_price: over(s.close_price, r) }) };
     }
   }
-  const tx = txns.map((t) => (rs.has(t.security_id) ? scale(t, rs.get(t.security_id)![0], "quantity", ["price"]) : t));
-  const hs = holdings.map((h) => (rs.has(h.security_id) ? scale(h, rs.get(h.security_id)![0], "quantity", ["institution_price"]) : h));
+  const tx = txns.map((t) => {
+    const r = rs.get(t.security_id ?? "")?.[0];
+    return r ? { ...t, quantity: times(t.quantity, r), price: over(t.price, r) } : t;
+  });
+  const hs = holdings.map((h) => {
+    const r = rs.get(h.security_id)?.[0];
+    return r ? { ...h, quantity: times(h.quantity, r), institution_price: over(h.institution_price, r) } : h;
+  });
   return [tx, hs, secs];
 }
 
 const REBASE_LIMIT = D("0.05");
 
-export const trackedIds = (symbols: Record<string, Row>): Set<string> => new Set(ratios(symbols).keys());
+export const trackedIds = (symbols: Record<string, SecurityOverride>): Set<string> => new Set(ratios(symbols).keys());
 
-export interface HoldingsItem { holdings?: { holdings?: Row[] } | null }
+export interface HoldingsItem {
+  holdings?: { holdings: Pick<PlaidHolding, "security_id" | "institution_price" | "institution_price_as_of">[] } | null | undefined;
+}
 
 export function reportedPrice(items: HoldingsItem[], sid: string): [Dec, string] | null {
   let best: [Dec, string] | null = null;
   for (const d of items) {
     for (const h of d.holdings?.holdings ?? []) {
       const price = dec(h.institution_price), day = h.institution_price_as_of;
-      if (h.security_id === sid && price && price.gt(0) && day && (best === null || String(day) > best[1])) {
-        best = [price, String(day)];
+      if (h.security_id === sid && price && price.gt(0) && day && (best === null || day > best[1])) {
+        best = [price, day];
       }
     }
   }
@@ -89,13 +91,14 @@ class Rebase {
   }
 }
 
-export function rebases(items: HoldingsItem[], symbols: Record<string, Row>, closes: RecentCloses): Rebase[] {
+export function rebases(items: HoldingsItem[], symbols: Record<string, SecurityOverride>, closes: RecentCloses): Rebase[] {
   const out: Rebase[] = [];
   for (const sid of trackedIds(symbols)) {
     const e = valueAt(symbols, sid);
+    const track = e.track;
     const got = reportedPrice(items, sid);
-    if (got && got[1] > String(e.track.date) && !got[0].eq(D(String(e.track.price)))) {
-      out.push(new Rebase(sid, e.name || sid, e.track, got[1], got[0], closes.closeOn(e.track.symbol, got[1])));
+    if (track && got && got[1] > track.date && !got[0].eq(D(String(track.price)))) {
+      out.push(new Rebase(sid, e.name || sid, track, got[1], got[0], closes.closeOn(track.symbol, got[1])));
     }
   }
   return out;

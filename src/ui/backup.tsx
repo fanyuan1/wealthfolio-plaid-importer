@@ -1,7 +1,7 @@
 import { Alert, AlertDescription, AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Icons } from '@wealthfolio/ui';
 import { type ChangeEvent, useRef, useState } from 'react';
 import type { BackupKind, Engine, Restored } from '../engine/engine';
-import { type PlaidEnv, plural } from '../importer';
+import { isRecord, type PlaidEnv, plural } from '../importer';
 import { copyText, FlashLabel, host, msg, Problem, Spin, useBusy, useFlash, useTask } from './common';
 
 const KINDS: [BackupKind, string, string][] = [
@@ -57,7 +57,7 @@ export function Backup({ engine, env, ready, onChange }: { engine: Engine; env: 
               <p className="text-muted-foreground flex-1 text-sm">{text}</p>
               <div>
                 <Button variant={kind === 'full' ? 'default' : 'outline'} disabled={!!busy}
-                        onClick={() => run(`backup-${kind}`, async () => setMade({ kind, text: await engine.backup(kind) }))}>
+                        onClick={() => void run(`backup-${kind}`, async () => setMade({ kind, text: await engine.backup(kind) }))}>
                   <Spin on={busy === `backup-${kind}`} />Make {kind === 'connections' ? 'connections' : 'full'} backup
                 </Button>
               </div>
@@ -70,8 +70,8 @@ export function Backup({ engine, env, ready, onChange }: { engine: Engine; env: 
               <span className="text-sm font-medium">{made.kind === 'full' ? 'Full backup' : 'Connections backup'} ready</span>
               <span className="text-muted-foreground text-xs">{(made.text.length / 1024).toFixed(made.text.length < 10240 ? 1 : 0)} KB</span>
               <div className="ms-auto flex flex-wrap gap-2">
-                <Button size="sm" className="min-w-20" onClick={copy}><Icons.Copy className="h-3 w-3" />{made.copied ? 'Copied' : 'Copy'}</Button>
-                <Button size="sm" variant="outline" disabled={!!busy} onClick={saveFile}
+                <Button size="sm" className="min-w-20" onClick={() => void copy()}><Icons.Copy className="h-3 w-3" />{made.copied ? 'Copied' : 'Copy'}</Button>
+                <Button size="sm" variant="outline" disabled={!!busy} onClick={() => void saveFile()}
                         className="min-w-32">
                   <Spin on={busy === 'save'} />
                   <FlashLabel on={saved} done="Saved" small><Icons.Download className="h-3 w-3" />Save as file…</FlashLabel>
@@ -141,11 +141,11 @@ export function Backup({ engine, env, ready, onChange }: { engine: Engine; env: 
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <Button variant="outline" className="text-destructive"
-                    onClick={() => engine.overwriteLoss(source).then((lost) => { setConfirm(false); setOverwrite(lost); },
-                      (e) => { setConfirm(false); host.ctx?.api.toast.error(msg(e)); })}>
+                    onClick={() => void engine.overwriteLoss(source).then((lost) => { setConfirm(false); setOverwrite(lost); },
+                      (e: unknown) => { setConfirm(false); host.ctx?.api.toast.error(msg(e)); })}>
               Overwrite…
             </Button>
-            <AlertDialogAction onClick={() => restore(source)}>Restore</AlertDialogAction>
+            <AlertDialogAction onClick={() => void restore(source)}>Restore</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -168,7 +168,7 @@ export function Backup({ engine, env, ready, onChange }: { engine: Engine; env: 
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={() => restore(source, 'overwrite')}>Overwrite</AlertDialogAction>
+            <AlertDialogAction variant="destructive" onClick={() => void restore(source, 'overwrite')}>Overwrite</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -176,16 +176,22 @@ export function Backup({ engine, env, ready, onChange }: { engine: Engine; env: 
   );
 }
 
-const isFull = (text: string) => { try { return JSON.parse(text.trim()).kind === 'full'; } catch { return false; } };
+function parsed(text: string): Record<string, unknown> | null {
+  try {
+    const d: unknown = JSON.parse(text.trim());
+    return isRecord(d) ? d : null;
+  } catch {
+    return null;
+  }
+}
+
+const isFull = (text: string) => parsed(text)?.kind === 'full';
 
 function describe(text: string): string {
-  try {
-    const d = JSON.parse(text.trim());
-    const n = Object.keys(d.items ?? {}).length;
-    const kind = d.kind === 'full' ? 'full backup' : d.kind === 'connections' ? 'connections backup' : 'backup';
-    const env = d.env === 'production' ? 'Production' : d.env === 'sandbox' ? 'Sandbox' : null;
-    return `this ${kind}${env ? ` (${env}, ${plural(n, 'connection')})` : ''}`;
-  } catch {
-    return 'this backup';
-  }
+  const d = parsed(text);
+  if (!d) return 'this backup';
+  const n = isRecord(d.items) ? Object.keys(d.items).length : 0;
+  const kind = d.kind === 'full' ? 'full backup' : d.kind === 'connections' ? 'connections backup' : 'backup';
+  const env = d.env === 'production' ? 'Production' : d.env === 'sandbox' ? 'Sandbox' : null;
+  return `this ${kind}${env ? ` (${env}, ${plural(n, 'connection')})` : ''}`;
 }

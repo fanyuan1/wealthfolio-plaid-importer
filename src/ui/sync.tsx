@@ -19,7 +19,7 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
   const [attention, setAttention] = useState(0);
   const [last, setLast] = useState<{ time: string; message: string } | null>(null);
   const { error: loadError, fail } = useBusy();
-  useEffect(() => { engine.store.lastSync(env).then(setLast).catch((e) => fail('load', e)); }, [engine, env, result, fail]);
+  useEffect(() => { engine.store.lastSync(env).then(setLast).catch((e: unknown) => fail('load', e)); }, [engine, env, result, fail]);
   const progress = task?.label === 'dry' ? task.progress : [];
   const pushing = task?.label === 'push' ? task.progress : [];
 
@@ -58,10 +58,10 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
             </CardDescription>
           </div>
           <div className={ACTIONS}>
-            <Button variant="outline" disabled={!!busy} onClick={() => dryRun()}>
+            <Button variant="outline" disabled={!!busy} onClick={() => void dryRun()}>
               <Spin on={busy === 'dry'} /><Icons.RefreshCw className="h-4 w-4" />Dry run
             </Button>
-            <Button disabled={!dry || stale || attention > 0 || !!busy} onClick={push}>
+            <Button disabled={!dry || stale || attention > 0 || !!busy} onClick={() => void push()}>
               <Spin on={busy === 'push'} /><Icons.Upload className="h-4 w-4" />Push to Wealthfolio
             </Button>
           </div>
@@ -72,7 +72,7 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
             {dry?.fetched.pulledAt && !busy && (
               <span className="text-muted-foreground text-xs">
                 Plaid data from {new Date(dry.fetched.pulledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. Dry run reuses it for 15 minutes.{' '}
-                <button type="button" className="text-primary underline underline-offset-2" onClick={() => dryRun(true)}>Pull fresh from Plaid</button>
+                <button type="button" className="text-primary underline underline-offset-2" onClick={() => void dryRun(true)}>Pull fresh from Plaid</button>
               </span>
             )}
             {dry && (
@@ -128,7 +128,7 @@ export function Sync({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; o
             <span>When you finish, update the preview. Push is off until then.</span>
             <div>
               <Button size="sm" disabled={!dry || !!busy}
-                      onClick={() => start('replan', async () => { const d = await engine.replan(dry!); set({ dry: d, stale: false }); })}>
+                      onClick={() => void start('replan', async () => { const d = await engine.replan(dry!); set({ dry: d, stale: false }); })}>
                 <Spin on={busy === 'replan'} /><Icons.RefreshCw className="h-3 w-3" />Update preview
               </Button>
             </div>
@@ -294,7 +294,7 @@ export function Daily({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; 
       setDaily(d);
       setRec(r);
       setNext(nextRun(d, r));
-    }).catch((e) => { if (live) fail('load', e); });
+    }).catch((e: unknown) => { if (live) fail('load', e); });
     return () => { live = false; };
   }, [engine, env, tick, busy, fail]);
   useEffect(() => { const t = setInterval(() => setTick((n) => n + 1), 60_000); return () => clearInterval(t); }, []);
@@ -332,7 +332,7 @@ export function Daily({ engine, env, onStep }: { engine: Engine; env: PlaidEnv; 
               </SaveMark>
             </div>
             <Button variant="outline" className="ms-auto" disabled={engineBusy}
-                    onClick={() => engine.runDaily().then(() => host.ctx?.api.query.invalidateQueries(['activities']), () => {})}>
+                    onClick={() => void engine.runDaily().then(() => host.ctx?.api.query.invalidateQueries(['activities']), () => {})}>
               <Spin on={!!busy} /><Icons.RefreshCw className="h-4 w-4" />Run now
             </Button>
           </div>
@@ -434,7 +434,7 @@ function RatioProposal({ engine, p, onDone }: { engine: Engine; p: Proposal; onD
         {p.next && (
           <div className="flex gap-2">
             <Button size="sm" disabled={!!busy}
-                    onClick={() => run('ratio', async () => { await engine.setSecurity(p.sid, p.name, { mode: 'track', track: p.next! }); onDone(); })}>
+                    onClick={() => void run('ratio', async () => { await engine.setSecurity(p.sid, p.name, { mode: 'track', track: p.next! }); onDone(); })}>
               <Spin on={busy === 'ratio'} />Use the new ratio
             </Button>
           </div>

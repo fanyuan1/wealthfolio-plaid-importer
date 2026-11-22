@@ -1,6 +1,7 @@
 import { D, type Dec, dec, nz, ZERO } from "./dec";
-import { Activity, type ActivityInit, mapResult, type MapResult, type Review, review, type Row } from "./models";
-import { resolve } from "./securities";
+import { Activity, type ActivityInit, mapResult, type MapResult, type Review, review } from "./models";
+import type { PlaidInvestmentTransaction, PlaidSecurity } from "./plaidTypes";
+import { resolve, type SecurityOverride } from "./securities";
 import { daysBetween } from "./transfers";
 
 const DIVIDEND_SUBTYPES: Record<string, string | null> = {
@@ -19,10 +20,11 @@ const TRANSFER_SUBTYPES = new Set(["transfer", "send", "request", "trade"]);
 const PARTIAL_FILL = "partially filled";
 const REINVEST_MATCH_DAYS = 7;
 
-const currencyOf = (t: Row, def: string): string => t.iso_currency_code || t.unofficial_currency_code || def;
+const currencyOf = (t: PlaidInvestmentTransaction, def: string): string => t.iso_currency_code || t.unofficial_currency_code || def;
 const has = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
 
-export function mapInvestmentTransactions(txns: Row[], securities: Record<string, Row>, overrides: Record<string, Row>,
+export function mapInvestmentTransactions(txns: PlaidInvestmentTransaction[], securities: Record<string, PlaidSecurity>,
+  overrides: Record<string, SecurityOverride>,
   defaultCurrency = "USD", stockPlan: Set<string> = new Set()): MapResult {
   const r = mapResult();
   for (const t of txns) {
@@ -42,15 +44,15 @@ export function mapInvestmentTransactions(txns: Row[], securities: Record<string
   return r;
 }
 
-function reinvestMemos(txns: Row[]): Set<string> {
-  const reinv = txns.filter((t) => t.type === "buy" && String(t.subtype ?? "").toLowerCase() === "dividend reinvestment");
+function reinvestMemos(txns: PlaidInvestmentTransaction[]): Set<string> {
+  const reinv = txns.filter((t) => t.type === "buy" && t.subtype.toLowerCase() === "dividend reinvestment");
   const fills = reinv.filter((t) => nz(dec(t.quantity)));
   const used = new Set<string>();
   const memos = new Set<string>();
   for (const m of reinv.filter((t) => !nz(dec(t.quantity)) && !nz(dec(t.price)))) {
     const f = fills.find((f) => !used.has(f.investment_transaction_id) && f.account_id === m.account_id
-      && f.security_id === m.security_id && dec(f.amount)!.eq(dec(m.amount)!)
-      && daysBetween(String(f.date), String(m.date)) <= REINVEST_MATCH_DAYS);
+      && f.security_id === m.security_id && D(f.amount).eq(D(m.amount))
+      && daysBetween(f.date, m.date) <= REINVEST_MATCH_DAYS);
     if (f) {
       used.add(f.investment_transaction_id);
       memos.add(m.investment_transaction_id);
@@ -59,15 +61,16 @@ function reinvestMemos(txns: Row[]): Set<string> {
   return memos;
 }
 
-function reversals(txns: Row[]): Set<string> {
+function reversals(txns: PlaidInvestmentTransaction[]): Set<string> {
   const used = new Set<string>();
   const rows = txns.filter((t) => t.security_id && t.type !== "buy" && t.type !== "sell" && nz(dec(t.quantity)));
   for (const a of rows) {
-    if (used.has(a.investment_transaction_id) || dec(a.quantity)!.gte(0)) continue;
+    const qa = D(String(a.quantity));
+    if (used.has(a.investment_transaction_id) || qa.gte(0)) continue;
     const b = rows.find((b) => !used.has(b.investment_transaction_id) && b !== a
-      && b.account_id === a.account_id && b.security_id === a.security_id && String(b.date) === String(a.date)
-      && dec(b.quantity)!.eq(dec(a.quantity)!.neg())
-      && (dec(b.amount) ?? ZERO).eq((dec(a.amount) ?? ZERO).neg()));
+      && b.account_id === a.account_id && b.security_id === a.security_id && b.date === a.date
+      && D(String(b.quantity)).eq(qa.neg())
+      && D(b.amount).eq(D(a.amount).neg()));
     if (b) used.add(a.investment_transaction_id).add(b.investment_transaction_id);
   }
   return used;
@@ -75,10 +78,11 @@ function reversals(txns: Row[]): Set<string> {
 
 type Out = [Activity | null, Review | null];
 
-function mapOne(t: Row, securities: Record<string, Row>, overrides: Record<string, Row>, defaultCurrency: string,
+function mapOne(t: PlaidInvestmentTransaction, securities: Record<string, PlaidSecurity>, overrides: Record<string, SecurityOverride>,
+  defaultCurrency: string,
   res: MapResult, stockPlan = false): Out {
-  const tid = t.investment_transaction_id, acct = t.account_id, date = String(t.date);
-  const ttype = t.type, sub = String(t.subtype ?? "").toLowerCase();
+  const tid = t.investment_transaction_id, acct = t.account_id, date = t.date;
+  const ttype = t.type, sub = t.subtype.toLowerCase();
   const cur = currencyOf(t, defaultCurrency);
   const sec = t.security_id ? securities[t.security_id] ?? null : null;
   const r = resolve(sec, overrides, cur);
@@ -87,7 +91,7 @@ function mapOne(t: Row, securities: Record<string, Row>, overrides: Record<strin
   let price = (dec(t.price) ?? ZERO).abs();
   const feeAbs = (dec(t.fees) ?? ZERO).abs();
   const fee = nz(feeAbs) ? feeAbs : null;
-  const name: string = t.name || "";
+  const name = t.name || "";
   const rawQty = dec(t.quantity);
 
   const rev = (reason: string): Out =>
@@ -96,8 +100,8 @@ function mapOne(t: Row, securities: Record<string, Row>, overrides: Record<strin
     [new Activity({ accountId: acct, plaidId: tid, date, activityType: atype, currency: cur, description: name, ...kw }), null];
 
   if (r.kind === "exclude" || SKIP_SUBTYPES.has(sub)) return [null, null];
-  if (r.kind === "unmapped") {
-    res.unmappedSecurities.set(sec!.security_id, sec!.name || name);
+  if (r.kind === "unmapped" && sec) {
+    res.unmappedSecurities.set(sec.security_id, sec.name || name);
     return rev("unmapped security");
   }
   if (REVIEW_SUBTYPES.has(sub)) return rev(`corporate action: ${sub}`);
@@ -111,9 +115,9 @@ function mapOne(t: Row, securities: Record<string, Row>, overrides: Record<strin
     if (filled.gt(0) && filled.lt(qty)) qty = filled;
   }
   qty = qty.div(mult);
-  const secKw: Partial<ActivityInit> = isSec ? {
-    symbol: r.symbol, instrumentType: r.instrumentType, securityId: sec!.security_id,
-    symbolName: sec!.name ?? null, quoteManual: r.manual,
+  const secKw: Partial<ActivityInit> = isSec && sec ? {
+    symbol: r.symbol, instrumentType: r.instrumentType, securityId: sec.security_id,
+    symbolName: sec.name ?? null, quoteManual: r.manual,
   } : {};
 
   if (sub === "split") {
@@ -152,8 +156,8 @@ function mapOne(t: Row, securities: Record<string, Row>, overrides: Record<strin
   if (isSec && amount.eq(0) && !stockPlan && ttype === "cash" && noPrice && rawQty !== null && rawQty.gt(0)) {
     return act("SPLIT", { splitDelta: rawQty.div(mult), ...secKw });
   }
-  if (isSec && amount.eq(0) && nz(qty) && ["deposit", "contribution", "withdrawal", "distribution"].includes(sub)) {
-    const q = rawQty!.div(mult);
+  if (isSec && amount.eq(0) && nz(qty) && rawQty && ["deposit", "contribution", "withdrawal", "distribution"].includes(sub)) {
+    const q = rawQty.div(mult);
     return act(q.gt(0) ? "TRANSFER_IN" : "TRANSFER_OUT", { quantity: q.abs(), unitPrice: ZERO, marketPrice: true, ...secKw });
   }
   if (sub === "deposit" || sub === "contribution") return act("DEPOSIT", { amount: amount.abs(), transferHint: true });

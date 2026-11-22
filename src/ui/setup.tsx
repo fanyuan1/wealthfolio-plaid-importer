@@ -15,7 +15,7 @@ export function Setup({ engine, env, onEnv }: { engine: Engine; env: PlaidEnv; o
     engine.store.keys(env).then((k) => {
       setClientId(k.clientId ?? '');
       setHave(Boolean(k.clientId && k.secret));
-    }).catch((e) => fail('load', e));
+    }).catch((e: unknown) => fail('load', e));
   }, [engine, env, fail]);
 
   return (
@@ -43,13 +43,13 @@ export function Setup({ engine, env, onEnv }: { engine: Engine; env: PlaidEnv; o
           </div>
           <div>
             <Button className="min-w-32" disabled={!ok && (!clientId || !secret || !!busy)}
-                    onClick={() => !ok && run('save keys', async () => {
+                    onClick={() => { if (!ok) void run('save keys', async () => {
                       await engine.saveKeys(env, clientId, secret);
                       setSecret('');
                       setHave(true);
                       await engine.checkKeys();
                       flashOk();
-                    })}>
+                    }); }}>
               <Spin on={!!busy} /><FlashLabel on={ok} done="Keys work">Save keys</FlashLabel>
             </Button>
           </div>

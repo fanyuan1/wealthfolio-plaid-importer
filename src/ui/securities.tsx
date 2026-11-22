@@ -1,7 +1,7 @@
 import { Badge, Button, Card, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, CardContent, CardDescription, CardHeader, CardTitle, Input, Label, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@wealthfolio/ui';
 import { Fragment, useEffect, useState } from 'react';
 import { type Engine, modeOf, type Security, type SecurityMode } from '../engine/engine';
-import type { Track } from '../importer';
+import type { SecurityOverride, Track } from '../importer';
 import { Problem, Spin, useBusy } from './common';
 
 const MODES: [SecurityMode, string, string][] = [
@@ -23,7 +23,7 @@ function sourceOf(s: Security, refused: Record<string, string> = {}): { label: s
   return { label, tone: mode === 'exclude' ? 'destructive' : 'success-subtle' };
 }
 
-export type Saved = (sid: string, override: Record<string, unknown>, label: string) => void;
+export type Saved = (sid: string, override: SecurityOverride, label: string) => void;
 
 export function Securities({ engine, list, refused = {}, onSaved, onAttention }: { engine: Engine; list: Security[]; refused?: Record<string, string>;
   onSaved: Saved; onAttention: (n: number) => void }) {
@@ -107,7 +107,7 @@ export function Securities({ engine, list, refused = {}, onSaved, onAttention }:
   );
 }
 
-function SecurityEditor({ engine, s, onSaved }: { engine: Engine; s: Security; onSaved: (o: Record<string, unknown>, label: string) => void }) {
+function SecurityEditor({ engine, s, onSaved }: { engine: Engine; s: Security; onSaved: (o: SecurityOverride, label: string) => void }) {
   const o = s.override ?? {};
   const [mode, setMode] = useState<SecurityMode>(modeOf(s));
   const [symbol, setSymbol] = useState<string>(o.symbol ?? (modeOf(s) === 'holding' || o.investment ? s.ticker ?? '' : ''));
@@ -181,7 +181,7 @@ function SecurityEditor({ engine, s, onSaved }: { engine: Engine; s: Security; o
             {field(`d-${s.sid}`, 'Date', day, (x) => { setDay(x); setTrack(undefined); }, 'YYYY-MM-DD')}
             {field(`p-${s.sid}`, 'This fund\'s price', price, (x) => { setPrice(x); setTrack(undefined); }, '104.25', 'w-28')}
             {field(`c-${s.sid}`, 'Close (optional)', close, (x) => { setClose(x); setTrack(undefined); }, 'from Yahoo', 'w-28')}
-            <Button variant="outline" disabled={!!busy || valid.state === 'bad'} onClick={() => run('ratio', async () => setTrack(await engine.ratio(target, day, price, close)))}>
+            <Button variant="outline" disabled={!!busy || valid.state === 'bad'} onClick={() => void run('ratio', async () => setTrack(await engine.ratio(target, day, price, close)))}>
               <Spin on={busy === 'ratio'} />Get ratio
             </Button>
           </div>
@@ -196,7 +196,7 @@ function SecurityEditor({ engine, s, onSaved }: { engine: Engine; s: Security; o
       )}
       <div className="flex gap-2">
         <Button size="sm" disabled={!!busy || (mode === 'track' && !track) || ((mode === 'track' || mode === 'ticker') && valid.state === 'bad')}
-                onClick={() => run('save', async () => {
+                onClick={() => void run('save', async () => {
                   const o = await engine.setSecurity(s.sid, s.name, { mode, symbol, track });
                   const name = MODES.find(([m]) => m === mode)![1];
                   onSaved(o, mode === 'ticker' || (mode === 'holding' && o.symbol) ? String(o.symbol) : mode === 'track' ? `${track!.symbol} × ${track!.ratio}` : name);

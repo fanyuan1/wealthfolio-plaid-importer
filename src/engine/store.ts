@@ -1,5 +1,5 @@
 import type { HostAPI } from '@wealthfolio/addon-sdk';
-import { type AccountCfg, type CloseCache, itemAt, MemoryLedger, type PlaidEnv, type Row } from '../importer';
+import { type AccountCfg, arrayOf, type CloseCache, isString, itemAt, MemoryLedger, shape, type PlaidEnv, type SecurityOverride } from '../importer';
 
 export type Api = HostAPI;
 export interface Daily { on: boolean; time: string }
@@ -11,15 +11,17 @@ export interface RunRecord {
 }
 export interface AutoRun { done?: string; tried?: string; runs?: RunRecord[] }
 export interface Remap { full: string[]; dropped: Record<string, string[]> }
-export interface ItemMeta { owner: string; institution_name: string; institution_id?: string; products?: string[]; env?: string;
+export interface ItemMeta { owner: string; institution_name: string; institution_id?: string | null | undefined; products?: string[] | undefined;
+  env?: string;
   checked?: string;
   reconnect?: boolean;
-  [k: string]: unknown }
+  created?: string }
 
 const KEYS = { dailyOn: "daily_on", clientId: "plaid_client_id", secret: (env: PlaidEnv) => `plaid_secret_${env}`, token: (id: string) => `token_${id}` };
 
 const PART = 50_000;
 type Head = { parts: string[] };
+const isHead = shape<Head>({ parts: arrayOf(isString) });
 
 function hash(s: string): string {
   let a = 0x811c9dc5, b = 0x01000193 ^ s.length;
@@ -47,8 +49,8 @@ export class Store {
 
   private head(v: string | null): Head | null {
     if (!v?.startsWith('{"parts":')) return null;
-    const h = JSON.parse(v);
-    return Array.isArray(h.parts) && Object.keys(h).length === 1 ? (h as Head) : null;
+    const h: unknown = JSON.parse(v);
+    return isHead(h) && Object.keys(h).length === 1 ? h : null;
   }
 
   private async json<T>(key: string, fallback: T): Promise<T> {
@@ -97,10 +99,10 @@ export class Store {
   saveItems(env: PlaidEnv, v: Record<string, ItemMeta>) { return this.put(`items_${env}`, v); }
   accounts(env: PlaidEnv) { return this.json<Record<string, AccountCfg>>(`accounts_${env}`, {}); }
   saveAccounts(env: PlaidEnv, v: Record<string, AccountCfg>) { return this.put(`accounts_${env}`, v); }
-  symbols(env: PlaidEnv) { return this.json<Record<string, Row>>(`symbols_${env}`, {}); }
+  symbols(env: PlaidEnv) { return this.json<Record<string, SecurityOverride>>(`symbols_${env}`, {}); }
   remap(env: PlaidEnv) { return this.json<Remap>(`remap_${env}`, { full: [], dropped: {} }); }
   saveRemap(env: PlaidEnv, v: Remap) { return this.put(`remap_${env}`, v); }
-  saveSymbols(env: PlaidEnv, v: Record<string, Row>) { return this.put(`symbols_${env}`, v); }
+  saveSymbols(env: PlaidEnv, v: Record<string, SecurityOverride>) { return this.put(`symbols_${env}`, v); }
   async ledger(env: PlaidEnv) { return new MemoryLedger(await this.json(`ledger_${env}`, {})); }
   saveLedger(env: PlaidEnv, l: MemoryLedger) { return this.put(`ledger_${env}`, l.toJSON()); }
   prices() { return this.json<CloseCache>("prices", {}); }

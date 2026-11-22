@@ -1,9 +1,14 @@
 import { D, type Dec, dec, EPS, nz, ZERO } from "./dec";
-import { Activity, POSITION_SIGN, type Review, review, type Row } from "./models";
-import { resolve } from "./securities";
+import { Activity, POSITION_SIGN, type Review, review } from "./models";
+import type { PlaidHolding, PlaidSecurity } from "./plaidTypes";
+import { resolve, type SecurityOverride } from "./securities";
 
 export type PriceOn = (securityId: string, day: string) => Dec | null;
-export type HoldingMap = Map<string, Row>;
+export interface Position {
+  security_id: string; quantity: Dec; cost_basis: number | null | undefined; institution_price: PlaidHolding["institution_price"];
+  symbol: string; instrumentType: string | null; manual: boolean; name: string | null; multiplier: Dec;
+}
+export type HoldingMap = Map<string, Position>;
 export const hkey = (accountId: string, symbol: string) => `${accountId}|${symbol}`;
 const splitKey = (k: string): [string, string] => {
   const i = k.indexOf("|");
@@ -18,21 +23,21 @@ const byOrder = (x: Activity, y: Activity) => {
 
 const add = (m: Map<string, Dec>, k: string, v: Dec) => m.set(k, (m.get(k) ?? ZERO).plus(v));
 
-export function holdingsBySymbol(holdings: Row[], securities: Record<string, Row>, overrides: Record<string, Row>):
-  [HoldingMap, Map<string, Dec>, Row[]] {
+export function holdingsBySymbol(holdings: PlaidHolding[], securities: Record<string, PlaidSecurity>, overrides: Record<string, SecurityOverride>):
+  [HoldingMap, Map<string, Dec>, PlaidHolding[]] {
   const bySym: HoldingMap = new Map();
   const cash = new Map<string, Dec>();
-  const unmapped: Row[] = [];
+  const unmapped: PlaidHolding[] = [];
   for (const h of holdings) {
     const sec = securities[h.security_id];
     const r = resolve(sec, overrides, h.iso_currency_code || "USD");
     if (r.kind === "cash") {
       add(cash, h.account_id, dec(h.institution_value) ?? ZERO);
-    } else if (r.kind === "security") {
+    } else if (r.kind === "security" && r.symbol !== null) {
       const qty = (dec(h.quantity) ?? ZERO).div(r.multiplier);
-      bySym.set(hkey(h.account_id, r.symbol!), {
-        ...h, quantity: qty, _symbol: r.symbol, _itype: r.instrumentType, _manual: r.manual,
-        _name: sec?.name ?? null, _mult: r.multiplier,
+      bySym.set(hkey(h.account_id, r.symbol), {
+        security_id: h.security_id, quantity: qty, cost_basis: h.cost_basis, institution_price: h.institution_price,
+        symbol: r.symbol, instrumentType: r.instrumentType, manual: r.manual, name: sec?.name ?? null, multiplier: r.multiplier,
       });
     } else if (r.kind === "unmapped") {
       unmapped.push(h);
@@ -68,7 +73,7 @@ export function openingActivities(accountId: string, startDate: string, holdings
   }
   for (const sym of [...symbols].sort()) {
     const h = holdings.get(hkey(accountId, sym));
-    const current = h ? dec(h.quantity)! : ZERO;
+    const current = h ? h.quantity : ZERO;
     const delta = deltas.get(sym) ?? ZERO;
     const opening = current.minus(delta);
     if (opening.abs().lt(EPS)) continue;
@@ -80,7 +85,7 @@ export function openingActivities(accountId: string, startDate: string, holdings
     let price: Dec | null = null;
     const grown = splitFactor(opening, acts.filter((a) => a.accountId === accountId && a.symbol === sym));
     if (h && h.cost_basis != null && nz(current)) {
-      price = dec(h.cost_basis)!.abs().div(current.times(h._mult ?? 1)).times(grown);
+      price = D(h.cost_basis).abs().div(current.times(h.multiplier)).times(grown);
     } else {
       const sid = h ? h.security_id : acts.find((a) => a.symbol === sym)?.securityId ?? null;
       let source: string | null;
@@ -91,8 +96,8 @@ export function openingActivities(accountId: string, startDate: string, holdings
     }
     out.push(new Activity({
       accountId, plaidId: pid, date: startDate, activityType: "TRANSFER_IN", currency, symbol: sym,
-      instrumentType: h ? h._itype ?? null : null, securityId: h ? h.security_id ?? null : null,
-      symbolName: h ? h._name ?? null : null, quoteManual: Boolean(h && h._manual),
+      instrumentType: h ? h.instrumentType : null, securityId: h ? h.security_id : null,
+      symbolName: h ? h.name : null, quoteManual: Boolean(h?.manual),
       quantity: opening, unitPrice: nz(price) ? price : ZERO, description: "Opening position",
     }));
   }
@@ -112,7 +117,7 @@ export function openingActivities(accountId: string, startDate: string, holdings
 function acquisitionPrice(sym: string, sid: string | null, day: string, acts: Activity[], priceOn?: PriceOn, grown: Dec = D(1)):
   [Dec | null, string | null] {
   const p = priceOn && sid ? priceOn(sid, day) : null;
-  if (nz(p)) return [p!.times(grown), `market price on ${day}${grown.eq(1) ? "" : `, times ${grown} for later splits`}`];
+  if (nz(p)) return [p.times(grown), `market price on ${day}${grown.eq(1) ? "" : `, times ${grown} for later splits`}`];
   const priced = acts.filter((a) => a.symbol === sym && nz(a.unitPrice)).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   const first = priced[0];
   if (first) return [first.unitPrice, `Plaid price on ${first.date}, the earliest it shows`];
@@ -143,19 +148,19 @@ export function fixSplitPrices(acts: Activity[], all: Activity[], close: (sym: s
   for (const a of all) {
     if (a.activityType !== "SPLIT" || !a.symbol || !nz(a.amount)) continue;
     const k = hkey(a.accountId, a.symbol);
-    splits.set(k, [...(splits.get(k) ?? []), [a.date, a.amount!]]);
+    splits.set(k, [...(splits.get(k) ?? []), [a.date, a.amount]]);
   }
   const out: Review[] = [];
   for (const a of acts) {
-    if (!a.symbol || a.marketPrice || a.plaidId.startsWith("opening:") || !POSITION_SIGN[a.activityType] || !nz(a.unitPrice)) continue;
+    const price = a.unitPrice;
+    if (!a.symbol || a.marketPrice || a.plaidId.startsWith("opening:") || !POSITION_SIGN[a.activityType] || !nz(price)) continue;
     const later = (splits.get(hkey(a.accountId, a.symbol)) ?? []).filter(([day]) => day > a.date);
     const factor = later.reduce((f, [, r]) => f.times(r), D(1));
     if (factor.gt("0.67") && factor.lt("1.5")) continue;
     const y = close(a.symbol, a.date);
     if (!nz(y)) continue;
-    const price = a.unitPrice!;
     const near = (x: Dec, target: Dec) => x.div(target).minus(1).abs().lte("0.3");
-    if (near(price, y!) && !near(price, y!.times(factor))) {
+    if (near(price, y) && !near(price, y.times(factor))) {
       a.unitPrice = price.times(factor);
       out.push(review(a.accountId, a.plaidId, a.date, "price adjusted for a later split",
         `${a.symbol}: Plaid price ${price} matches Yahoo's split-adjusted close ${y}; used ${a.unitPrice} for ${a.quantity} sh`));
@@ -170,14 +175,14 @@ export function positions(acts: Activity[]): Map<string, Dec> {
   return pos;
 }
 
-export function reconcile(accountIds: Set<string>, computed: Map<string, Dec>, holdings: HoldingMap, fresh: Activity[] = [],
+export function reconcile(accountIds: Set<string>, computed: Map<string, Dec>, holdings: Map<string, Pick<Position, "quantity">>, fresh: Activity[] = [],
   tol: Dec = D("0.001")): Review[] {
   const keys = new Set<string>();
   for (const k of [...computed.keys(), ...holdings.keys()]) if (accountIds.has(splitKey(k)[0])) keys.add(k);
   const reviews: Review[] = [];
   for (const k of [...keys].sort(tupleOrder)) {
     const [acct, sym] = splitKey(k);
-    const have = holdings.has(k) ? dec(holdings.get(k)!.quantity)! : ZERO;
+    const have = holdings.get(k)?.quantity ?? ZERO;
     const calc = computed.get(k) ?? ZERO;
     if (have.minus(calc).abs().gt(tol)) {
       const added = fresh.filter((a) => a.symbol && hkey(a.accountId, a.symbol) === k && !a.positionDelta().eq(0))

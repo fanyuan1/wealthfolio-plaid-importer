@@ -1,9 +1,11 @@
-import { valueAt, accountLabel, accountNames, plural, cryptoSymbol, isCrypto, isCurrency, type AccountCfg, BLOCKING_ITEM_ERRORS, PlaidError, RECONNECT_DETAIL, accountName, type OnProgress, type Progress, assignCategories, Closes, D, discoverAccounts, entry, fetchItems, type FetchResult, type Adoption, type Existing, findAdoptions, forgetEmptied, matchById, holdsSecurities, jointCopies, planLinks, type HttpGet, jointOwners, addDays, HISTORY_DAYS, MemoryLedger, Plaid, type PlaidEnv, plan, type Plan, push, type PushStats, rebases, reportedPrice, resolve, type Row, todoReport, type Token, type Track, trackedIds, type Transport, uncategorized, WF_TYPE, withPrices, yahooFetch } from '../importer';
+import { valueAt, accountLabel, accountNames, plural, cryptoSymbol, isCrypto, isCurrency, type AccountCfg, BLOCKING_ITEM_ERRORS, PlaidError, RECONNECT_DETAIL, accountName, type OnProgress, type Progress, assignCategories, Closes, D, discoverAccounts, entry, fetchItems, type FetchResult, type Adoption, type Existing, findAdoptions, forgetEmptied, matchById, holdsSecurities, jointCopies, planLinks, type HttpGet, jointOwners, addDays, HISTORY_DAYS, MemoryLedger, Plaid, type PlaidEnv, plan, type Plan, push, type PushStats, rebases, reportedPrice, resolve, type SecurityOverride, type HoldingsData, type InvestmentData, type LinkSession, type PlaidInstitution, type PlaidSecurity, type HoldingsItem, todoReport, type Token, type Track, trackedIds, type Transport, uncategorized, WF_TYPE, withPrices, yahooFetch } from '../importer';
 import { type Api, type AutoRun, type Daily, type ItemMeta, type RunRecord, Store } from './store';
+import { type Backup, type BackupItem, type BackupKind, isBackup } from './backup';
 import { SdkWriter } from './writer';
 
 export type { AutoRun, Daily, RunRecord } from './store';
 export type { Progress } from '../importer';
+export type { BackupKind } from './backup';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const localDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -17,12 +19,17 @@ export const DEFAULT_DAILY: Daily = { on: false, time: "07:00" };
 const minutes = (hhmm: string) => { const [h = 0, m = 0] = hhmm.split(":").map(Number); return h * 60 + (m || 0); };
 const AUTO_RATIO_LIMIT = 0.05;
 const BACKUP_FORMAT = "plaid-importer-backup";
+const NOT_A_BACKUP = "This is not a Plaid Importer backup. Make one in Backup.";
+const NO_HOSTED_LINK = "Plaid returned no hosted link. Ask Plaid support to enable Hosted Link for your account.";
 const DAILY_RUNNING = "The daily sync is running. Wait for it to finish.";
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const union = <T,>(...lists: Iterable<T>[]): T[] => [...new Set(lists.flatMap((l) => [...l]))];
 const clientUser = (owner: string) => `plaid-importer-${owner.toLowerCase()}`;
-const institutionName = (plaid: Plaid, id?: string | null): Promise<string | undefined> =>
-  id ? plaid.institution(id).then((r) => r?.name, () => undefined) : Promise.resolve(undefined);
+const institutionName = (plaid: Plaid, id: string | null | undefined): Promise<string | undefined> =>
+  id ? plaid.institution(id).then((r) => r.name ?? undefined, () => undefined) : Promise.resolve(undefined);
+const without = <T,>(record: Record<string, T>, key: string): Record<string, T> =>
+  Object.fromEntries(Object.entries(record).filter(([k]) => k !== key));
+const securitySymbol = (r: { kind: string; symbol: string | null }): string | null => (r.kind === "security" ? r.symbol : null);
 const withoutRows = (p: Plan, ids: Set<string>): Plan =>
   ({ ...p, new: p.new.filter((a) => !ids.has(a.plaidId)), categories: new Map([...p.categories].filter(([k]) => !ids.has(k))) });
 
@@ -143,15 +150,15 @@ export class Engine {
     const plaid = await this.plaid();
     const r = await plaid.linkToken(clientUser(owner), ["transactions"], ["investments", "auth"], "US",
       undefined, { hosted_link: {} });
-    if (!r.hosted_link_url) throw new Error("Plaid returned no hosted link. Ask Plaid support to enable Hosted Link for your account.");
+    if (!r.hosted_link_url) throw new Error(NO_HOSTED_LINK);
     return { url: r.hosted_link_url, linkToken: r.link_token };
   }
 
   async checkHostedLink(owner: string, linkToken: string): Promise<LinkCheck> {
     if (this.tasks.daily?.running) return { state: "waiting" };
     const plaid = await this.plaid();
-    const r = await plaid.linkTokenGet(linkToken);
-    for (const s of r.link_sessions ?? []) {
+    const sessions = await plaid.linkTokenGet(linkToken);
+    for (const s of sessions) {
       const add = s.results?.item_add_results?.[0] ?? s.on_success;
       const pt = add?.public_token;
       if (pt) {
@@ -159,13 +166,13 @@ export class Engine {
         return this.linked(itemId);
       }
     }
-    return exited(r.link_sessions ?? []);
+    return exited(sessions);
   }
 
   async checkReconnect(itemId: string, linkToken: string): Promise<LinkCheck> {
     if (this.tasks.daily?.running) return { state: "waiting" };
     const plaid = await this.plaid();
-    const sessions: Row[] = (await plaid.linkTokenGet(linkToken)).link_sessions ?? [];
+    const sessions = await plaid.linkTokenGet(linkToken);
     if (sessions.some((s) => s.on_success || s.results)) {
       await this.write(async () => {
         await this.markReconnect([], [itemId]);
@@ -189,13 +196,14 @@ export class Engine {
     const tok = await this.store.token(itemId);
     if (!meta || !tok) throw new Error("Unknown connection.");
     const r = await plaid.linkToken(clientUser(meta.owner), [], [], "US", tok, { hosted_link: {} });
+    if (!r.hosted_link_url) throw new Error(NO_HOSTED_LINK);
     return { url: r.hosted_link_url, linkToken: r.link_token };
   }
 
-  private async finishLink(plaid: Plaid, owner: string, publicToken: string, products: string[], institution?: Row): Promise<string> {
+  private async finishLink(plaid: Plaid, owner: string, publicToken: string, products: string[], institution?: PlaidInstitution | null): Promise<string> {
     const { env } = await this.store.settings();
     const ex = await plaid.exchange(publicToken);
-    const item = (await plaid.item(ex.access_token)).item ?? {};
+    const item = await plaid.item(ex.access_token);
     const insId = institution?.institution_id ?? item.institution_id;
     const name = institution?.name || await institutionName(plaid, insId);
     await this.store.saveToken(ex.item_id, ex.access_token);
@@ -222,7 +230,7 @@ export class Engine {
           c.owner = o;
           if (c.wealthfolio_account_id) continue;
           const taken = new Set(Object.entries(cfg).filter(([id]) => id !== aid).map(([, x]) => String(x.name)));
-          c.name = accountName(o, String(c.institution ?? valueAt(items, itemId).institution_name), c.plaid_name as string, c.mask as string, taken);
+          c.name = accountName(o, c.institution ?? valueAt(items, itemId).institution_name, c.plaid_name, c.mask, taken);
         }
       });
     });
@@ -231,10 +239,9 @@ export class Engine {
   async removeItem(itemId: string) {
     return this.write(async () => {
       const { env } = await this.store.settings();
-      const items = await this.store.items(env);
-      delete items[itemId];
-      await this.store.saveItems(env, items);
-      await this.editAccounts((cfg) => { for (const [aid, c] of Object.entries(cfg)) if (c.item_id === itemId) delete cfg[aid]; });
+      await this.store.saveItems(env, without(await this.store.items(env), itemId));
+      const cfg = await this.store.accounts(env);
+      await this.store.saveAccounts(env, Object.fromEntries(Object.entries(cfg).filter(([, c]) => c.item_id !== itemId)));
       await this.store.deleteToken(itemId);
     });
   }
@@ -248,10 +255,12 @@ export class Engine {
       if (m[1] !== env) throw new Error(`This is a ${m[1]} token, but the addon is in ${env}. Switch it in Setup first.`);
       if (!/^[A-Za-z]{1,4}$/.test(owner.trim())) throw new Error("Type the owner's initials, for example AB.");
       const plaid = await this.plaid();
-      const item = (await plaid.item(tok)).item ?? {};
-      if (!item.item_id) throw new Error("Plaid did not accept this token.");
+      const item = await plaid.item(tok).catch((e: unknown) => {
+        if (e instanceof PlaidError && e.code === "INVALID_RESPONSE") throw new Error("Plaid did not accept this token.");
+        throw e;
+      });
       const items = await this.store.items(env);
-      const insId = item.institution_id ?? undefined;
+      const insId = item.institution_id;
       const name = items[item.item_id]?.institution_name ?? (await institutionName(plaid, insId)) ?? "Bank";
       await this.store.saveToken(item.item_id, tok);
       items[item.item_id] = { ...items[item.item_id], owner: owner.trim().toUpperCase(), institution_name: name,
@@ -264,14 +273,14 @@ export class Engine {
 
   async backup(kind: BackupKind): Promise<string> {
     const { env } = await this.store.settings();
-    const items: Record<string, Row> = {};
+    const items: Record<string, BackupItem> = {};
     for (const [id, m] of Object.entries(await this.store.items(env))) {
       const t = await this.store.token(id);
       if (!t) continue;
       const { checked, ...meta } = m;
       items[id] = { ...(kind === "full" ? m : meta), env, access_token: t };
     }
-    const out: Row = { format: BACKUP_FORMAT, kind, env, items };
+    const out: Backup = { format: BACKUP_FORMAT, kind, env, items };
     if (kind === "full") {
       const [accounts, symbols, ledger, remap] = await Promise.all([this.store.accounts(env), this.store.symbols(env), this.store.ledger(env), this.store.remap(env)]);
       Object.assign(out, { accounts, symbols, ledger: ledger.toJSON(), remap });
@@ -279,14 +288,14 @@ export class Engine {
     return JSON.stringify(out);
   }
 
-  private async readBackup(text: string): Promise<{ d: Row; env: PlaidEnv }> {
-    let d: Row;
+  private async readBackup(text: string): Promise<{ d: Backup; env: PlaidEnv }> {
+    let d: unknown;
     try {
       d = JSON.parse(text.trim());
     } catch {
-      throw new Error("This is not a Plaid Importer backup. Make one in Backup.");
+      throw new Error(NOT_A_BACKUP);
     }
-    if (d?.format !== BACKUP_FORMAT || (d.kind !== "connections" && d.kind !== "full")) throw new Error("This is not a Plaid Importer backup. Make one in Backup.");
+    if (!isBackup(d) || d.format !== BACKUP_FORMAT) throw new Error(NOT_A_BACKUP);
     const { env } = await this.store.settings();
     if (d.env !== env) throw new Error(`This backup is for ${d.env}, but the addon is in ${env}. Switch it in Setup first.`);
     return { d, env };
@@ -304,7 +313,7 @@ export class Engine {
       const over = mode === "overwrite";
       const full = d.kind === "full";
       const current = await this.store.items(env);
-      const incoming = (d.items ?? {}) as Record<string, Row>;
+      const incoming = d.items ?? {};
       const removed = over ? Object.keys(current).filter((id) => !incoming[id]) : [];
       for (const id of removed) await this.store.deleteToken(id);
       const items: Record<string, ItemMeta> = over ? {} : current;
@@ -312,13 +321,13 @@ export class Engine {
         const { access_token, ...meta } = tok;
         if (over || !current[id]) {
           await this.store.saveToken(id, access_token);
-          items[id] = meta as ItemMeta;
+          items[id] = meta;
         } else if (!(await this.store.token(id))) {
           await this.store.saveToken(id, access_token);
         }
       }
       await this.store.saveItems(env, items);
-      const backed = (d.accounts ?? {}) as Record<string, AccountCfg>;
+      const backed = d.accounts ?? {};
       const here = await this.store.accounts(env);
       const kept = Object.fromEntries(Object.entries(here).filter(([, c]) => items[c.item_id]));
       await this.store.saveAccounts(env, over ? (full ? backed : kept) : { ...backed, ...here });
@@ -340,13 +349,13 @@ export class Engine {
       }
       const state = await this.store.ledger(env);
       for (const r of d.ledger?.rows ?? []) if (!state.rows.has(r.plaid_id)) { state.rows.set(r.plaid_id, r); out.rows++; }
-      for (const [k, v] of Object.entries(d.ledger?.cursors ?? {})) if (!state.cursors.has(k)) state.cursors.set(k, String(v));
-      for (const [k, v] of Object.entries(d.ledger?.invSync ?? {})) if (!state.invSync.has(k)) state.invSync.set(k, String(v));
-      for (const a of d.ledger?.invFull ?? []) state.invFull.add(String(a));
+      for (const [k, v] of Object.entries(d.ledger?.cursors ?? {})) if (!state.cursors.has(k)) state.cursors.set(k, v);
+      for (const [k, v] of Object.entries(d.ledger?.invSync ?? {})) if (!state.invSync.has(k)) state.invSync.set(k, v);
+      for (const a of d.ledger?.invFull ?? []) state.invFull.add(a);
       await this.store.saveLedger(env, state);
       const remap = await this.store.remap(env);
       const dropped = { ...remap.dropped };
-      for (const [sym, accts] of Object.entries((d.remap?.dropped ?? {}) as Record<string, string[]>)) dropped[sym] = union(dropped[sym] ?? [], accts);
+      for (const [sym, accts] of Object.entries(d.remap?.dropped ?? {})) dropped[sym] = union(dropped[sym] ?? [], accts);
       await this.store.saveRemap(env, { full: union(remap.full, d.remap?.full ?? []), dropped });
       out.ledger = "restored";
       return out;
@@ -621,17 +630,18 @@ export class Engine {
   }
 
 
-  setSecurity(sid: string, name: string, o: SecurityChoice): Promise<Row> {
+  setSecurity(sid: string, name: string, o: SecurityChoice): Promise<SecurityOverride> {
     return this.write(() => this.applySecurity(sid, name, o));
   }
 
-  private async applySecurity(sid: string, name: string, o: SecurityChoice): Promise<Row> {
+  private async applySecurity(sid: string, name: string, o: SecurityChoice): Promise<SecurityOverride> {
     const { env } = await this.store.settings();
     const symbols = await this.store.symbols(env);
     const before = { ...symbols };
-    const keep = Object.fromEntries(Object.entries(symbols[sid] ?? {}).filter(([k]) => k === "instrument_type" || k === "multiplier"));
+    const { instrument_type, multiplier } = symbols[sid] ?? {};
     const sym = o.symbol?.trim().toUpperCase() || null;
-    const e: Row = { ...keep, name };
+    const e: SecurityOverride = { ...(instrument_type === undefined ? {} : { instrument_type }),
+      ...(multiplier === undefined ? {} : { multiplier }), name };
     if (o.mode === "auto") e.symbol = null;
     else if (o.mode === "ticker") {
       if (!sym) throw new Error("Type a ticker.");
@@ -650,26 +660,26 @@ export class Engine {
     return e;
   }
 
-  private async noteRemap(env: PlaidEnv, sid: string, before: Record<string, Row>, after: Record<string, Row>) {
-    let sec: Row | undefined;
+  private async noteRemap(env: PlaidEnv, sid: string, before: Record<string, SecurityOverride>, after: Record<string, SecurityOverride>) {
+    let sec: PlaidSecurity | undefined;
     const accts = new Set<string>();
     for (const d of this.pulled?.fetched.items ?? []) {
-      sec ??= d.inv?.securities?.[sid] ?? (d.holdings?.securities ?? []).find((s: Row) => s.security_id === sid);
-      for (const h of d.holdings?.holdings ?? []) if (h.security_id === sid) accts.add(String(h.account_id));
-      for (const t of d.inv?.investment_transactions ?? []) if (t.security_id === sid) accts.add(String(t.account_id));
+      sec ??= d.inv?.securities[sid] ?? d.holdings?.securities.find((s) => s.security_id === sid);
+      for (const h of d.holdings?.holdings ?? []) if (h.security_id === sid) accts.add(h.account_id);
+      for (const t of d.inv?.investment_transactions ?? []) if (t.security_id === sid) accts.add(t.account_id);
     }
     if (!sec) return;
     const cur = sec.iso_currency_code || "USD";
-    const [was, now] = [resolve(sec, before, cur), resolve(sec, after, cur)];
+    const [was, now] = [securitySymbol(resolve(sec, before, cur)), securitySymbol(resolve(sec, after, cur))];
     const remap = await this.store.remap(env);
-    if (now.kind === "security") {
-      delete remap.dropped[now.symbol!];
-      if (was.kind !== "security") remap.full = union(remap.full, accts);
+    if (now !== null) {
+      remap.dropped = without(remap.dropped, now);
+      if (was === null) remap.full = union(remap.full, accts);
     }
-    if (was.kind === "security" && (now.kind !== "security" || now.symbol !== was.symbol)) {
+    if (was !== null && now !== was) {
       const state = await this.store.ledger(env);
-      const pushed = state.live(was.symbol!).map((r) => r.account_id);
-      if (pushed.length) remap.dropped[was.symbol!] = union(remap.dropped[was.symbol!] ?? [], pushed);
+      const pushed = state.live(was).map((r) => r.account_id);
+      if (pushed.length) remap.dropped[was] = union(remap.dropped[was] ?? [], pushed);
     }
     await this.store.saveRemap(env, remap);
   }
@@ -689,7 +699,7 @@ export class Engine {
     const todo = [...new Set(symbols)].filter((s) => !this.tickerOk.has(s));
     const got = await Promise.all(todo.map((s) => this.validTicker(s).then((r) => r.ok, () => null)));
     todo.forEach((s, i) => this.tickerOk.set(s, got[i] ?? null));
-    return Object.fromEntries(symbols.map((s) => [s, this.tickerOk.get(s)!]));
+    return Object.fromEntries(symbols.map((s) => [s, this.tickerOk.get(s) ?? null]));
   }
 
   async ratio(target: string, day: string, price: string, close?: string): Promise<Track> {
@@ -726,7 +736,7 @@ export class Engine {
       state.forget(rows.map((r) => r.plaid_id), new Set(rows.map((r) => r.account_id)));
       await this.store.saveLedger(env, state);
       const remap = await this.store.remap(env);
-      delete remap.dropped[symbol];
+      remap.dropped = without(remap.dropped, symbol);
       remap.full = union(remap.full, accountIds);
       await this.store.saveRemap(env, remap);
       return rows.length;
@@ -786,7 +796,7 @@ export class Engine {
     const added = new Set([...now].filter((sid) => !d.tracked.has(sid)));
     const accts = new Set((await this.store.remap(d.env)).full);
     for (const item of d.fetched.items) {
-      for (const h of item.holdings?.holdings ?? []) if (added.has(h.security_id)) accts.add(String(h.account_id));
+      for (const h of item.holdings?.holdings ?? []) if (added.has(h.security_id)) accts.add(h.account_id);
     }
     await this.pullHistory(d, accts);
     return this.planFrom(d.env, d.fetched, d.cfg, d.state, now, d.adoptions);
@@ -801,11 +811,11 @@ export class Engine {
       if (!tok) continue;
       const full = await (plaid ??= await this.plaid()).investmentTransactions(tok, start, today());
       const from = item.invStart;
-      full.investment_transactions = full.investment_transactions.filter((t: Row) => {
+      full.investment_transactions = full.investment_transactions.filter((t) => {
         const since = from[t.account_id];
         return accts.has(t.account_id) || !since || t.date >= since;
       });
-      for (const a of accts) from[String(a)] = start;
+      for (const a of accts) from[a] = start;
       item.inv = full;
     }
   }
@@ -816,7 +826,7 @@ export class Engine {
     const [symbols, closes, remap] = await Promise.all([this.store.symbols(env), this.closes(day), this.store.remap(env)]);
     const start = addDays(day, -HISTORY_DAYS);
     const fullPull = (a: string) => fetched.items.some((d) => d.invStart[a] !== undefined && d.invStart[a] <= start);
-    const holdsTracked = new Set(fetched.items.flatMap((d) => (d.holdings?.holdings ?? []).filter((h: Row) => trackedIds(symbols).has(h.security_id)).map((h: Row) => String(h.account_id))));
+    const holdsTracked = new Set(fetched.items.flatMap((d) => (d.holdings?.holdings ?? []).filter((h) => trackedIds(symbols).has(h.security_id)).map((h) => h.account_id)));
     const backfill = new Set([...remap.full, ...holdsTracked].filter(fullPull));
     const p = await withPrices(closes, (c) => plan(fetched.items, cfg, symbols, state, day, backfill, c));
     for (const [sym, accts] of Object.entries(remap.dropped)) {
@@ -827,11 +837,12 @@ export class Engine {
     const asked: [string, string][] = [];
     for (const sid of trackedIds(symbols)) {
       const got = reportedPrice(fetched.items, sid);
-      if (got) asked.push([valueAt(symbols, sid).track.symbol, got[1]]);
+      const track = valueAt(symbols, sid).track;
+      if (got && track) asked.push([track.symbol, got[1]]);
     }
     await closes.load(asked, { latest: true });
     const proposals = rebases(fetched.items, symbols, closes).map((rb) => ({
-      sid: rb.sid, name: rb.name, old: rb.old as Track, next: rb.next, day: rb.day, price: rb.price.toString(),
+      sid: rb.sid, name: rb.name, old: rb.old, next: rb.next, day: rb.day, price: rb.price.toString(),
       change: rb.change?.toNumber() ?? null,
     }));
     if (p.unmapped.size) {
@@ -845,7 +856,7 @@ export class Engine {
       securities: await this.securitiesOf(fetched.items, symbols) };
   }
 
-  private async securitiesOf(items: FetchResult["items"], symbols: Record<string, Row>): Promise<Security[]> {
+  private async securitiesOf(items: FetchResult["items"], symbols: Record<string, SecurityOverride>): Promise<Security[]> {
     const list = seenSecurities(items, symbols);
     const known = await this.checkTickers(list.filter((s) => modeOf(s) === "auto" && tickersMatch(s)).map((s) => s.result));
     return list.map((s) => ({ ...s, review: needsReview(s, known) }));
@@ -972,15 +983,19 @@ function unlearned(state: MemoryLedger, cfg: Record<string, AccountCfg>) {
     && !r.pair_plaid_id && !cfg[r.account_id]?.skip && ["cash", "credit"].includes(cfg[r.account_id]?.kind ?? ""));
 }
 
-export function seenSecurities(items: { inv?: Row | null; holdings?: Row | null }[], symbols: Record<string, Row>): Security[] {
+type SecuritySource = { inv?: Pick<InvestmentData, "securities"> | null | undefined;
+  holdings?: (Pick<HoldingsData, "securities"> & NonNullable<HoldingsItem["holdings"]>) | null | undefined };
+
+export function seenSecurities(items: SecuritySource[],
+  symbols: Record<string, SecurityOverride>): Security[] {
   const out = new Map<string, Security>();
   for (const d of items) {
-    for (const s of [...Object.values((d.inv?.securities ?? {}) as Record<string, Row>), ...((d.holdings?.securities ?? []) as Row[])]) {
+    for (const s of [...Object.values(d.inv?.securities ?? {}), ...(d.holdings?.securities ?? [])]) {
       if (out.has(s.security_id)) continue;
       const r = resolve(s, symbols, s.iso_currency_code || "USD");
       const rp = reportedPrice(items, s.security_id);
       out.set(s.security_id, { sid: s.security_id, name: s.name || s.security_id, ticker: s.ticker_symbol ?? null,
-        type: s.type ?? null, result: r.kind === "security" ? r.symbol! : r.kind, manual: r.manual,
+        type: s.type ?? null, result: securitySymbol(r) ?? r.kind, manual: r.manual,
         reported: rp ? [rp[0].toString(), rp[1]] : null, override: symbols[s.security_id] ?? null, review: false });
     }
   }
@@ -990,7 +1005,7 @@ export function seenSecurities(items: { inv?: Row | null; holdings?: Row | null 
 export interface Proposal { sid: string; name: string; old: Track; next: Track | null; day: string; price: string; change: number | null }
 export interface Security {
   sid: string; name: string; ticker: string | null; type: string | null; result: string; manual: boolean;
-  reported: [string, string] | null; override: Row | null;
+  reported: [string, string] | null; override: SecurityOverride | null;
   review: boolean;
   pending?: string;
 }
@@ -1039,11 +1054,10 @@ export function addProgress(list: Progress[], p: Progress): Progress[] {
   return next;
 }
 
-export type BackupKind = "connections" | "full";
 export interface Restored { kind: BackupKind; items: number; accounts: number; rows: number; ledger: "restored" | "none" | "other-wealthfolio"; removed: number }
 export type LinkCheck = { state: "waiting" } | { state: "exited"; message: string } | { state: "done"; itemId: string; institution: string; accounts: number };
 
-function exited(sessions: Row[]): LinkCheck {
+function exited(sessions: LinkSession[]): LinkCheck {
   for (const s of sessions) {
     const x = s.exit ?? s.on_exit;
     if (x || s.finished_at) {

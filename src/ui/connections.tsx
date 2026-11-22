@@ -23,13 +23,14 @@ export function Connections({ engine, env, onChange, onStep }: { engine: Engine;
   const [removing, setRemoving] = useState<string>();
   const { busy, error, run, fail } = useBusy();
   const load = useCallback(() => engine.store.items(env).then(setItems), [engine, env]);
-  useEffect(() => { load().catch((e) => fail('load', e)); }, [load, fail]);
+  useEffect(() => { load().catch((e: unknown) => fail('load', e)); }, [load, fail]);
   const setLink = (l?: Pending) => { engine.pendingLink = l; setLinkState(l); };
 
   const done = async () => {
     await load();
     onChange();
   };
+  const reload = () => { done().catch((e: unknown) => fail('load', e)); };
   const start = (p: () => Promise<{ url: string; linkToken: string }>, o: string, itemId?: string) =>
     run(itemId ? 'reconnect' : 'connect', async () => {
       setLinked(undefined);
@@ -50,12 +51,12 @@ export function Connections({ engine, env, onChange, onStep }: { engine: Engine;
                 <Label htmlFor="owner">Initials</Label>
                 <Input id="owner" className="w-28" maxLength={4} value={owner} onChange={(e) => setOwner(e.target.value.toUpperCase())} />
               </div>
-              <Button disabled={owner.length < 1 || !!busy} onClick={() => start(() => engine.startHostedLink(owner), owner)}>
+              <Button disabled={owner.length < 1 || !!busy} onClick={() => void start(() => engine.startHostedLink(owner), owner)}>
                 <Spin on={busy === 'connect'} /><Icons.ExternalLink className="h-4 w-4" />Connect
               </Button>
               {env === 'sandbox' && (
                 <Button variant="outline" disabled={owner.length < 1 || !!busy}
-                        onClick={() => run('sandbox', async () => { await engine.connectSandbox(owner); await done(); })}>
+                        onClick={() => void run('sandbox', async () => { await engine.connectSandbox(owner); await done(); })}>
                   <Spin on={busy === 'sandbox'} />Add a test bank
                 </Button>
               )}
@@ -64,7 +65,7 @@ export function Connections({ engine, env, onChange, onStep }: { engine: Engine;
           {link && (
             <LinkWait engine={engine} link={link}
                       onCancel={() => setLink(undefined)}
-                      onDone={async (r) => { setLink(undefined); setLinked({ ...r, reconnect: Boolean(link.itemId) }); setOwner(''); await done(); }} />
+                      onDone={(r) => { setLink(undefined); setLinked({ ...r, reconnect: Boolean(link.itemId) }); setOwner(''); reload(); }} />
           )}
           {linked && !link && (
             <Alert>
@@ -102,7 +103,7 @@ export function Connections({ engine, env, onChange, onStep }: { engine: Engine;
               <TableBody>
                 {Object.entries(items).map(([id, m]) => (
                   <TableRow key={id}>
-                    <TableCell className="ps-6"><OwnerCell engine={engine} itemId={id} value={m.owner} onSaved={done} /></TableCell>
+                    <TableCell className="ps-6"><OwnerCell engine={engine} itemId={id} value={m.owner} onSaved={reload} /></TableCell>
                     <TableCell>
                       {m.institution_name}
                       {m.reconnect && <Badge variant="destructive" className="ms-2">Reconnect needed</Badge>}
@@ -111,7 +112,7 @@ export function Connections({ engine, env, onChange, onStep }: { engine: Engine;
                     <TableCell className="text-muted-foreground text-sm">{ago(m.checked)}</TableCell>
                     <TableCell className="pe-6 text-end">
                       <div className="flex justify-end gap-2">
-                        <Button variant={m.reconnect ? 'default' : 'outline'} size="sm" disabled={!!busy || !!link} onClick={() => start(() => engine.startReconnect(id), m.owner, id)}>
+                        <Button variant={m.reconnect ? 'default' : 'outline'} size="sm" disabled={!!busy || !!link} onClick={() => void start(() => engine.startReconnect(id), m.owner, id)}>
                           Reconnect
                         </Button>
                         <Button variant="ghost" size="sm" disabled={!!busy} aria-label={`Remove ${m.institution_name}`} onClick={() => setRemoving(id)}>
@@ -143,12 +144,12 @@ export function Connections({ engine, env, onChange, onStep }: { engine: Engine;
           </div>
           {}
           <Button className="min-w-32" disabled={!added && (!token.trim() || !tokOwner || !!busy)}
-                  onClick={() => !added && run('existing', async () => {
+                  onClick={() => { if (!added) void run('existing', async () => {
                     await engine.addToken(tokOwner, token);
                     setToken('');
                     flashAdded();
                     await done();
-                  })}>
+                  }); }}>
             <Spin on={busy === 'existing'} /><FlashLabel on={added} done="Added">Add</FlashLabel>
           </Button>
         </CardContent>
@@ -198,7 +199,7 @@ function LinkWait({ engine, link, onDone, onCancel }: { engine: Engine; link: Pe
   }, [engine, link, onDone]);
   useEffect(() => {
     if (state.kind !== 'waiting') return;
-    const t = setInterval(check, POLL_MS);
+    const t = setInterval(() => void check(), POLL_MS);
     return () => clearInterval(t);
   }, [check, state.kind]);
 
@@ -227,7 +228,7 @@ function LinkWait({ engine, link, onDone, onCancel }: { engine: Engine; link: Pe
       {state.message && <span className="text-muted-foreground text-xs">Last check failed: {state.message}. Trying again.</span>}
       <div className="flex items-center gap-3">
         <Button size="sm" variant="outline" onClick={onCancel}>Cancel</Button>
-        <button type="button" className="text-muted-foreground text-xs underline underline-offset-2" onClick={check}>Check now</button>
+        <button type="button" className="text-muted-foreground text-xs underline underline-offset-2" onClick={() => void check()}>Check now</button>
       </div>
     </div>
   );

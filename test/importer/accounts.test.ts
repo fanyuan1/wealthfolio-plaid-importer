@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { accountName, MAX_LEN } from "../../src/importer";
+import { type AccountCfg, accountName, MAX_LEN } from "../../src/importer";
 
 test("short names and limit", () => {
   expect(accountName("AB", "Charles Schwab", "Brokerage", "1234")).toBe("AB · Schwab Brokerage ••1234");
@@ -35,11 +35,11 @@ test("crypto symbols", async () => {
 
 test("joint accounts from owners or name", async () => {
   const { discoverAccounts, jointOwners } = await import("../../src/importer");
-  const cfg: Record<string, any> = {};
-  const accts = [{ account_id: "a", name: "Joint Checking", type: "depository", subtype: "checking" },
-    { account_id: "b", name: "Savings", type: "depository", subtype: "savings" }];
-  discoverAccounts(cfg, "i", { owner: "AB", institution_name: "Chase" }, accts, new Set(), jointOwners({ accounts: [{ account_id: "b", owners: [{}, {}] }] }));
-  expect([cfg.a.joint, cfg.b.joint]).toEqual([true, true]);
+  const cfg: Record<string, AccountCfg> = {};
+  const accts = [{ account_id: "a", name: "Joint Checking", type: "depository", subtype: "checking", balances: {} },
+    { account_id: "b", name: "Savings", type: "depository", subtype: "savings", balances: {} }];
+  discoverAccounts(cfg, "i", { owner: "AB", institution_name: "Chase" }, accts, new Set(), jointOwners([{ account_id: "b", owners: [{}, {}] }]));
+  expect([cfg.a?.joint, cfg.b?.joint]).toEqual([true, true]);
 });
 
 test("crypto filed as cash still maps to a crypto pair", async () => {

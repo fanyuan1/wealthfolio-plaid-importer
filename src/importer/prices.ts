@@ -1,5 +1,15 @@
 import { D, type Dec } from "./dec";
+import { arrayOf, isNumber, nullable, orNull, shape } from "./json";
 import { addDays } from "./plan";
+
+interface ChartResult { timestamp?: number[] | null; indicators: { quote: { close?: (number | null)[] | null }[] } }
+const isChart = shape<{ chart?: { result?: unknown[] | null } | null }>({
+  chart: nullable(shape<{ result?: unknown[] | null }>({ result: nullable(arrayOf((v): v is unknown => v !== undefined)) })),
+});
+const isQuote = shape<{ close?: (number | null)[] | null }>({ close: nullable(arrayOf(orNull(isNumber))) });
+const isChartResult = shape<ChartResult>({
+  timestamp: nullable(arrayOf(isNumber)), indicators: shape<ChartResult["indicators"]>({ quote: arrayOf(isQuote) }),
+});
 
 const LOOKBACK_DAYS = 7;
 export type CloseCache = Record<string, Record<string, string>>;
@@ -15,11 +25,13 @@ export function yahooFetch(get: HttpGet): CloseFetch {
     const r = await get(url, { "User-Agent": "Mozilla/5.0 plaid-importer" });
     if (r.status === 404) throw new NotFound(sym);
     if (r.status >= 400) throw new Error(`HTTP ${r.status}`);
-    const res = JSON.parse(r.body)?.chart?.result?.[0];
+    const body: unknown = JSON.parse(r.body);
+    const res = isChart(body) ? body.chart?.result?.[0] : undefined;
     if (!res) throw new NotFound(sym);
-    const closes: (number | null)[] = res.indicators.quote[0].close;
+    if (!isChartResult(res)) throw new Error("unexpected chart response");
+    const closes = res.indicators.quote[0]?.close ?? [];
     const out: Record<string, string> = {};
-    (res.timestamp ?? []).forEach((t: number, i: number) => {
+    (res.timestamp ?? []).forEach((t, i) => {
       const c = closes[i];
       if (c != null) out[new Date(t * 1000).toISOString().slice(0, 10)] = String(Math.round(c * 1e4) / 1e4);
     });

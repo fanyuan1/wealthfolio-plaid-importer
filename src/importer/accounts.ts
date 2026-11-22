@@ -1,7 +1,11 @@
 import { valueAt } from "./at";
 import ABBREV_DATA from "./abbreviations.json";
-import type { Row } from "./models";
 import type { AccountCfg } from "./plan";
+import type { HoldingsData, PlaidAccount, PlaidIdentityAccount } from "./plaidTypes";
+
+export interface ItemInfo {
+  owner: string; institution_name: string; institution_id?: string | null | undefined; products?: string[] | undefined; country?: string;
+}
 
 export const MAX_LEN = 50;
 const INST_MIN = 12;
@@ -43,14 +47,14 @@ export function accountName(owner: string, institution: string, plaidName: strin
   return name;
 }
 
-export function holdsSecurities(accounts: Row[], holdings: Row | null): Set<string> {
-  const cands = new Set(accounts.filter((a) => String(a.type) === "depository").map((a) => a.account_id));
+export function holdsSecurities(accounts: PlaidAccount[], holdings: HoldingsData | null): Set<string> {
+  const cands = new Set(accounts.filter((a) => a.type === "depository").map((a) => a.account_id));
   if (!cands.size || !holdings) return new Set();
-  const secs: Record<string, Row> = Object.fromEntries((holdings.securities ?? []).map((s: Row) => [s.security_id, s]));
-  return new Set((holdings.holdings ?? []).filter((x: Row) => {
-    const s = secs[x.security_id] ?? {};
-    return cands.has(x.account_id) && !s.is_cash_equivalent && !["cash", "other", undefined, null].includes(s.type);
-  }).map((x: Row) => x.account_id));
+  const secs = new Map(holdings.securities.map((s) => [s.security_id, s]));
+  return new Set(holdings.holdings.filter((x) => {
+    const s = secs.get(x.security_id);
+    return cands.has(x.account_id) && !s?.is_cash_equivalent && s?.type != null && s.type !== "cash" && s.type !== "other";
+  }).map((x) => x.account_id));
 }
 
 const JOINT_NAME = /\b(joint|jt|jtwros|jtten)\b/i;
@@ -58,7 +62,7 @@ const JOINT_NAME = /\b(joint|jt|jtwros|jtten)\b/i;
 export function jointByMask(cfg: Record<string, AccountCfg>): Set<string> {
   const groups = new Map<string, string[]>();
   for (const [id, c] of Object.entries(cfg)) {
-    const mask = String(c.mask ?? "");
+    const mask = c.mask ?? "";
     if (!mask || c.not_joint) continue;
     const k = [c.institution_id, mask, c.plaid_subtype].join("|");
     groups.set(k, [...(groups.get(k) ?? []), id]);
@@ -78,16 +82,16 @@ export function jointCopies(cfg: Record<string, AccountCfg>): string[] {
   return out;
 }
 
-export function jointOwners(identity: Row | null): Set<string> {
-  return new Set((identity?.accounts ?? []).filter((a: Row) => (a.owners ?? []).length > 1).map((a: Row) => a.account_id));
+export function jointOwners(identity: Pick<PlaidIdentityAccount, "account_id" | "owners">[] | null): Set<string> {
+  return new Set((identity ?? []).filter((a) => a.owners.length > 1).map((a) => a.account_id));
 }
 
-export function discoverAccounts(cfg: Record<string, AccountCfg>, itemId: string, tok: Row, accounts: Row[],
+export function discoverAccounts(cfg: Record<string, AccountCfg>, itemId: string, tok: ItemInfo, accounts: PlaidAccount[],
   brokerage: Set<string> = new Set(), joint: Set<string> = new Set()): string[] {
   const added: string[] = [];
   for (const a of accounts) {
     const aid = a.account_id;
-    const ptype = String(a.type), sub = String(a.subtype);
+    const ptype = a.type, sub = String(a.subtype);
     let kind: string | undefined = KIND_BY_PLAID_TYPE[ptype];
     if (brokerage.has(aid)) kind = "investment";
     if (kind === "investment" && !(tok.products ?? ["investments"]).includes("investments")) kind = undefined;
@@ -102,7 +106,7 @@ export function discoverAccounts(cfg: Record<string, AccountCfg>, itemId: string
       owner: tok.owner, item_id: itemId, institution: tok.institution_name, institution_id: tok.institution_id,
       plaid_name: a.name, mask, plaid_type: ptype, plaid_subtype: sub, kind: kind ?? "unsupported",
       name: accountName(tok.owner, tok.institution_name, a.name, mask, new Set(Object.values(cfg).map((c) => String(c.name)))),
-      currency: a.balances?.iso_currency_code || currencyFor(tok.country), wealthfolio_account_id: null, skip: true,
+      currency: a.balances.iso_currency_code || currencyFor(tok.country), wealthfolio_account_id: null, skip: true,
       ...(isJoint ? { joint: true } : {}),
     };
     if (kind) added.push(aid);
@@ -141,7 +145,7 @@ export function planLinks(cfg: Record<string, AccountCfg>, existing: WfAccount[]
   }
   for (const [id, c] of todo) {
     if (id in out) continue;
-    const pick = c.match === "new" ? null : suggestMatch(String(c.name), c.mask as string | undefined, existing.filter((a) => fits(c, a)));
+    const pick = c.match === "new" ? null : suggestMatch(String(c.name), c.mask, existing.filter((a) => fits(c, a)));
     out[id] = pick;
     if (pick) taken.add(pick);
   }

@@ -11,7 +11,7 @@ test("runs once after its time, in one of two tabs, with the addon page never op
   const pulls = () => plaid.calls.filter((c) => c === "/investments/transactions/get").length;
   const before = pulls();
 
-  plaid.transactions.push({ ...plaid.transactions[1], transaction_id: "tx_daily", name: "Bakery", merchant_name: "Bakery", amount: 9 });
+  plaid.transactions.push({ ...itemAt(plaid.transactions, 1), transaction_id: "tx_daily", name: "Bakery", merchant_name: "Bakery", amount: 9 });
   const tabs = await Promise.all([0, 1].map(async () => {
     const page = await browser.newPage();
     await routePlaid(page, plaid);

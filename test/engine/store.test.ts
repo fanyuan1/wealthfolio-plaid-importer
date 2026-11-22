@@ -254,7 +254,7 @@ describe("reconnect flag", () => {
   it("is cleared by a finished reconnect", async () => {
     const e = new Engine(fakeApi().api);
     await e.store.saveItems("sandbox", { i: { owner: "AB", institution_name: "Chase", reconnect: true } });
-    e.plaid = async () => ({ linkTokenGet: async () => ({ link_sessions: [{ on_success: {} }] }) }) as never;
+    e.plaid = async () => ({ linkTokenGet: async () => [{ on_success: {} }] }) as never;
     e.refreshAccounts = async () => [];
     expect((await e.checkReconnect("i", "t")).state).toBe("done");
     expect(valueAt(await e.store.items("sandbox"), "i").reconnect).toBe(false);
@@ -281,7 +281,7 @@ describe("dry run", () => {
     await e.store.saveAccounts("sandbox", { A: { item_id: "i", kind: "cash", name: "AB · Bank", wealthfolio_account_id: "W", skip: false } } as never);
     let pulls = 0;
     e.plaid = async () => ({
-      item: async () => ({ item: {} }),
+      item: async () => ({}),
       transactionsSync: async () => { pulls++; return { added: [], modified: [], removed: [], next_cursor: "c" }; },
       accounts: async () => [],
     }) as never;
@@ -290,7 +290,7 @@ describe("dry run", () => {
   it("after a push, plans what is left from the same pull, without what was pushed", async () => {
     const { e, pulls } = await setup();
     const tx = { transaction_id: "t1", account_id: "A", amount: 10, date: "2026-11-01", name: "Coffee", iso_currency_code: "USD", pending: false };
-    e.plaid = async () => ({ item: async () => ({ item: {} }), accounts: async () => [],
+    e.plaid = async () => ({ item: async () => ({}), accounts: async () => [],
       transactionsSync: async () => ({ added: [tx, { ...tx, transaction_id: "t2", name: "Tea" }], modified: [], removed: [], next_cursor: "c" }) }) as never;
     const d = await e.dryRun(() => {});
     const ids = d.plan.new.map((x) => x.plaidId);
@@ -332,7 +332,7 @@ describe("securities changes after a push", () => {
     ];
     const starts: string[] = [];
     e.plaid = async () => ({
-      item: async () => ({ item: {} }),
+      item: async () => ({}),
       holdings: async () => ({ accounts: [], securities: Object.values(secs),
         holdings: [{ account_id: "B", security_id: "v", quantity: 10, cost_basis: 1000 }, { account_id: "B", security_id: "f", quantity: 5, cost_basis: 50 }] }),
       investmentTransactions: async (_t: string, start: string) => {
@@ -411,7 +411,7 @@ describe("setOwner", () => {
 describe("hosted link", () => {
   const withSessions = (sessions: unknown[]) => {
     const e = new Engine(fakeApi().api);
-    e.plaid = async () => ({ linkTokenGet: async () => ({ link_sessions: sessions }) }) as never;
+    e.plaid = async () => ({ linkTokenGet: async () => sessions }) as never;
     return e;
   };
   it("waits while the login page is open, and reports a closed one", async () => {

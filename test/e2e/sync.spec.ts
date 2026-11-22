@@ -1,3 +1,4 @@
+import { itemAt } from "../../src/importer/at";
 import { expect, test } from "./fixtures";
 import { wf } from "./wealthfolio";
 
@@ -10,7 +11,7 @@ test("connect, create accounts, push, and push only what is new", async ({ addon
     expect(comments.some((c) => c.includes(`plaid:${id}`)), id).toBe(true);
   }
 
-  plaid.transactions.push({ ...plaid.transactions[1], transaction_id: "tx_lunch", name: "Lunch", merchant_name: "Lunch", amount: 15 });
+  plaid.transactions.push({ ...itemAt(plaid.transactions, 1), transaction_id: "tx_lunch", name: "Lunch", merchant_name: "Lunch", amount: 15 });
   await addon.dryRun();
   await addon.frame.getByRole("button", { name: "Pull fresh from Plaid" }).click();
   await expect(addon.frame.getByText("1 new", { exact: true })).toBeVisible({ timeout: 60_000 });

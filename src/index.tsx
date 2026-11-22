@@ -8,12 +8,14 @@ const TICK_MS = 60_000;
 const enable: AddonEnableFunction = (ctx) => {
   host.ctx = ctx;
   const engine = (host.engine ??= new Engine(ctx.api));
-  const tick = () => engine.autoSync().then((r) => {
-    if (!r) return;
-    if (r.status === 'ok') ctx.api.toast.success(`Daily sync: ${r.message}`);
-    else ctx.api.toast.warning(`Daily sync ${r.status}: ${r.message}`);
-    ctx.api.query.invalidateQueries(['activities']);
-  }).catch((e) => ctx.api.logger.error(`plaid-importer: daily: ${msg(e)}`));
+  const tick = () => {
+    engine.autoSync().then((r) => {
+      if (!r) return;
+      if (r.status === 'ok') ctx.api.toast.success(`Daily sync: ${r.message}`);
+      else ctx.api.toast.warning(`Daily sync ${r.status}: ${r.message}`);
+      ctx.api.query.invalidateQueries(['activities']);
+    }).catch((e: unknown) => ctx.api.logger.error(`plaid-importer: daily: ${msg(e)}`));
+  };
   const first = setTimeout(tick, 60_000);
   const timer = setInterval(tick, TICK_MS);
   ctx.router.add({ id: 'plaid-importer', path: '/addons/plaid-importer', component: AddonRoute });
