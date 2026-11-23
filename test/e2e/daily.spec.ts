@@ -7,6 +7,7 @@ test("runs once after its time, in one of two tabs, with the addon page never op
   await addon.step("Daily sync");
   await addon.frame.getByRole("switch").click();
   await addon.frame.locator("#daily-time").fill("00:00");
+  await expect(addon.frame.locator("span.opacity-0:has(#daily-time)")).toBeAttached();
   await addon.page.close();
   const pulls = () => plaid.calls.filter((c) => c === "/investments/transactions/get").length;
   const before = pulls();

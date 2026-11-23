@@ -45,6 +45,8 @@ export function split(s: string, size = PART): string[] {
 }
 
 export class Store {
+  private dailyWrites: Promise<void> = Promise.resolve();
+
   constructor(private api: Api) {}
 
   private head(v: string | null): Head | null {
@@ -91,7 +93,12 @@ export class Store {
     const [on, s] = await Promise.all([this.api.secrets.get(KEYS.dailyOn), settings ?? this.settings()]);
     return { on: on === "on", time: s.daily?.time ?? "07:00" };
   }
-  async saveDaily(d: Daily) {
+  saveDaily(d: Daily): Promise<void> {
+    const write = this.dailyWrites.then(() => this.writeDaily(d));
+    this.dailyWrites = write.catch(() => undefined);
+    return write;
+  }
+  private async writeDaily(d: Daily) {
     await this.api.secrets.set(KEYS.dailyOn, d.on ? "on" : "off");
     await this.saveSettings({ ...(await this.settings()), daily: { time: d.time } });
   }
