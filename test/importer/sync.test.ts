@@ -58,7 +58,7 @@ class FakeWF implements Writer {
     for (const r of rows) {
       this.n += 1;
       this.imported.push(r);
-      out.set(Number(r.lineNumber), ["imported", `wf${this.n}`]);
+      out.set(r.lineNumber, ["imported", `wf${this.n}`]);
     }
     return Promise.resolve(out);
   }

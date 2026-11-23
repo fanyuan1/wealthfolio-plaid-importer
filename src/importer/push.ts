@@ -1,6 +1,6 @@
 import { entryAt, errText, required } from "./at";
 import type { Dec } from "./dec";
-import type { Ledger, LedgerRow } from "./ledger";
+import type { Ledger, LedgerField, LedgerRow } from "./ledger";
 import { Activity, type OnProgress } from "./models";
 import type { AccountCfg, Plan } from "./plan";
 
@@ -9,8 +9,40 @@ export const SMALL_CHUNK = 100;
 
 export class WealthfolioError extends Error {}
 
-export type ImportRow = Record<string, string | number | null>;
-export type Update = Record<string, string | number | boolean | null>;
+export interface ImportRow {
+  lineNumber: number;
+  accountId: string;
+  date: string;
+  activityType: string;
+  currency: string;
+  comment?: string;
+  symbol?: string;
+  instrumentType?: string;
+  quantity?: number;
+  unitPrice?: number;
+  amount?: number;
+  fee?: number;
+  tax?: number;
+  subtype?: string;
+  quoteMode?: "MANUAL";
+  symbolName?: string;
+}
+
+interface UpdateFields {
+  activityType?: string;
+  date?: string;
+  symbol?: string | null;
+  quantity?: number | null;
+  unitPrice?: number | null;
+  amount?: number | null;
+  fee?: number | null;
+  currency?: string;
+}
+
+export interface Update extends UpdateFields {
+  activityId: string | null;
+  void?: boolean;
+}
 
 export interface Writer {
   commitImport(rows: ImportRow[]): Promise<Map<number, [string, string | null, string?]>>;
@@ -25,16 +57,19 @@ export interface Writer {
 const num = (v: Dec | null): number | null => (v === null ? null : v.toNumber());
 
 export function toImportRow(a: Activity, wfAccountId: string, line: number): ImportRow {
+  const [quantity, unitPrice, amount, fee, tax] = [num(a.quantity), num(a.unitPrice), num(a.amount), num(a.fee), num(a.tax)];
   const row: ImportRow = {
-    lineNumber: line, accountId: wfAccountId, date: a.date, activityType: a.activityType, currency: a.currency,
-    symbol: a.symbol, instrumentType: a.instrumentType, quantity: num(a.quantity), unitPrice: num(a.unitPrice),
-    amount: num(a.amount), fee: num(a.fee), tax: num(a.tax), subtype: a.subtype, comment: a.comment,
+    lineNumber: line, accountId: wfAccountId, date: a.date, activityType: a.activityType, currency: a.currency, comment: a.comment,
+    ...(a.symbol !== null && { symbol: a.symbol }), ...(a.instrumentType !== null && { instrumentType: a.instrumentType }),
+    ...(quantity !== null && { quantity }), ...(unitPrice !== null && { unitPrice }), ...(amount !== null && { amount }),
+    ...(fee !== null && { fee }), ...(tax !== null && { tax }), ...(a.subtype !== null && { subtype: a.subtype }),
   };
   if (a.quoteManual) {
     row.quoteMode = "MANUAL";
-    row.symbolName = a.symbolName || a.symbol;
+    const name = a.symbolName || a.symbol;
+    if (name !== null) row.symbolName = name;
   }
-  return Object.fromEntries(Object.entries(row).filter(([, v]) => v !== null));
+  return row;
 }
 
 export const chunks = <T>(xs: T[], n: number): T[][] =>
@@ -107,20 +142,20 @@ type UpdateSource =
   | { kind: "void"; row: LedgerRow }
   | { kind: "pair"; pair: [string, string, string] };
 
-const UPDATE_KEYS: Record<string, string> = { activity_type: "activityType", unit_price: "unitPrice" };
+const UPDATED: Record<LedgerField, (a: Activity) => UpdateFields> = {
+  activity_type: (a) => ({ activityType: a.activityType }),
+  date: (a) => ({ date: a.date }),
+  symbol: (a) => ({ symbol: a.symbol }),
+  quantity: (a) => ({ quantity: num(a.quantity) }),
+  unit_price: (a) => ({ unitPrice: num(a.unitPrice) }),
+  amount: (a) => ({ amount: num(a.amount) }),
+  fee: (a) => ({ fee: num(a.fee) }),
+  currency: (a) => ({ currency: a.currency }),
+};
 
-function updatedValue(a: Activity, field: string): string | number | null {
-  const values: Record<string, string | Dec | null> = {
-    activity_type: a.activityType, date: a.date, symbol: a.symbol, quantity: a.quantity,
-    unit_price: a.unitPrice, amount: a.amount, fee: a.fee, currency: a.currency,
-  };
-  const v = values[field] ?? null;
-  return v === null || typeof v === "string" ? v : v.toNumber();
-}
-
-function activityUpdate(row: LedgerRow, a: Activity, fields: string[]): Update {
+function activityUpdate(row: LedgerRow, a: Activity, fields: LedgerField[]): Update {
   const u: Update = { activityId: row.wf_activity_id };
-  for (const f of fields) u[UPDATE_KEYS[f] ?? f] = updatedValue(a, f);
+  for (const f of fields) Object.assign(u, UPDATED[f](a));
   if (a.activityType === "SPLIT" && "quantity" in u) {
     delete u.quantity;
     u.amount = num(a.amount);

@@ -1,38 +1,73 @@
-import type { HostAPI } from "@wealthfolio/addon-sdk";
+import type { ActivityCreate, ActivityImport, ActivityType, ActivityUpdate, AssetResolutionInput, HostAPI, QuoteMode } from "@wealthfolio/addon-sdk";
 import { chunks, errText, IMPORT_CHUNK, itemAt, type ImportRow, SMALL_CHUNK, type Update, WealthfolioError, type Writer } from "../importer";
 
 export interface Base { accountId: string; activityType: string; date: string; currency: string }
-
-const IDENTITY = ["assetId", "symbol", "symbolName", "instrumentType", "exchangeMic", "quoteCcy", "quoteMode", "providerId", "providerSymbol"] as const;
 
 type Api = Pick<HostAPI, "activities" | "spending">;
 
 type ImportResult = [string, string | null, string?];
 
+const ACTIVITY_TYPES = {
+  BUY: true, SELL: true, SPLIT: true, DIVIDEND: true, INTEREST: true, DEPOSIT: true, WITHDRAWAL: true,
+  TRANSFER_IN: true, TRANSFER_OUT: true, FEE: true, TAX: true, CREDIT: true, ADJUSTMENT: true, UNKNOWN: true,
+} satisfies Record<ActivityType, true>;
+const QUOTE_MODES = { MARKET: true, MANUAL: true } satisfies Record<QuoteMode, true>;
+
+const isActivityType = (s: string): s is ActivityType => Object.hasOwn(ACTIVITY_TYPES, s);
+const isQuoteMode = (s: string): s is QuoteMode => Object.hasOwn(QUOTE_MODES, s);
+
 const securityKey = (r: ImportRow) => [r.symbol, r.instrumentType, r.quoteMode, r.currency].join("|");
 const SECURITY_FIELD = /symbol|asset|ticker|instrument|quote/i;
 
-function securityRejection(c: Record<string, unknown> | undefined): string | null {
-  if (!c || c.isValid !== false || c.duplicateOfId) return null;
-  const errs = (c.errors ?? {}) as Record<string, string[]>;
+function securityRejection(c: ActivityImport | undefined): string | null {
+  if (!c || c.isValid || c.duplicateOfId) return null;
+  const errs = c.errors ?? {};
   if (Object.keys(errs).length && !Object.keys(errs).some((f) => SECURITY_FIELD.test(f))) return null;
   return Object.entries(errs).map(([f, m]) => `${f}: ${m.join(", ")}`).join("; ") || "Wealthfolio rejected the row";
 }
 
-const ASSET_KEY: Partial<Record<string, string>> = { assetId: "id", symbolName: "name" };
+type TextAssetField = Exclude<keyof AssetResolutionInput, "quoteMode">;
 
-function createFor(r: ImportRow, c: Record<string, unknown> | undefined): { failed: string } | { create: Record<string, unknown> } {
+function assetFor(r: ImportRow, c: ActivityImport | undefined): AssetResolutionInput {
+  const asset: AssetResolutionInput = {};
+  const text: [TextAssetField, string | undefined][] = [
+    ["id", c?.assetId], ["symbol", c?.symbol ?? r.symbol], ["name", c?.symbolName ?? r.symbolName],
+    ["instrumentType", c?.instrumentType ?? r.instrumentType], ["exchangeMic", c?.exchangeMic], ["quoteCcy", c?.quoteCcy],
+    ["providerId", c?.providerId], ["providerSymbol", c?.providerSymbol],
+  ];
+  for (const [k, v] of text) if (v != null) asset[k] = v;
+  const quoteMode = c?.quoteMode ?? r.quoteMode;
+  if (quoteMode != null && isQuoteMode(quoteMode)) asset.quoteMode = quoteMode;
+  return asset;
+}
+
+function createFor(r: ImportRow, c: ActivityImport | undefined): { failed: string } | { create: ActivityCreate } {
   const failed = securityRejection(c);
   if (failed !== null) return { failed };
-  const line = Number(r.lineNumber);
-  const asset = r.symbol ? Object.fromEntries(IDENTITY.filter((f) => c?.[f] != null || r[f] != null)
-    .map((f) => [ASSET_KEY[f] ?? f, c?.[f] ?? r[f]])) : undefined;
   return { create: {
-    id: `plaid-importer-${line}`, accountId: String(r.accountId), activityType: String(r.activityType),
-    subtype: r.subtype ?? null, activityDate: String(r.date), asset,
-    quantity: r.quantity ?? null, unitPrice: r.unitPrice ?? null, amount: r.amount ?? null, currency: String(r.currency || "USD"),
+    id: `plaid-importer-${r.lineNumber}`, accountId: r.accountId, activityType: r.activityType,
+    subtype: r.subtype ?? null, activityDate: r.date, ...(r.symbol && { asset: assetFor(r, c) }),
+    quantity: r.quantity ?? null, unitPrice: r.unitPrice ?? null, amount: r.amount ?? null, currency: r.currency || "USD",
     fee: r.fee ?? null, tax: r.tax ?? null, comment: r.comment ?? null,
   } };
+}
+
+function toCheck(r: ImportRow): ActivityImport | null {
+  const { activityType } = r;
+  if (!isActivityType(activityType)) return null;
+  return { ...r, activityType, isValid: true, isDraft: false, forceImport: true };
+}
+
+function updateRequest(u: Update, b: Base): ActivityUpdate {
+  const req: ActivityUpdate = { id: String(u.activityId), accountId: b.accountId, activityType: u.activityType ?? b.activityType,
+    activityDate: u.date ?? b.date, currency: u.currency ?? b.currency };
+  for (const f of ["quantity", "unitPrice", "amount", "fee"] as const) {
+    const v = u[f];
+    if (v != null) req[f] = v;
+  }
+  if (u.symbol !== undefined) req.asset = u.symbol === null ? {} : { symbol: u.symbol };
+  if (u.void) req.status = "VOID";
+  return req;
 }
 
 export class SdkWriter implements Writer {
@@ -44,9 +79,9 @@ export class SdkWriter implements Writer {
     const out = new Map<number, ImportResult>();
     for (const chunk of chunks(rows, IMPORT_CHUNK)) {
       const checked = await this.checkSecurities(chunk);
-      const creates: Record<string, unknown>[] = [], lines: number[] = [];
+      const creates: ActivityCreate[] = [], lines: number[] = [];
       for (const r of chunk) {
-        const line = Number(r.lineNumber);
+        const line = r.lineNumber;
         const made = createFor(r, r.symbol ? checked.get(securityKey(r)) : undefined);
         if ("failed" in made) {
           out.set(line, ["failed", null, made.failed]);
@@ -60,22 +95,21 @@ export class SdkWriter implements Writer {
     return out;
   }
 
-  private async checkSecurities(chunk: ImportRow[]): Promise<Map<string, Record<string, unknown>>> {
+  private async checkSecurities(chunk: ImportRow[]): Promise<Map<string, ActivityImport>> {
     const firsts = new Map<string, ImportRow>();
     for (const r of chunk) if (r.symbol && !firsts.has(securityKey(r))) firsts.set(securityKey(r), r);
-    const checked = firsts.size
-      ? await this.api.activities.checkImport([...firsts.values()].map((r) => ({ ...r, isValid: true, isDraft: false, forceImport: true })) as never)
-      : [];
-    const byKey = new Map<string, Record<string, unknown>>();
-    for (const c of checked as unknown as Record<string, unknown>[]) {
+    const toSend = [...firsts.values()].map(toCheck).filter((r) => r !== null);
+    const checked = toSend.length ? await this.api.activities.checkImport(toSend) : [];
+    const byKey = new Map<string, ActivityImport>();
+    for (const c of checked) {
       const r = [...firsts.values()].find((x) => x.lineNumber === c.lineNumber);
       if (r) byKey.set(securityKey(r), c);
     }
     return byKey;
   }
 
-  private async saveCreates(creates: Record<string, unknown>[], lines: number[], out: Map<number, ImportResult>): Promise<void> {
-    const res = await this.api.activities.saveMany({ creates: creates as never });
+  private async saveCreates(creates: ActivityCreate[], lines: number[], out: Map<number, ImportResult>): Promise<void> {
+    const res = await this.api.activities.saveMany({ creates });
     const ids = new Map(res.createdMappings.map((m) => [m.tempId, m.activityId]));
     const rejected = new Map(res.errors.map((e) => [String(e.id), e.message]));
     lines.forEach((line) => {
@@ -89,21 +123,15 @@ export class SdkWriter implements Writer {
     const out = [];
     for (const chunk of chunks(updates, SMALL_CHUNK)) {
       const errors: { index: number; message: string }[] = [];
-      const reqs: Record<string, unknown>[] = [], idx: number[] = [];
+      const reqs: ActivityUpdate[] = [], idx: number[] = [];
       chunk.forEach((u, i) => {
-        const id = String(u.activityId);
-        const b = this.base(id);
+        const b = this.base(String(u.activityId));
         if (!b) return errors.push({ index: i, message: "activity not in the ledger" });
-        const req: Record<string, unknown> = { id, accountId: b.accountId, activityType: u.activityType ?? b.activityType,
-          activityDate: u.date ?? b.date, currency: b.currency };
-        for (const f of ["quantity", "unitPrice", "amount", "fee", "currency"]) if (f in u && u[f] != null) req[f] = u[f];
-        if ("symbol" in u) req.asset = { symbol: u.symbol };
-        if (u.void) req.status = "VOID";
-        reqs.push(req);
+        reqs.push(updateRequest(u, b));
         idx.push(i);
       });
       if (reqs.length) {
-        const res = await this.api.activities.saveMany({ updates: reqs as never });
+        const res = await this.api.activities.saveMany({ updates: reqs });
         for (const e of res.errors) {
           const i = reqs.findIndex((r) => r.id === e.id);
           errors.push({ index: i >= 0 ? itemAt(idx, i) : 0, message: e.message });

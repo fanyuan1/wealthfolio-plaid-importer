@@ -44,6 +44,7 @@ export interface Ledger {
 }
 
 const FIELDS = ["activity_type", "date", "symbol", "quantity", "unit_price", "amount", "fee", "currency"] as const;
+export type LedgerField = (typeof FIELDS)[number];
 const NUMERIC = new Set(["quantity", "unit_price", "amount", "fee"]);
 const COMPARE_DP = 8;
 
@@ -82,8 +83,8 @@ const activityField = (a: Activity, f: (typeof FIELDS)[number]): string | Dec | 
   unit_price: a.unitPrice, amount: a.amount, fee: a.fee, currency: a.currency,
 })[f];
 
-export function differs(row: LedgerRow, a: Activity): string[] {
-  const out: string[] = [];
+export function differs(row: LedgerRow, a: Activity): LedgerField[] {
+  const out: LedgerField[] = [];
   for (const f of FIELDS) {
     if (f === "activity_type" && row.pair_plaid_id) continue;
     let v = activityField(a, f);

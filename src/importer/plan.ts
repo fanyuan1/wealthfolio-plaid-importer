@@ -1,7 +1,7 @@
 import { valueAt } from "./at";
 import { mapCategory } from "./categories";
 import { type Dec, dec, ZERO } from "./dec";
-import { type Ledger, type LedgerRow, differs } from "./ledger";
+import { type Ledger, type LedgerField, type LedgerRow, differs } from "./ledger";
 import { mapInvestmentTransactions } from "./mapInvestments";
 import { biltPassthrough, mapBankTransaction } from "./mapTransactions";
 import { Activity, type Review, review } from "./models";
@@ -55,7 +55,7 @@ export interface ItemData {
 
 export interface Plan {
   new: Activity[];
-  updates: [LedgerRow, Activity, string[]][];
+  updates: [LedgerRow, Activity, LedgerField[]][];
   voids: LedgerRow[];
   retype: [string, string, string][];
   pairs: [string, string][];
