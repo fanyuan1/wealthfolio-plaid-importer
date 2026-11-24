@@ -4,7 +4,7 @@ import type { OnProgress } from "./models";
 import { type AccountCfg, accountLabel, activeAccounts, addDays, BLOCKING_ITEM_ERRORS, HISTORY_DAYS, type ItemData, OVERLAP_DAYS } from "./plan";
 import { type Plaid, PlaidError } from "./plaid";
 
-export interface Token { owner: string; institution_name: string; access_token: string; products?: string[]; env?: string }
+export interface Token { owner: string; institution_name: string; access_token: string; products?: string[] | undefined; env?: string }
 
 export interface FetchResult {
   items: ItemData[];

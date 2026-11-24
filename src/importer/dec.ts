@@ -8,10 +8,10 @@ export type Dec = BigBase.Big;
 export const ZERO: Dec = D(0);
 export const EPS: Dec = D("0.000001");
 
-export function dec(v: unknown): Dec | null {
+export function dec(v: Dec | number | string | null | undefined): Dec | null {
   if (v === null || v === undefined || v === "") return null;
   if (v instanceof D) return v;
-  return D(typeof v === "number" ? String(v) : (v as string));
+  return D(typeof v === "number" ? String(v) : v);
 }
 
 export function nz(v: Dec | null | undefined): v is Dec {

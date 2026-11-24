@@ -351,7 +351,7 @@ describe("securities changes after a push", () => {
     const first = await e.dryRun(() => {}, () => {}, true);
     await e.setSecurity("f", "Plan Fund", { mode: "exclude" });
     await pushAll(await e.replan(first));
-    (e as unknown as { api: { activities: { getAll: () => Promise<unknown[]> } } }).api.activities.getAll = () => Promise.resolve([{ id: "wf-t1" }]);
+    (e as unknown as { api: { activities: { getAll: () => Promise<unknown[]> } } }).api.activities.getAll = () => Promise.resolve([{ id: "wf-t1", date: "2025-06-03" }]);
     return { e, starts };
   }
 

@@ -54,7 +54,7 @@ export class Activity {
   marketPrice = false;
 
   constructor(init: ActivityInit) {
-    for (const [k, v] of Object.entries(init)) if (v !== undefined) (this as Record<string, unknown>)[k] = v;
+    Object.assign(this, Object.fromEntries(Object.entries(init).filter(([, v]) => v !== undefined)));
   }
 
   get comment(): string {

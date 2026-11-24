@@ -1,4 +1,5 @@
 import { D, type Dec } from "./dec";
+import { errText } from "./at";
 import { arrayOf, isNumber, nullable, orNull, shape } from "./json";
 import { addDays } from "./plan";
 
@@ -58,7 +59,7 @@ export class Closes {
         this.cache[sym] = { ...this.cache[sym], ...(await this.fetch(sym, addDays(day, -800), this.today)) };
         changed = true;
       } catch (e) {
-        this.failed.set(sym, e instanceof NotFound ? "no prices for this symbol" : `could not reach it (${(e as Error).message})`);
+        this.failed.set(sym, e instanceof NotFound ? "no prices for this symbol" : `could not reach it (${errText(e)})`);
       }
     }
     if (changed) await this.save(this.cache);

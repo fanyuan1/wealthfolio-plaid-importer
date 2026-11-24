@@ -79,7 +79,7 @@ export class Engine {
   private async tokens(env: PlaidEnv): Promise<Record<string, Token>> {
     const items = Object.entries(await this.store.items(env));
     const toks = await Promise.all(items.map(([id]) => this.store.token(id)));
-    return Object.fromEntries(items.flatMap(([id, m], i) => (toks[i] ? [[id, { ...m, access_token: toks[i] } as Token]] : [])));
+    return Object.fromEntries(items.flatMap(([id, m], i) => (toks[i] ? [[id, { ...m, access_token: toks[i] }]] : [])));
   }
 
   private async closes(day = today()) {
@@ -512,7 +512,7 @@ export class Engine {
           }
           const made = await this.api.accounts.create({
             name: c.name, accountType: WF_TYPE[c.kind], group: c.owner || null, currency: c.currency || "USD",
-            accountNumber: (c.mask as string) || undefined, isDefault: false, isActive: true, trackingMode: "TRANSACTIONS",
+            accountNumber: c.mask || undefined, isDefault: false, isActive: true, trackingMode: "TRANSACTIONS",
           });
           c.wealthfolio_account_id = made.id;
           n++;
@@ -1058,10 +1058,11 @@ interface PlanInput {
 
 type WfActivity = Awaited<ReturnType<Api["activities"]["getAll"]>>[number];
 
+const isoDay = (d: Date | string) => (d instanceof Date ? d.toISOString() : d).slice(0, 10);
+
 function existingRow(a: WfActivity): Existing {
-  const d = a.date as unknown;
   return { id: a.id, accountId: a.accountId, type: a.activityType, symbol: a.assetSymbol || null,
-    date: d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10),
+    date: isoDay(a.date),
     quantity: a.quantity, amount: a.amount, comment: a.comment ?? null };
 }
 

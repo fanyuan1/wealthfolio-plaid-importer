@@ -62,7 +62,7 @@ function PlaidImporter({ ctx }: { ctx: AddonContext }) {
                   text="Bring bank, card and brokerage data from Plaid into Wealthfolio." />
       <PageContent>
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
-          <Tabs value={step} onValueChange={(v) => go(v as Step)}>
+          <Tabs value={step} onValueChange={(v: string) => { if (isStep(v)) go(v); }}>
             <div className="py-2">
               <Stepper step={step} done={done} locked={ready ? {} : { sync: LOCKED, daily: LOCKED }} onStep={go} />
             </div>
@@ -118,6 +118,7 @@ function SpendingOffDialog({ leaving, spendingOff, onStay, onContinue }: { leavi
 }
 const STEPS: [Step, string][] = [['setup', 'Setup'], ['connections', 'Connections'], ['accounts', 'Accounts'], ['sync', 'Sync'],
   ['daily', 'Daily sync'], ['backup', 'Backup']];
+const isStep = (s: string): s is Step => STEPS.some(([k]) => k === s);
 
 function Stepper({ step, done, locked, onStep }: { step: Step; done: Partial<Record<Step, boolean>>; locked: Partial<Record<Step, string>>;
   onStep: (s: Step) => void }) {
