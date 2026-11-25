@@ -110,6 +110,7 @@ test.describe("on a phone", () => {
 });
 
 test("progress rows keep their height and the list scrolls when it is full", async ({ addon }) => {
+  await addon.page.setViewportSize({ width: 412, height: 915 });
   await addon.open();
   await addon.saveKeys();
   await addon.connect();

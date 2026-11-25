@@ -6,7 +6,7 @@ Wealthfolio is a local-first app for investments and spending, with no bank conn
 
 Network access is limited to Plaid and Yahoo Finance (prices Plaid doesn't send). Hosts are listed in `manifest.json`.
 
-> **Status:** personal project. Tested with Wealthfolio 3.12 on macOS in a Sandbox profile and a personal profile, and on the self-hosted server (Docker) with automated browser tests. Expect rough edges with institutions it hasn't seen.
+> **Status:** personal project. Tested with Wealthfolio 3.13.1 on macOS in a Sandbox profile and a personal profile, and on the self-hosted server (Docker) with automated browser tests. Expect rough edges with institutions it hasn't seen.
 
 ## Requirements
 

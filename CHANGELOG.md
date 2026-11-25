@@ -2,9 +2,18 @@
 
 Versions follow [semantic versioning](https://semver.org).
 
+## 0.1.3 - 2026-11-24
+
+Tested with Wealthfolio 3.13.1.
+
+### Fixed
+
+- On a phone, the progress list on Sync and Accounts no longer squeezes its rows so that each one scrolls on its own. Wealthfolio clips flex layouts on screens up to 1024px wide, in both mobile and desktop mode.
+- Turning daily sync on and then changing its time right away keeps the new time. Before, the older time could be saved last.
+
 ## 0.1.2 - 2026-11-21
 
-Works with Wealthfolio 3.13, and still with 3.12.
+Tested with Wealthfolio 3.12.0. Works with 3.13.
 
 ### Fixed
 
@@ -18,13 +27,15 @@ Works with Wealthfolio 3.13, and still with 3.12.
 
 ## 0.1.1 - 2026-11-11
 
-Works with Wealthfolio 3.13, and still with 3.12.
+Tested with Wealthfolio 3.12.0. Works with 3.13.
 
 ### Fixed
 
 - The Copy button on Backup and the "rows were not saved" popup on Sync use layout classes that Wealthfolio 3.13 still has. With 0.1.0 on 3.13, the Copy button could be narrower and the popup had no height limit of its own.
 
 ## 0.1.0 - 2026-11-09
+
+Tested with Wealthfolio 3.12.0.
 
 First release.
 

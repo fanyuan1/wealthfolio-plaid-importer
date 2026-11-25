@@ -98,7 +98,7 @@ export function ProgressList({ list }: { list: Progress[] }) {
   if (!list.length) return null;
   const top = list.filter((p) => !p.parent || !list.some((x) => x.id === p.parent));
   return (
-    <ul className="flex max-h-72 flex-col divide-y overflow-y-auto rounded-md border">
+    <ul className="max-h-72 divide-y overflow-y-auto rounded-md border">
       {top.map((p) => {
         const kids = list.filter((c) => c.parent === p.id);
         return (
