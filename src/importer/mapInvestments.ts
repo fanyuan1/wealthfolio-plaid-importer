@@ -196,7 +196,7 @@ function trade(x: Txn): Out | undefined {
   if (x.ttype !== "buy" && x.ttype !== "sell") return undefined;
   if (!x.isSec) return SKIPPED;
   if (x.qty.eq(0)) return x.rev("trade with zero quantity");
-  if (x.sub === "contribution") return x.act("TRANSFER_IN", { quantity: x.qty, unitPrice: x.price, ...x.secKw });
+  if (x.sub === "contribution") return x.act("TRANSFER_IN", { quantity: x.qty, unitPrice: x.price, isExternal: true, ...x.secKw });
   const atype = x.ttype === "buy" ? "BUY" : "SELL";
   let subtype: string | null = SHORT_SUBTYPES[x.sub] ?? null;
   if (x.isOption && subtype === null) subtype = x.ttype === "buy" ? "POSITION_OPEN" : "POSITION_CLOSE";
@@ -233,7 +233,8 @@ function shareMovement(x: Txn): Out | undefined {
   }
   if (amount.eq(0) && nz(x.qty) && rawQty && SHARE_MOVE_SUBTYPES.has(sub)) {
     const q = rawQty.div(x.mult);
-    return x.act(q.gt(0) ? "TRANSFER_IN" : "TRANSFER_OUT", { quantity: q.abs(), unitPrice: ZERO, marketPrice: true, ...x.secKw });
+    return x.act(q.gt(0) ? "TRANSFER_IN" : "TRANSFER_OUT", { quantity: q.abs(), unitPrice: ZERO, marketPrice: true,
+      isExternal: sub === "contribution" && q.gt(0), ...x.secKw });
   }
   return undefined;
 }

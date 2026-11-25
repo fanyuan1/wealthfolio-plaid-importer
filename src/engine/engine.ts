@@ -1,4 +1,4 @@
-import { errText, required, valueAt, accountLabel, accountNames, plural, cryptoSymbol, isCrypto, isCurrency, type AccountCfg, BLOCKING_ITEM_ERRORS, PlaidError, RECONNECT_DETAIL, accountName, type OnProgress, type Progress, assignCategories, Closes, D, discoverAccounts, entry, fetchItems, type FetchResult, type Adoption, type Existing, findAdoptions, forgetEmptied, matchById, holdsSecurities, jointCopies, planLinks, type HttpGet, jointOwners, addDays, HISTORY_DAYS, MemoryLedger, Plaid, type PlaidEnv, plan, type Plan, push, type PushStats, rebases, reportedPrice, resolve, type SecurityOverride, type HoldingsData, type InvestmentData, type LinkSession, type PlaidInstitution, type PlaidSecurity, type HoldingsItem, todoReport, type Token, type Track, trackedIds, type Transport, uncategorized, WF_TYPE, withPrices, yahooFetch } from '../importer';
+import { errText, required, valueAt, accountLabel, accountNames, plural, cryptoSymbol, isCrypto, isCurrency, type AccountCfg, BLOCKING_ITEM_ERRORS, PlaidError, RECONNECT_DETAIL, accountName, type OnProgress, type Progress, assignCategories, Closes, D, discoverAccounts, entry, fetchItems, type FetchResult, type Adoption, type Existing, findAdoptions, forgetEmptied, matchById, holdsSecurities, jointCopies, planLinks, type HttpGet, jointOwners, addDays, HISTORY_DAYS, MemoryLedger, Plaid, type PlaidEnv, plan, type Plan, push, type PushStats, rebases, reportedPrice, resolve, type SecurityOverride, type HoldingsData, type InvestmentData, type LinkSession, type PlaidInstitution, type PlaidSecurity, type HoldingsItem, todoReport, type Token, type Track, trackedIds, type Transport, uncategorized, WF_TYPE, withPrices, yahooFetch, type Held, type HeldRow, holdingsReviews, describeChange, rememberRatio, type Activity, isOpening, isProtected, keepProtected, type LedgerRow } from '../importer';
 import { type Api, type AutoRun, type Daily, type ItemMeta, type RunRecord, Store } from './store';
 import { type Backup, type BackupItem, type BackupKind, isBackup } from './backup';
 import { SdkWriter } from './writer';
@@ -662,7 +662,24 @@ export class Engine {
     symbols[sid] = e;
     await this.store.saveSymbols(env, symbols);
     await this.noteRemap(env, sid, before, symbols);
+    await this.keepOldRatio(env, sid, before, symbols);
     return e;
+  }
+
+  private async keepOldRatio(env: PlaidEnv, sid: string, before: Record<string, SecurityOverride>, after: Record<string, SecurityOverride>) {
+    const old = before[sid]?.track;
+    const next = after[sid]?.track;
+    if (!old || !next || old.symbol !== next.symbol || old.ratio === next.ratio) return;
+    const items = this.pulled?.fetched.items ?? [];
+    const accounts = pulledSecurity(items, sid).accts;
+    for (const other of pulledIds(items)) {
+      const { sec, accts } = pulledSecurity(items, other);
+      if (other === sid || !sec || securitySymbol(resolve(sec, before, sec.iso_currency_code || "USD")) !== old.symbol) continue;
+      for (const a of accts) accounts.delete(a);
+    }
+    const state = await this.store.ledger(env);
+    rememberRatio(state.rows.values(), sid, old, accounts);
+    await this.store.saveLedger(env, state);
   }
 
   private async noteRemap(env: PlaidEnv, sid: string, before: Record<string, SecurityOverride>, after: Record<string, SecurityOverride>) {
@@ -799,7 +816,8 @@ export class Engine {
       for (const h of item.holdings?.holdings ?? []) if (added.has(h.security_id)) accts.add(h.account_id);
     }
     await this.pullHistory(d, accts);
-    return this.planFrom(d.env, { fetched: d.fetched, cfg: d.cfg, state: d.state, tracked: now }, d.adoptions);
+    const state = await this.store.ledger(d.env);
+    return this.planFrom(d.env, { fetched: d.fetched, cfg: d.cfg, state, tracked: now }, d.adoptions);
   }
 
   private async pullHistory(d: DryRun, want: Set<string>) {
@@ -852,6 +870,7 @@ export class Engine {
     const names = accountNames(cfg);
     const adoptions = await this.adoptions(p, cfg, state, prev);
     const kept = await this.protect(p, cfg, state);
+    p.reviews = [...p.reviews.filter((r) => r.reason !== "holdings mismatch"), ...holdingsReviews(p, state)];
     return { env, plan: p, fetched, adoptions, todo: [...todoReport(p.reviews, names, closes.warnings()), ...kept.map((l) => (l.startsWith("  ") ? l : `\n${l}`))], state, cfg, tracked, backfill, rebases: proposals,
       securities: await this.securitiesOf(fetched.items, symbols) };
   }
@@ -888,30 +907,35 @@ export class Engine {
 
   private async protect(p: Plan, cfg: Record<string, AccountCfg>, state: MemoryLedger): Promise<string[]> {
     const touched = new Set<string>([...p.updates.map(([r]) => r.account_id), ...p.voids.map((r) => r.account_id),
-      ...p.retype.map(([pid]) => state.get(pid)?.account_id ?? ""), ...p.pairs.flat().map((pid) => state.get(pid)?.account_id ?? "")]);
-    const modified = new Set<string>();
+      ...p.retype.map(([pid]) => state.get(pid)?.account_id ?? ""), ...p.pairs.flat().map((pid) => state.get(pid)?.account_id ?? ""),
+      ...p.new.filter((a) => isOpening(a.plaidId)).map((a) => a.accountId)]);
+    const held: Held = new Map();
     const wf = [...touched].map((aid) => cfg[aid]?.wealthfolio_account_id).filter((w): w is string => Boolean(w));
     for (const list of await Promise.all(wf.map((w) => this.api.activities.getAll(w)))) {
-      for (const a of list) if (a.isUserModified) modified.add(a.id);
+      for (const a of list) held.set(a.id, heldRow(a));
     }
-    const mine = (pid: string) => {
-      const r = state.get(pid);
-      return Boolean(r && (r.adopted || (r.wf_activity_id && modified.has(r.wf_activity_id))));
-    };
+    const mine = (pid: string) => isProtected(state.get(pid), held);
     const lines: string[] = [];
-    const keep = <T,>(list: T[], row: (x: T) => { plaid_id: string; account_id: string; date: string; activity_type: string } | null, what: (x: T) => string) =>
-      list.filter((x) => {
-        const r = row(x);
-        if (!r || !mine(r.plaid_id)) return true;
-        lines.push(`  - ${accountLabel(cfg, r.account_id)}: ${r.date} ${r.activity_type} ${what(x)}`);
-        return false;
-      });
-    p.updates = keep(p.updates, ([r]) => r, ([, , f]) => `changed at Plaid (${f.join(", ")})`);
-    p.voids = keep(p.voids, (r) => r, () => "removed at Plaid");
-    p.retype = keep(p.retype, ([pid]) => state.get(pid), ([, t]) => `would become ${t}`);
+    const line = (r: Pick<LedgerRow, "account_id" | "date" | "activity_type" | "symbol">, what: string) =>
+      lines.push(`  - ${[`${accountLabel(cfg, r.account_id)}:`, r.date, r.activity_type, r.symbol, what].filter(Boolean).join(" ")}`);
+    const now = (r: LedgerRow) => held.get(r.wf_activity_id ?? "") ?? r;
+    const kept = keepProtected(p, state, held);
+    const why = (r: LedgerRow, a: Activity) =>
+      isOpening(r.plaid_id) ? "opening recalculated" : r.ratio !== undefined && r.ratio !== a.ratio ? "new ratio" : "changed at Plaid";
+    for (const [r, a, f] of kept.updates) line(r, `${why(r, a)} (${describeChange(now(r), a, f)})`);
+    for (const r of kept.voids) {
+      const { quantity, amount } = now(r);
+      line(r, `${isOpening(r.plaid_id) ? "opening no longer needed" : "removed at Plaid"} (${quantity === null ? `amount ${amount ?? "none"}` : `quantity ${quantity}`})`);
+    }
+    p.retype = p.retype.filter(([pid, type]) => {
+      const r = state.get(pid);
+      if (!r || !mine(pid)) return true;
+      line(r, `would become ${type}`);
+      return false;
+    });
     p.pairs = p.pairs.filter(([o, i]) => !(mine(o) || mine(i)));
     return lines.length ? [`Kept as they are in Wealthfolio (${lines.length})`,
-      "  These were in Wealthfolio before the importer, or you edited them. The importer does not change or delete them. Edit or delete them in Wealthfolio if Plaid is right.", ...lines] : [];
+      "  These were in Wealthfolio before the importer, you edited them, or they depend on such a row. The importer does not change or delete them. Edit or delete them in Wealthfolio if Plaid is right.", ...lines] : [];
   }
 
   private applyAdoptions(d: DryRun): Plan {
@@ -1066,6 +1090,11 @@ function existingRow(a: WfActivity): Existing {
     quantity: a.quantity, amount: a.amount, comment: a.comment ?? null };
 }
 
+function heldRow(a: WfActivity): HeldRow {
+  return { id: a.id, isUserModified: Boolean(a.isUserModified), status: a.status ?? "POSTED", activity_type: a.activityType, date: isoDay(a.date),
+    symbol: a.assetSymbol || null, quantity: a.quantity, unit_price: a.unitPrice, amount: a.amount, fee: a.fee, currency: a.currency };
+}
+
 function dailyBlocker(d: DryRun): string | null {
   const open = d.adoptions.filter((a) => a.how !== "new").length;
   if (open) return `${open} rows may already be in Wealthfolio. Review them in Sync.`;
@@ -1082,6 +1111,11 @@ function dailyNotes(d: DryRun, stats: PushStats, big: string[]): string[] {
   if (d.fetched.skipped.length) notes.push(`Reconnect in Connections: ${d.fetched.skipped.join(", ")}`);
   if (d.plan.reviews.length) notes.push("See the to-do list in Sync");
   return notes;
+}
+
+function pulledIds(items: FetchResult["items"]): Set<string> {
+  return new Set(items.flatMap((d) => [...(d.holdings?.holdings ?? []), ...(d.inv?.investment_transactions ?? [])]
+    .flatMap((x) => x.security_id ?? [])));
 }
 
 function pulledSecurity(items: FetchResult["items"], sid: string): { sec: PlaidSecurity | undefined; accts: Set<string> } {

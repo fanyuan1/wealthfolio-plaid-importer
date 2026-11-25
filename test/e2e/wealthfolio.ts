@@ -1,7 +1,7 @@
 import { execFileSync, execSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { arrayOf, type Guard, isNumber, isString, nullable, shape } from "../../src/importer/json";
+import { arrayOf, type Guard, isBoolean, isNumber, isRecord, isString, nullable, optional, shape } from "../../src/importer/json";
 
 function read<T>(what: string, v: unknown, guard: Guard<T>): T {
   if (!guard(v)) throw new Error(`unexpected ${what}`);
@@ -18,10 +18,12 @@ const HOSTS = read("manifest.json", readJson("manifest.json"),
   shape<{ network: { allowedHosts: string[] } }>({ network: shape<{ allowedHosts: string[] }>({ allowedHosts: arrayOf(isString) }) })).network.allowedHosts;
 
 type WfAccount = { id: string; name: string; accountType: string; currency: string };
-type WfActivity = { id: string; accountId: string; activityType: string; amount: string | number | null; date: string; comment?: string | null };
+type WfActivity = { id: string; accountId: string; activityType: string; amount: string | number | null; date: string; comment?: string | null; quantity?: string | number | null; isUserModified?: boolean; unitPrice?: string | number | null; metadata?: Record<string, unknown> | null | undefined };
 const isWfAccount = shape<WfAccount>({ id: isString, name: isString, accountType: isString, currency: isString });
 const isWfActivity = shape<WfActivity>({ id: isString, accountId: isString, activityType: isString,
-  amount: (v): v is string | number | null => v === null || isString(v) || isNumber(v), date: isString, comment: nullable(isString) });
+  amount: (v): v is string | number | null => v === null || isString(v) || isNumber(v), date: isString, comment: nullable(isString),
+  quantity: optional((v): v is string | number | null => v === null || isString(v) || isNumber(v)), isUserModified: optional(isBoolean),
+  unitPrice: optional((v): v is string | number | null => v === null || isString(v) || isNumber(v)), metadata: nullable(isRecord) });
 const isActivityPage = shape<{ data: WfActivity[] }>({ data: arrayOf(isWfActivity) });
 
 export function dockerRunning(): boolean {

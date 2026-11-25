@@ -24,6 +24,7 @@ export interface ImportRow {
   fee?: number;
   tax?: number;
   subtype?: string;
+  isExternal?: boolean;
   quoteMode?: "MANUAL";
   symbolName?: string;
 }
@@ -63,6 +64,7 @@ export function toImportRow(a: Activity, wfAccountId: string, line: number): Imp
     ...(a.symbol !== null && { symbol: a.symbol }), ...(a.instrumentType !== null && { instrumentType: a.instrumentType }),
     ...(quantity !== null && { quantity }), ...(unitPrice !== null && { unitPrice }), ...(amount !== null && { amount }),
     ...(fee !== null && { fee }), ...(tax !== null && { tax }), ...(a.subtype !== null && { subtype: a.subtype }),
+    ...(a.isExternal && { isExternal: true }),
   };
   if (a.quoteManual) {
     row.quoteMode = "MANUAL";

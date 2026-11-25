@@ -1,4 +1,4 @@
-import { itemAt } from "../../src/importer/at";
+import { itemAt, required } from "../../src/importer/at";
 import { expect, test } from "./fixtures";
 import { wf } from "./wealthfolio";
 
@@ -19,4 +19,13 @@ test("connect, create accounts, push, and push only what is new", async ({ addon
   const second = await wf.activities();
   expect(second.length).toBe(first.length + 1);
   expect(second.some((a) => (a.comment ?? "").includes("plaid:tx_lunch"))).toBe(true);
+});
+
+test("shares contributed to a plan arrive marked external", async ({ addon, plaid }) => {
+  plaid.investments.push({ ...itemAt(plaid.investments, 0), investment_transaction_id: "inv_plan", subtype: "contribution",
+    amount: 100, quantity: 1, price: 100, name: "Plan Contribution" });
+  await addon.firstPush();
+  const rows = await wf.activities();
+  const external = (id: string) => required(rows.find((a) => (a.comment ?? "").includes(`plaid:${id}`)), id).metadata?.flow;
+  expect([external("inv_plan"), external("inv_buy")]).toEqual([{ is_external: true }, undefined]);
 });

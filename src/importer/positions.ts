@@ -60,6 +60,7 @@ export interface OpeningAt {
   date: string;
   cash: Dec | null;
   currency?: string;
+  priorPrice?: (plaidId: string) => Dec | null;
 }
 
 interface OpeningContext {
@@ -70,7 +71,7 @@ interface OpeningContext {
   currency: string;
 }
 
-export function openingActivities(at: OpeningAt, holdings: HoldingMap, acts: Activity[], priceOn?: PriceOn): [Activity[], Review[]] {
+export function openingActivities(at: OpeningAt, holdings: HoldingMap, acts: Activity[], priceOn?: PriceOn): [Activity[], Review[], string[]] {
   const ctx: OpeningContext = { at, holdings, acts, priceOn, currency: at.currency ?? "USD" };
   const own = acts.filter((a) => a.accountId === at.accountId);
   const deltas = new Map<string, Dec>();
@@ -79,14 +80,14 @@ export function openingActivities(at: OpeningAt, holdings: HoldingMap, acts: Act
 
   const out: Activity[] = [];
   const reviews: Review[] = [];
-  for (const sym of openingSymbols(at.accountId, holdings, deltas)) {
-    const { activity, note } = openingPosition(ctx, sym, deltas.get(sym) ?? ZERO);
+  const needless: string[] = [];
+  const results = openingSymbols(at.accountId, holdings, deltas).map((sym) => openingPosition(ctx, sym, deltas.get(sym) ?? ZERO));
+  for (const { activity, note, settled } of [...results, openingCash(ctx, cashDelta)]) {
     if (activity) out.push(activity);
     if (note) reviews.push(note);
+    if (settled) needless.push(settled);
   }
-  const cash = openingCash(ctx, cashDelta);
-  if (cash) out.push(cash);
-  return [out, reviews];
+  return [out, reviews, needless];
 }
 
 function openingSymbols(accountId: string, holdings: HoldingMap, deltas: Map<string, Dec>): string[] {
@@ -98,13 +99,19 @@ function openingSymbols(accountId: string, holdings: HoldingMap, deltas: Map<str
   return [...symbols].sort();
 }
 
-function openingPosition(ctx: OpeningContext, sym: string, delta: Dec): { activity?: Activity; note?: Review } {
+interface Opening {
+  activity?: Activity;
+  note?: Review;
+  settled?: string;
+}
+
+function openingPosition(ctx: OpeningContext, sym: string, delta: Dec): Opening {
   const { accountId, date } = ctx.at;
   const h = ctx.holdings.get(hkey(accountId, sym));
   const current = h ? h.quantity : ZERO;
   const opening = current.minus(delta);
-  if (opening.abs().lt(EPS)) return {};
   const pid = `opening:${accountId}:${sym}`;
+  if (opening.abs().lt(EPS)) return { settled: pid };
   if (opening.lt(0)) {
     return { note: review({ accountId, plaidId: pid, date }, "negative opening position", `${sym}: holdings ${String(current)}, pulled net ${String(delta)}`) };
   }
@@ -131,28 +138,32 @@ function openingPrice(ctx: OpeningContext, { sym, pid, holding: h, current }: Op
     return { price: D(h.cost_basis).abs().div(current.times(h.multiplier)).times(grown) };
   }
   const sid = h ? h.security_id : ctx.acts.find((a) => a.symbol === sym)?.securityId ?? null;
-  let [price, source] = acquisitionPrice(sym, sid, ctx, grown);
+  let [price, source] = acquisitionPrice({ sym, sid, pid }, ctx, grown);
   if (price === null && h) [price, source] = [dec(h.institution_price)?.times(grown) ?? null, "today's price; fix in Wealthfolio"];
   const note = review({ accountId: ctx.at.accountId, plaidId: pid, date: ctx.at.date }, "opening cost basis missing", `${sym}: priced at ${String(price)} (${source || "no price found; set it in Wealthfolio"})`);
   return { price, note };
 }
 
-function openingCash(ctx: OpeningContext, cashDelta: Dec): Activity | null {
+function openingCash(ctx: OpeningContext, cashDelta: Dec): Opening {
   const { accountId, date, cash } = ctx.at;
-  if (cash === null) return null;
+  if (cash === null) return {};
   const openingBalance = cash.minus(cashDelta);
-  if (!openingBalance.abs().gte("0.01")) return null;
-  return new Activity({
-    accountId, plaidId: `opening:${accountId}:cash`, date,
+  const pid = `opening:${accountId}:cash`;
+  if (!openingBalance.abs().gte("0.01")) return { settled: pid };
+  return { activity: new Activity({
+    accountId, plaidId: pid, date,
     activityType: openingBalance.gt(0) ? "TRANSFER_IN" : "TRANSFER_OUT", currency: ctx.currency,
     amount: openingBalance.abs().round(2, 2), description: "Opening cash balance",
-  });
+  }) };
 }
 
-function acquisitionPrice(sym: string, sid: string | null, ctx: OpeningContext, grown: Dec): [Dec | null, string | null] {
+function acquisitionPrice({ sym, sid, pid }: { sym: string; sid: string | null; pid: string }, ctx: OpeningContext,
+  grown: Dec): [Dec | null, string | null] {
   const day = ctx.at.date;
   const p = ctx.priceOn && sid ? ctx.priceOn(sid, day) : null;
   if (nz(p)) return [p.times(grown), `market price on ${day}${grown.eq(1) ? "" : `, times ${String(grown)} for later splits`}`];
+  const prior = ctx.at.priorPrice?.(pid) ?? null;
+  if (nz(prior)) return [prior, "kept from the last push"];
   const priced = ctx.acts.filter((a) => a.symbol === sym && nz(a.unitPrice)).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   const first = priced[0];
   if (first) return [first.unitPrice, `Plaid price on ${first.date}, the earliest it shows`];

@@ -325,6 +325,14 @@ describe("options and plans", () => {
     expect([a.activityType, n(a.quantity), n(a.unitPrice)]).toEqual(["TRANSFER_IN", 11.732, 121.04]);
   });
 
+  test("only shares contributed to a plan are marked external", () => {
+    const r = one([tx("priced", "buy", "contribution", { amount: 200, quantity: 4, price: 50, security_id: "s_vti" }),
+      tx("unpriced", "transfer", "contribution", { amount: 0, quantity: 3, price: 0, security_id: "s_vti" }),
+      tx("moved", "transfer", "transfer", { amount: 0, quantity: 2, price: 0, security_id: "s_vti" }),
+      tx("bought", "buy", "buy", { amount: 100, quantity: 1, price: 100, security_id: "s_vti" })]);
+    expect(r.activities.map((a) => [a.plaidId, a.isExternal])).toEqual([["priced", true], ["unpriced", true], ["moved", false], ["bought", false]]);
+  });
+
   test("partial fill uses the filled amount", () => {
     const [a] = take(one([tx("p1", "buy", "buy", { amount: 135, quantity: 40, price: 135, security_id: "s_vti", fees: null, name: "buy 40.000000 shares for $135.00 each. This order is partially filled." })]).activities, 1);
     expect(n(a.quantity)).toBe(1);
@@ -414,6 +422,15 @@ describe("prices and to-do", () => {
     await next.load([["GOOG", "2024-11-10"]], { latest: true });
     await next.load([["GOOG", "2024-11-11"]], { latest: true });
     expect(calls).toEqual(["GOOG", "GOOG"]);
+  });
+
+  test("a failed fetch keeps cached closes for past dates, not for a new ratio", async () => {
+    const { Closes } = await import("../../src/importer");
+    const c = new Closes({ VOO: { "2024-11-08": "550" } }, () => Promise.reject(new Error("offline")), "2026-11-07");
+    await c.load([["VOO", "2026-11-06"]], { latest: true });
+    expect(n(c.close("VOO", "2024-11-09"))).toBe(550);
+    expect(c.closeOn("VOO", "2024-11-09")).toBeNull();
+    expect(c.nearest("VOO", "2024-11-09")).toBeNull();
   });
 
   test("to-do report groups reviews and warns on price failures", async () => {

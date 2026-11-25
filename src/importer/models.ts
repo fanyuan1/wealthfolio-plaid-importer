@@ -4,6 +4,8 @@ export const POSITION_SIGN: Record<string, number> = { BUY: 1, TRANSFER_IN: 1, S
 export const CASH_IN = new Set(["DEPOSIT", "TRANSFER_IN", "DIVIDEND", "INTEREST", "CREDIT"]);
 export const CASH_OUT = new Set(["WITHDRAWAL", "TRANSFER_OUT", "FEE", "TAX"]);
 
+export const isOpening = (plaidId: string) => plaidId.startsWith("opening:");
+
 export interface ActivityInit {
   accountId: string;
   plaidId: string;
@@ -21,9 +23,12 @@ export interface ActivityInit {
   description?: string;
   category?: string | null;
   transferHint?: boolean;
+  isExternal?: boolean;
   splitDelta?: Dec | null;
   pairId?: string | null;
   securityId?: string | null;
+  fund?: string | undefined;
+  ratio?: number | undefined;
   symbolName?: string | null;
   quoteManual?: boolean;
   marketPrice?: boolean;
@@ -46,9 +51,12 @@ export class Activity {
   description = "";
   category: string | null = null;
   transferHint = false;
+  isExternal = false;
   splitDelta: Dec | null = null;
   pairId: string | null = null;
   securityId: string | null = null;
+  fund: string | undefined = undefined;
+  ratio: number | undefined = undefined;
   symbolName: string | null = null;
   quoteManual = false;
   marketPrice = false;

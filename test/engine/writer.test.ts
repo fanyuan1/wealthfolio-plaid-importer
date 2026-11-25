@@ -17,6 +17,7 @@ function fakeApi() {
         return Promise.resolve({ created: [], updated: [], deleted: [], errors: (req.updates ?? []).filter((u) => u.id === "wf-x").map((u) => ({ id: u.id, action: "update", message: "nope" })),
           createdMappings: (req.creates ?? []).map((c) => ({ tempId: c.id, activityId: `wf-${c.id}` })) });
       },
+      getAll: (accountId: string) => Promise.resolve(accountId === "acct-wf-1" ? [{ id: "wf-1", comment: "Rent · plaid:p1" }] : []),
       linkTransfer: (a: string, b: string) => { calls.link.push([a, b]); return Promise.resolve(); },
     },
     spending: {
@@ -45,13 +46,21 @@ test("imports through checkImport and saveMany, mapping lines to new ids", async
   expect(itemAt(creates, 2).asset).toEqual({ id: "asset-VTI", symbol: "VTI", exchangeMic: "XNAS" });
 });
 
+test("an external row is created with the flow mark", async () => {
+  const { api, calls } = fakeApi();
+  const row = { accountId: "A", date: "2026-01-02", activityType: "TRANSFER_IN", currency: "USD", symbol: "VTI", quantity: 1, unitPrice: 10 };
+  await new SdkWriter(api, () => null).commitImport([{ ...row, lineNumber: 1, isExternal: true }, { ...row, lineNumber: 2 }]);
+  const creates = (itemAt(calls.saveMany, 0) as { creates: Record<string, unknown>[] }).creates;
+  expect(creates.map((c) => c.metadata)).toEqual([{ flow: { is_external: true } }, undefined]);
+});
+
 test("updates send the whole activity and map errors to indexes", async () => {
   const { api, calls } = fakeApi();
   const w = new SdkWriter(api, (id) => ({ accountId: `acct-${id}`, activityType: "WITHDRAWAL", date: "2026-02-01", currency: "USD" }));
   const out = await w.update([{ activityId: "wf-1", amount: 26 }, { activityId: "wf-x", void: true }, { activityId: "wf-2", activityType: "TRANSFER_OUT" }]);
   expect(out).toEqual([{ errors: [{ index: 1, message: "nope" }] }]);
   const ups = (itemAt(calls.saveMany, 0) as { updates: Record<string, unknown>[] }).updates;
-  expect(itemAt(ups, 0)).toEqual({ id: "wf-1", accountId: "acct-wf-1", activityType: "WITHDRAWAL", activityDate: "2026-02-01", currency: "USD", amount: 26 });
+  expect(itemAt(ups, 0)).toEqual({ id: "wf-1", accountId: "acct-wf-1", activityType: "WITHDRAWAL", activityDate: "2026-02-01", currency: "USD", amount: 26, comment: "Rent · plaid:p1" });
   expect(itemAt(ups, 1).status).toBe("VOID");
   expect(itemAt(ups, 2).activityType).toBe("TRANSFER_OUT");
   expect(ups.every((u) => u.currency === "USD")).toBe(true);

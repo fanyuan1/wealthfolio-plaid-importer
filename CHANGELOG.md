@@ -10,6 +10,14 @@ Tested with Wealthfolio 3.13.1.
 
 - On a phone, the progress list on Sync and Accounts no longer squeezes its rows so that each one scrolls on its own. Wealthfolio clips flex layouts on screens up to 1024px wide, in both mobile and desktop mode.
 - Turning daily sync on and then changing its time right away keeps the new time. Before, the older time could be saved last.
+- When a pushed trade changes its shares or cash, for example after a mapping fix, that ticker's opening position and the account's opening cash are recalculated. An opening that is no longer needed is deleted. Before, it stayed, and the holdings check showed a mismatch. Rows you edited stay as they are, together with the openings that depend on them.
+- A row that the importer updated can be updated again. Before, Wealthfolio flagged it as user modified, so the importer treated it as your edit. A flagged row now counts as yours only when its values differ from what the importer last wrote, or it is void.
+- An update keeps the row's notes. Before, it cleared them.
+- "Kept as they are in Wealthfolio" shows each row's ticker, the value in Wealthfolio and the new value.
+- A new ratio for a followed ticker also rescales pushed rows that Plaid no longer sends. Rows you edited stay.
+- An opening without a Plaid cost keeps its price from the last push when Yahoo has no close for its day.
+- A failed Yahoo lookup no longer hides saved closes of past days.
+- Shares contributed to a plan, such as a 401(k) contribution, are marked external, so Wealthfolio counts them as net contributions. Rows already pushed do not change: turn on External on each in Wealthfolio.
 
 ## 0.1.2 - 2026-11-21
 

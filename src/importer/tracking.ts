@@ -1,5 +1,7 @@
 import { valueAt } from "./at";
 import { D, type Dec, dec } from "./dec";
+import type { LedgerRow } from "./ledger";
+import { Activity, isOpening } from "./models";
 import type { PlaidHolding, PlaidInvestmentTransaction, PlaidSecurity, Scaled } from "./plaidTypes";
 import type { SecurityOverride } from "./securities";
 
@@ -46,6 +48,40 @@ export function convert(txns: PlaidInvestmentTransaction[], holdings: PlaidHoldi
     return r ? { ...h, quantity: times(h.quantity, r), institution_price: over(h.institution_price, r) } : h;
   });
   return [tx, hs, secs];
+}
+
+function followed(symbols: Record<string, SecurityOverride>, sid: string): Track | undefined {
+  const e = symbols[sid];
+  return e?.exclude ? undefined : e?.track;
+}
+
+export function stampRatios(acts: Activity[], symbols: Record<string, SecurityOverride>): void {
+  for (const a of acts) {
+    if (a.securityId === null || a.marketPrice) continue;
+    const track = followed(symbols, a.securityId);
+    if (!track) continue;
+    a.fund = a.securityId;
+    a.ratio = track.ratio;
+  }
+}
+
+export function atCurrentRatio(a: Activity, symbols: Record<string, SecurityOverride>): Activity | null {
+  const track = a.fund === undefined ? undefined : followed(symbols, a.fund);
+  if (!track || a.ratio === undefined || a.ratio === track.ratio || a.symbol !== track.symbol) return null;
+  const r = D(String(track.ratio)).div(D(String(a.ratio)));
+  const next = new Activity(a);
+  next.ratio = track.ratio;
+  next.quantity = a.quantity && times(a.quantity, r);
+  next.unitPrice = a.unitPrice && over(a.unitPrice, r);
+  next.splitDelta = a.splitDelta && times(a.splitDelta, r);
+  return next;
+}
+
+export function rememberRatio(rows: Iterable<LedgerRow>, fund: string, old: Track, accounts: Set<string>): void {
+  for (const r of rows) {
+    if (r.fund !== undefined || r.adopted || isOpening(r.plaid_id) || r.symbol !== old.symbol || !accounts.has(r.account_id)) continue;
+    Object.assign(r, { fund, ratio: old.ratio });
+  }
 }
 
 const REBASE_LIMIT = D("0.05");

@@ -9,6 +9,7 @@ export * from "./positions";
 export * from "./tracking";
 export * from "./ledger";
 export * from "./plan";
+export * from "./protect";
 export * from "./push";
 export * from "./plaid";
 export * from "./plaidTypes";

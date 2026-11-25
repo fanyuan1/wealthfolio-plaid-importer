@@ -5,7 +5,7 @@ const ledgerRow = (state: Ledger, id: string) => required(state.get(id), id);
 import { describe, expect, test } from "vitest";
 import {
   Activity, D, type ImportRow, type ItemData, MemoryLedger, openingDay, plan, push, type PlaidHolding,
-  type PlaidInvestmentTransaction, type PlaidSecurity, type PlaidTransaction,
+  type Dec, type PlaidInvestmentTransaction, type PlaidSecurity, type PlaidTransaction,
   toImportRow, type Update, type Writer,
 } from "../../src/importer";
 
@@ -175,6 +175,52 @@ describe("sync", () => {
     expect(p.reviews.filter((r) => r.reason === "holdings mismatch")).toEqual([]);
   });
 
+  async function pushedPartialBuy() {
+    const state = new MemoryLedger();
+    const held = [{ account_id: "brk", security_id: "s_vti", quantity: 2, cost_basis: 200, institution_value: 0, institution_price: 0 },
+      { account_id: "brk", security_id: "s_cash", quantity: 300, institution_value: 300, institution_price: 1 }];
+    const pull = (quantity: number, more: ItemsMore = {}) => plan(items([invTx("t1", "buy", "buy", { amount: quantity * 100, quantity, price: 100, security_id: "s_vti", date: "2026-11-03" })], held, [], more),
+      { accounts: ACCOUNTS, symbols: {} }, state, { today: TODAY });
+    await run(pull(0.5), new FakeWF(), state);
+    return { state, pull };
+  }
+
+  test("an opening that a corrected trade makes needless is removed", async () => {
+    const { state, pull } = await pushedPartialBuy();
+    const p = pull(2, { first: false });
+    expect(p.voids.map((r) => r.plaid_id)).toEqual(["opening:brk:VTI"]);
+    expect(p.updates.map(([r, , f]) => [r.plaid_id, f])).toEqual([["opening:brk:cash", ["amount"]], ["t1", ["quantity"]]]);
+    expect(p.reviews).toEqual([]);
+    await run(p, new FakeWF(), state);
+    expect(ledgerRow(state, "opening:brk:VTI").voided).toBe(1);
+  });
+
+  test("a removed opening comes back when it is needed again", async () => {
+    const { state, pull } = await pushedPartialBuy();
+    await run(pull(2, { first: false }), new FakeWF(), state);
+    const p = pull(0.5, { first: false });
+    expect(p.new.map((a) => [a.plaidId, required(a.quantity, "quantity").toNumber()])).toEqual([["opening:brk:VTI", 1.5]]);
+    expect(p.reviews).toEqual([]);
+  });
+
+  test("a corrected trade leaves another ticker's opening to the holdings check", async () => {
+    const state = new MemoryLedger();
+    const held = (other: number) => [{ account_id: "brk", security_id: "s_vti", quantity: 2, cost_basis: 200, institution_value: 0, institution_price: 0 },
+      { account_id: "brk", security_id: "s_voo", quantity: other, cost_basis: 100, institution_value: 0, institution_price: 0 }];
+    const pull = (quantity: number, other: number, more: ItemsMore = {}) => plan(items([invTx("t1", "buy", "buy", { amount: quantity * 100, quantity, price: 100, security_id: "s_vti", date: "2026-11-03" })], held(other), [],
+      { ...more, secs: { ...SECS, s_voo: { security_id: "s_voo", ticker_symbol: "VOO", type: "etf" } } }), { accounts: ACCOUNTS, symbols: {} }, state, { today: TODAY });
+    await run(pull(0.5, 1), new FakeWF(), state);
+    const p = pull(2, 3, { first: false });
+    expect([p.voids.map((r) => r.plaid_id), p.updates.map(([r]) => r.plaid_id)]).toEqual([["opening:brk:VTI"], ["t1"]]);
+    expect(p.reviews.map((r) => r.plaidId)).toEqual(["reconcile:VOO"]);
+  });
+
+  test("an unchanged pull leaves openings alone", async () => {
+    const { pull } = await pushedPartialBuy();
+    const p = pull(0.5, { first: false });
+    expect([p.new, p.updates, p.voids]).toEqual([[], [], []]);
+  });
+
   test("an account pulled only recently gets its full history once", async () => {
     const state = new MemoryLedger();
     state.record(new Activity({ accountId: "brk", plaidId: "recent", date: "2026-10-30", activityType: "INTEREST", amount: D(1) }), "wf1");
@@ -238,5 +284,47 @@ describe("fetch", () => {
     expect(r.blocked).toEqual([]);
     expect(logs.some((m) => m.includes("investment accounts skipped"))).toBe(true);
     expect(PlaidError).toBeDefined();
+  });
+
+  const TRUST: typeof SECS = { s_fund: { security_id: "s_fund", ticker_symbol: null, name: "Trust", type: "mutual fund" } };
+  const tracked = (ratio: number) => ({ s_fund: { symbol: null, track: { symbol: "VOO", date: "2026-01-02", price: ratio * 500, close: 500, ratio } } });
+  const trustHeld = [{ account_id: "brk", security_id: "s_fund", quantity: 20, institution_value: 0, institution_price: 100 }];
+  const trustBuy = invTx("old", "buy", "buy", { amount: 1000, quantity: 10, price: 100, security_id: "s_fund", date: "2024-11-15" });
+  const pull = (txns: PlaidInvestmentTransaction[], start: string) =>
+    items(txns, trustHeld, [], { modified: [], removed: [], first: false, start, secs: TRUST });
+
+  async function pushedTrust() {
+    const state = new MemoryLedger();
+    await run(plan(pull([trustBuy], "2024-11-06"), { accounts: ACCOUNTS, symbols: tracked(0.2) }, state,
+      { today: TODAY, closes: () => D(480) }), new FakeWF(), state);
+    return state;
+  }
+  const later = (state: MemoryLedger, ratio: number, closes: ((sym: string | null, day: string) => Dec | null) = () => D(480)) =>
+    plan(pull([], "2024-12-01"), { accounts: ACCOUNTS, symbols: tracked(ratio) }, state, { today: TODAY, backfill: new Set(["brk"]), closes });
+  const change = (p: ReturnType<typeof plan>, id: string) => required(p.updates.find(([r]) => r.plaid_id === id), id)[1];
+
+  test("a new ratio rescales a followed row that Plaid no longer sends", async () => {
+    const state = await pushedTrust();
+    expect(ledgerRow(state, "old")).toMatchObject({ quantity: "2", unit_price: "500", fund: "s_fund", ratio: 0.2 });
+    const p = later(state, 0.25);
+    expect([String(change(p, "old").quantity), String(change(p, "old").unitPrice), change(p, "old").amount]).toEqual(["2.5", "400", null]);
+    expect(String(change(p, "opening:brk:VOO").quantity)).toBe("2.5");
+    expect(p.reviews.filter((r) => r.reason === "holdings mismatch")).toEqual([]);
+    await run(p, new FakeWF(), state);
+    expect(ledgerRow(state, "old")).toMatchObject({ quantity: "2.5", unit_price: "400", ratio: 0.25 });
+    expect(later(state, 0.25).updates).toEqual([]);
+  });
+
+  test("a row with no remembered ratio is left as it is", async () => {
+    const state = await pushedTrust();
+    delete ledgerRow(state, "old").ratio;
+    expect(later(state, 0.25).updates.map(([r]) => r.plaid_id)).not.toContain("old");
+  });
+
+  test("an opening keeps its price when there is no close for its day", async () => {
+    const state = await pushedTrust();
+    const p = later(state, 0.25, () => null);
+    expect(String(change(p, "opening:brk:VOO").unitPrice)).toBe("480");
+    expect(p.reviews.find((r) => r.reason === "opening cost basis missing")?.detail).toBe("VOO: priced at 480 (kept from the last push)");
   });
 });

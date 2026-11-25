@@ -42,6 +42,7 @@ const isLedgerRow = shape<LedgerRow>({
   plaid_id: isString, account_id: isString, wf_activity_id: optText, activity_type: isString, date: isString, symbol: optText,
   quantity: optText, unit_price: optText, amount: optText, fee: optText, currency: isString, transfer_hint: isNumber,
   pair_plaid_id: optText, category_set: isNumber, voided: isNumber, category: nullable(isString), adopted: optional(isNumber),
+  fund: optString, ratio: optional(isNumber),
 });
 
 const isLedger = shape<LedgerData>({

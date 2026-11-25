@@ -6,7 +6,8 @@ This guide is for people who want to understand the rules or change the code: ma
 
 - Pending transactions are never imported.
 - The first pull reads about 24 months. Later pulls re-read 14 days of investments. The ledger prevents duplicates. The first push to an account lists rows Wealthfolio may already have (see [USAGE.md](USAGE.md#check-for-duplicates)).
-- Opening positions and cash balances are a TRANSFER_IN at the window start. The value comes from the Plaid cost basis, else the market close that day. After a later split the price is scaled to the shares held on the opening day.
+- Opening positions and cash balances are a TRANSFER_IN at the window start. The value comes from the Plaid cost basis, else the market close that day, else the price from the last push. After a later split the price is scaled to the shares held on the opening day.
+- When a pushed investment row changes its shares or cash, the openings of that ticker and the opening cash are recalculated. An opening that is no longer needed is deleted. Openings you edited stay.
 - Sweep and money-market buys and sells are dropped, because they are cash. Choose Money Market Fund to keep a fund as a position.
 - Transfers between linked accounts are matched within 3 days and linked as a pair. Legs that share a reference number pair first.
 - Splits become a ratio. Mergers, spin-offs, exercises and assignments go to the to-do list.
@@ -21,6 +22,7 @@ A 401(k) collective trust or a DAF pool has no ticker that Wealthfolio can price
 
 - ratio = the fund's price ÷ the ticker's close on the same day.
 - quantity × ratio, price ÷ ratio. Amounts and cost basis do not change.
+- A new ratio also rewrites pushed rows that Plaid no longer sends. The ledger keeps the ratio used for each row.
 
 Wealthfolio has no index data, so pick an ETF such as `VOO`. If Yahoo has no close for the date you type, the closest date is used. Each dry run compares the ratio with the newest price your institution reports and proposes a new one. The daily sync applies a change of 5% or less; a bigger change waits for you.
 

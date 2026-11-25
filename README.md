@@ -29,7 +29,7 @@ To update, install the zip from the newer release. See the [changelog](CHANGELOG
 5. **Daily sync:** runs once a day after a set time while Wealthfolio is open, and stops to ask when a decision is needed.
 6. **Backup:** make a full backup (recommended) or a connections backup, or restore one.
 
-> **Back up your Wealthfolio data before the first Production push.** A push adds, updates and deletes activities it created. Rows you edited, or that existed before, are never changed. Try a Sandbox profile first.
+> **Back up your Wealthfolio data before the first Production push.** A push adds, updates and deletes activities it created. Rows you edited, or that existed before, are never changed. A change to only the notes, tax, subtype or transfer link does not count as an edit. Try a Sandbox profile first.
 
 Details: [docs/USAGE.md](docs/USAGE.md).
 

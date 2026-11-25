@@ -22,7 +22,7 @@ export interface Adoption {
 
 const TOL = D("0.01");
 
-const norm = (s: string | null | undefined) => {
+export const symbolRoot = (s: string | null | undefined) => {
   const t = (s ?? "").toUpperCase();
   return !t || t.startsWith("$CASH") ? null : t.split(/[-.]/)[0];
 };
@@ -85,7 +85,7 @@ export function findAdoptions(acts: Activity[], existing: Existing[], wf: WfAcco
 }
 
 function sameDayMatch(a: Activity, sameDay: Existing[]): { hit: Existing; how: How } | null {
-  const cands = sameDay.filter((e) => norm(e.symbol) === norm(a.symbol) && sameAmount(a, e));
+  const cands = sameDay.filter((e) => symbolRoot(e.symbol) === symbolRoot(a.symbol) && sameAmount(a, e));
   const sameType = cands.find((e) => e.type === a.activityType);
   const anyType = a.activityType === "TRANSFER_IN" && a.symbol ? cands[0] : undefined;
   const exact = sameType ?? anyType;
@@ -98,7 +98,7 @@ function openingAdoption(a: Activity, inAccount: Map<string, Existing[]>, wf: Wf
   const w = wf(a.accountId);
   if (!w || !a.symbol || !a.quantity) return null;
   const parts = (inAccount.get(w) ?? []).filter((e) => !isOurs(e) && e.date < a.date && e.symbol && POSITION_SIGN[e.type]
-    && norm(e.symbol) === norm(a.symbol)).sort((x, y) => x.date.localeCompare(y.date));
+    && symbolRoot(e.symbol) === symbolRoot(a.symbol)).sort((x, y) => x.date.localeCompare(y.date));
   const held = parts.reduce((s, e) => s.plus((dec(e.quantity) ?? ZERO).abs().times(POSITION_SIGN[e.type] ?? 0)), ZERO);
   if (held.eq(0)) return null;
   return make(a, a.quantity.minus(held).abs().lte(EPS) ? "exact" : "similar", null, { held: held.toFixed(), parts });

@@ -19,6 +19,8 @@ export interface LedgerRow {
   voided: number;
   category?: string | null;
   adopted?: number;
+  fund?: string;
+  ratio?: number;
 }
 
 export interface Ledger {
@@ -57,14 +59,15 @@ function toLedgerRow(a: Activity, wfId: string | null, categorySet = false): Led
     unit_price: str(a.unitPrice), amount: str(a.amount), fee: str(a.fee), currency: a.currency,
     transfer_hint: a.transferHint ? 1 : 0, pair_plaid_id: a.pairId, category_set: categorySet ? 1 : 0, voided: 0,
     category: a.category ?? null,
+    ...(a.fund !== undefined && a.ratio !== undefined && { fund: a.fund, ratio: a.ratio }),
   };
 }
 
-function rowToActivity(r: LedgerRow): Activity {
+export function rowToActivity(r: LedgerRow): Activity {
   return new Activity({
     accountId: r.account_id, plaidId: r.plaid_id, date: r.date, activityType: r.activity_type, currency: r.currency,
     symbol: r.symbol, quantity: dec(r.quantity), unitPrice: dec(r.unit_price), amount: dec(r.amount), fee: dec(r.fee),
-    transferHint: Boolean(r.transfer_hint), pairId: r.pair_plaid_id,
+    transferHint: Boolean(r.transfer_hint), pairId: r.pair_plaid_id, fund: r.fund, ratio: r.ratio,
     splitDelta: r.activity_type === "SPLIT" ? dec(r.quantity) : null,
   });
 }
@@ -83,7 +86,7 @@ const activityField = (a: Activity, f: (typeof FIELDS)[number]): string | Dec | 
   unit_price: a.unitPrice, amount: a.amount, fee: a.fee, currency: a.currency,
 })[f];
 
-export function differs(row: LedgerRow, a: Activity): LedgerField[] {
+export function differs(row: Pick<LedgerRow, LedgerField | "pair_plaid_id">, a: Activity): LedgerField[] {
   const out: LedgerField[] = [];
   for (const f of FIELDS) {
     if (f === "activity_type" && row.pair_plaid_id) continue;
@@ -93,6 +96,13 @@ export function differs(row: LedgerRow, a: Activity): LedgerField[] {
     if (norm(f, row[f]) !== norm(f, v)) out.push(f);
   }
   return out;
+}
+
+export function describeChange(was: Pick<LedgerRow, LedgerField>, a: Activity, fields: LedgerField[]): string {
+  return fields.map((f) => {
+    const next = a.activityType === "SPLIT" && f === "quantity" ? a.splitDelta : activityField(a, f);
+    return `${f} ${norm(f, was[f]) ?? "none"} → ${norm(f, next) ?? "none"}`;
+  }).join(", ");
 }
 
 export class MemoryLedger implements Ledger {

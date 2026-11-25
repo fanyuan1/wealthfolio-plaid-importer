@@ -49,6 +49,7 @@ function createFor(r: ImportRow, c: ActivityImport | undefined): { failed: strin
     subtype: r.subtype ?? null, activityDate: r.date, ...(r.symbol && { asset: assetFor(r, c) }),
     quantity: r.quantity ?? null, unitPrice: r.unitPrice ?? null, amount: r.amount ?? null, currency: r.currency || "USD",
     fee: r.fee ?? null, tax: r.tax ?? null, comment: r.comment ?? null,
+    ...(r.isExternal && { metadata: { flow: { is_external: true } } }),
   } };
 }
 
@@ -120,6 +121,7 @@ export class SdkWriter implements Writer {
   }
 
   async update(updates: Update[]): Promise<{ errors?: { index: number; message: string }[] }[]> {
+    const notes = await this.notes(updates);
     const out = [];
     for (const chunk of chunks(updates, SMALL_CHUNK)) {
       const errors: { index: number; message: string }[] = [];
@@ -127,7 +129,8 @@ export class SdkWriter implements Writer {
       chunk.forEach((u, i) => {
         const b = this.base(String(u.activityId));
         if (!b) return errors.push({ index: i, message: "activity not in the ledger" });
-        reqs.push(updateRequest(u, b));
+        const comment = notes.get(String(u.activityId));
+        reqs.push({ ...updateRequest(u, b), ...(comment && { comment }) });
         idx.push(i);
       });
       if (reqs.length) {
@@ -140,6 +143,12 @@ export class SdkWriter implements Writer {
       out.push({ errors });
     }
     return out;
+  }
+
+  private async notes(updates: Update[]): Promise<Map<string, string>> {
+    const accounts = new Set(updates.map((u) => this.base(String(u.activityId))?.accountId).filter((a) => a !== undefined));
+    const rows = await Promise.all([...accounts].map((a) => this.api.activities.getAll(a)));
+    return new Map(rows.flat().flatMap((r) => (r.comment ? [[r.id, r.comment] as const] : [])));
   }
 
   async delete(ids: string[]): Promise<void> {

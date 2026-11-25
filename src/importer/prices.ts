@@ -53,7 +53,7 @@ export class Closes {
     for (const [sym, day] of needs) {
       if (!sym || this.failed.has(sym)) continue;
       const stale = latest && !this.refreshed.has(sym) && this.lastDay(sym) < day;
-      if (!stale && (this.lookup(sym, day) !== null || this.covers(sym, day))) continue;
+      if (!stale && (this.cached(sym, day) !== null || this.covers(sym, day))) continue;
       this.refreshed.add(sym);
       try {
         this.cache[sym] = { ...this.cache[sym], ...(await this.fetch(sym, addDays(day, -800), this.today)) };
@@ -65,14 +65,13 @@ export class Closes {
     if (changed) await this.save(this.cache);
   }
 
-  close = (sym: string | null, day: string): Dec | null => {
-    if (!sym || this.failed.has(sym)) return null;
-    const v = this.lookup(sym, day);
-    return v ? D(v) : null;
-  };
+  close = (sym: string | null, day: string): Dec | null => (sym ? this.cached(sym, day)?.close ?? null : null);
 
   closeOn(sym: string | null, day: string): { day: string; close: Dec } | null {
-    if (!sym || this.failed.has(sym)) return null;
+    return sym && !this.failed.has(sym) ? this.cached(sym, day) : null;
+  }
+
+  private cached(sym: string, day: string): { day: string; close: Dec } | null {
     for (let i = 0; i < LOOKBACK_DAYS; i++) {
       const d = addDays(day, -i), v = this.cache[sym]?.[d];
       if (v) return { day: d, close: D(v) };
@@ -93,11 +92,7 @@ export class Closes {
 
   warnings(): string[] {
     return [...this.failed].sort(([a], [b]) => (a < b ? -1 : 1)).map(([s, why]) =>
-      `Yahoo Finance price lookup for ${s} failed: ${why}. Its rows used a fallback price; run the dry run again before you push.`);
-  }
-
-  private lookup(sym: string, day: string): string | null {
-    return this.closeOn(sym, day)?.close.toString() ?? null;
+      `Yahoo Finance price lookup for ${s} failed: ${why}. A day with no saved close used a fallback price; run the dry run again before you push.`);
   }
 
   private lastDay(sym: string): string {

@@ -336,7 +336,8 @@ describe("securities changes after a push", () => {
     e.plaid = () => Promise.resolve(({
       item: () => Promise.resolve(({})),
       holdings: () => Promise.resolve(({ accounts: [], securities: Object.values(secs),
-        holdings: [{ account_id: "B", security_id: "v", quantity: 10, cost_basis: 1000 }, { account_id: "B", security_id: "f", quantity: 5, cost_basis: 50 }] })),
+        holdings: [{ account_id: "B", security_id: "v", quantity: 10, cost_basis: 1000, institution_price: 100 },
+          { account_id: "B", security_id: "f", quantity: 5, cost_basis: 50, institution_price: 10 }] })),
       investmentTransactions: (_t: string, start: string) => {
         starts.push(start);
         return Promise.resolve({ securities: secs, investment_transactions: txns.filter((t) => t.date >= start) });
@@ -381,6 +382,35 @@ describe("securities changes after a push", () => {
     expect(d.backfill).toEqual(new Set(["B"]));
     await e.push(d, () => {});
     expect((await e.store.remap("sandbox")).full).toEqual([]);
+  });
+
+  const follow = (ratio: number) => ({ mode: "track" as const, track: { symbol: "VOO", date: "2026-01-02", price: ratio * 500, close: 500, ratio } });
+
+  async function pushedWithoutRatios() {
+    const { e } = await setup();
+    await e.setSecurity("f", "Plan Fund", follow(0.1));
+    const d = await e.dryRun(() => {}, () => {}, true);
+    for (const a of [...d.plan.new, ...d.plan.updates.map(([, x]) => x)]) d.state.record(a, `wf-${a.plaidId}`);
+    for (const r of d.state.rows.values()) { delete r.fund; delete r.ratio; }
+    await e.store.saveLedger("sandbox", d.state);
+    return { e, d };
+  }
+
+  it("a new ratio remembers the old one on rows pushed before, and the next plan rescales them", async () => {
+    const { e, d } = await pushedWithoutRatios();
+    await e.setSecurity("f", "Plan Fund", follow(0.2));
+    const rows = (await e.store.ledger("sandbox")).rows;
+    expect(rows.get("f1")).toMatchObject({ fund: "f", ratio: 0.1 });
+    expect(rows.get("t1")?.ratio).toBeUndefined();
+    const again = await e.replan(d);
+    expect(again.plan.updates.map(([r]) => r.plaid_id)).toContain("f1");
+  });
+
+  it("does not guess the ratio of a row when two securities in the account share its ticker", async () => {
+    const { e } = await pushedWithoutRatios();
+    await e.setSecurity("v", "VTI", follow(0.5));
+    await e.setSecurity("f", "Plan Fund", follow(0.2));
+    expect((await e.store.ledger("sandbox")).rows.get("f1")?.ratio).toBeUndefined();
   });
 
   it("setting a symbol back clears its pending delete", async () => {
@@ -630,11 +660,78 @@ describe("old data is kept", () => {
     l.rows.set("mine", row("mine", "A"));
     const cfg = { A: { kind: "cash", item_id: "i", name: "Acct", wealthfolio_account_id: "W" } };
     const p = { updates: [[l.rows.get("old"), {}, ["amount"]], [l.rows.get("mine"), {}, ["amount"]]], voids: [l.rows.get("old")],
-      retype: [], pairs: [] } as never as Plan;
+      retype: [], pairs: [], new: [] } as never as Plan;
     const lines = await (e as never as { protect(p: Plan, c: unknown, s: MemoryLedger): Promise<string[]> }).protect(p, cfg, l);
     expect(p.updates.length).toBe(1);
     expect(p.voids.length).toBe(0);
     expect(itemAt(lines, 0)).toMatch(/Kept as they are in Wealthfolio \(2\)/);
+  });
+});
+
+describe("a recalculated opening", () => {
+  const trade = (pid: string, activityType: string, quantity: number) => new Activity({ accountId: "A", plaidId: pid, date: "2026-01-02",
+    activityType, symbol: "VTI", quantity: D(quantity), unitPrice: D(100) });
+  const cash = (amount: number) => new Activity({ accountId: "A", plaidId: "opening:A:cash", date: "2026-01-01", activityType: "TRANSFER_IN", amount: D(amount) });
+  async function protect(wf: object[], ratio: { was?: number; now?: number } = {}) {
+    const f = fakeApi(), e = new Engine(f.api);
+    (f.api as { activities: { getAll: () => Promise<unknown[]> } }).activities.getAll = () => Promise.resolve(wf);
+    const state = new MemoryLedger({});
+    state.record(Object.assign(trade("t1", "BUY", 0.5), { fund: "f", ratio: ratio.was }), "buy");
+    state.record(trade("opening:A:VTI", "TRANSFER_IN", 1.5), "open");
+    state.record(cash(100), "cash");
+    const row = (pid: string) => required(state.get(pid), pid);
+    const p = { updates: [[row("t1"), Object.assign(trade("t1", "BUY", 2), { fund: "f", ratio: ratio.now }), ["quantity"]], [row("opening:A:cash"), cash(250), ["amount"]]],
+      voids: [row("opening:A:VTI")], retype: [], pairs: [], new: [] } as never as Plan;
+    const cfg = { A: { kind: "investment", item_id: "i", name: "Acct", wealthfolio_account_id: "W" } };
+    const lines = await (e as never as { protect(p: Plan, c: unknown, s: MemoryLedger): Promise<string[]> }).protect(p, cfg, state);
+    return { p, state, lines };
+  }
+  const kept = (id: string, quantity: string, more: object = {}) => ({ id, isUserModified: true, activityType: "BUY", date: "2026-01-02",
+    assetSymbol: "VTI", quantity, unitPrice: "100", amount: "50", fee: null, currency: "USD", status: "POSTED", ...more });
+  const own = (id: string) => ({ id, isUserModified: false, date: "2026-01-01", ...(id === "cash" && { amount: "100.00" }), ...(id === "open" && { quantity: "1.5" }) });
+
+  it("is left alone, with the cash opening, while an edit blocks its trade", async () => {
+    const { p, lines } = await protect([kept("buy", "0.7"), own("open"), own("cash")]);
+    expect([p.updates, p.voids]).toEqual([[], []]);
+    expect(itemAt(lines, 0)).toMatch(/Kept as they are in Wealthfolio \(3\)/);
+  });
+
+  const flaggedByOurUpdate = [kept("buy", "0.5"),
+    kept("open", "1.5", { activityType: "TRANSFER_IN", amount: null, fee: "0" }),
+    kept("cash", "0", { activityType: "TRANSFER_IN", date: "2026-01-01", assetSymbol: "", unitPrice: null, amount: "100.00" })];
+
+  it("treats a row flagged by the importer's own update as its own while the values match", async () => {
+    const { p, lines } = await protect(flaggedByOurUpdate);
+    expect([p.updates.length, p.voids.length, lines]).toEqual([2, 1, []]);
+  });
+
+  it.each([["amount", { amount: "40" }], ["date", { date: "2026-01-03" }], ["ticker", { assetSymbol: "VOO" }],
+    ["status", { status: "VOID" }], ["fee", { fee: "1" }]])("keeps a flagged row whose %s was changed", async (_, change) => {
+    const { p } = await protect([kept("buy", "0.5", change), own("open"), own("cash")]);
+    expect([p.updates, p.voids]).toEqual([[], []]);
+  });
+
+  it("lists each held row with its ticker and the values in Wealthfolio and in the new plan", async () => {
+    const { lines } = await protect([kept("buy", "0.7"), own("open"), own("cash")]);
+    expect(lines.slice(2)).toEqual([
+      "  - Acct: 2026-01-02 BUY VTI changed at Plaid (quantity 0.7 → 2)",
+      "  - Acct: 2026-01-01 TRANSFER_IN opening recalculated (amount 100 → 250)",
+      "  - Acct: 2026-01-02 TRANSFER_IN VTI opening no longer needed (quantity 1.5)",
+    ]);
+  });
+
+  it.each([[0.2, 0.25, "new ratio"], [0.2, 0.2, "changed at Plaid"], [undefined, 0.25, "changed at Plaid"]])(
+    "says why a held trade changed (ratio %s to %s)", async (was, now, why) => {
+      const { lines } = await protect([kept("buy", "0.7"), own("open"), own("cash")], { ...(was && { was }), now });
+      expect(lines[2]).toContain(`BUY VTI ${why} (`);
+    });
+
+  it("is applied when the user already made the same fix, with no write for it", async () => {
+    const { p, state, lines } = await protect([kept("buy", "2"), own("cash")]);
+    expect(p.updates.map(([r]) => r.plaid_id)).toEqual(["opening:A:cash"]);
+    expect(p.voids).toEqual([]);
+    expect([state.get("t1")?.quantity, state.get("opening:A:VTI")?.voided]).toEqual(["2", 1]);
+    expect(lines).toEqual([]);
   });
 });
 
