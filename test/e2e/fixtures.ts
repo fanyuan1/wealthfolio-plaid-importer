@@ -1,6 +1,6 @@
 import { test as base, expect, type FrameLocator, type Page } from "@playwright/test";
 import { FakePlaid, KEYS } from "./fake-plaid";
-import { BASE, freshWealthfolio } from "./wealthfolio";
+import { BASE, freshWealthfolio, type WealthfolioOptions } from "./wealthfolio";
 
 const NETWORK = "**/api/v1/addons/plaid-importer/network/request";
 
@@ -14,10 +14,11 @@ export async function routePlaid(page: Page, plaid: FakePlaid) {
   });
 }
 
-export const test = base.extend<{ plaid: FakePlaid; addon: Addon }>({
-  plaid: [async ({ page }, provide) => {
+export const test = base.extend<{ plaid: FakePlaid; addon: Addon } & WealthfolioOptions>({
+  wealthfolioVersion: ["", { option: true }],
+  plaid: [async ({ page, wealthfolioVersion }, provide) => {
     test.skip(process.env.E2E_DOCKER !== "1", "Docker is not running");
-    await freshWealthfolio();
+    await freshWealthfolio(wealthfolioVersion);
     const plaid = new FakePlaid();
     await routePlaid(page, plaid);
     await provide(plaid);

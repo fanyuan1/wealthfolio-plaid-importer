@@ -21,7 +21,7 @@ const isNumeric = (v: unknown): v is string | number => isString(v) || isNumber(
 
 const isItem = shape<BackupItem>({
   owner: isString, institution_name: isString, institution_id: nullable(isString), products: optional(strings), env: optString,
-  checked: optString, reconnect: optBool, created: optString, access_token: isString,
+  checked: optString, reconnect: optBool, missing: optional(strings), created: optString, access_token: isString,
 });
 
 const isAccount = shape<AccountCfg>({

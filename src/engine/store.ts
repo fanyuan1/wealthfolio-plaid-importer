@@ -15,6 +15,7 @@ export interface ItemMeta { owner: string; institution_name: string; institution
   env?: string;
   checked?: string;
   reconnect?: boolean;
+  missing?: string[] | undefined;
   created?: string }
 
 const KEYS = { dailyOn: "daily_on", clientId: "plaid_client_id", secret: (env: PlaidEnv) => `plaid_secret_${env}`, token: (id: string) => `token_${id}` };

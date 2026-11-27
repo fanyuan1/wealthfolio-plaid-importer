@@ -45,7 +45,7 @@ export interface PlaidRemoved { transaction_id: string }
 
 export interface PlaidItem { item_id: string; institution_id?: string | null; products?: string[] | null; error?: { error_code: string } | null }
 
-export interface PlaidInstitution { institution_id?: string | null; name?: string | null }
+export interface PlaidInstitution { institution_id?: string | null; name?: string | null; products?: string[] | null }
 
 interface LinkAdd { public_token?: string | null; products?: string[] | null; institution?: PlaidInstitution | null }
 
@@ -107,7 +107,7 @@ export const isItem: Guard<PlaidItem> = shape<PlaidItem>({
   item_id: isString, institution_id: optString, products: nullable(strings), error: nullable(shape<{ error_code: string }>({ error_code: isString })),
 });
 
-export const isInstitution: Guard<PlaidInstitution> = shape<PlaidInstitution>({ institution_id: optString, name: optString });
+export const isInstitution: Guard<PlaidInstitution> = shape<PlaidInstitution>({ institution_id: optString, name: optString, products: nullable(strings) });
 
 const linkAdd = shape<LinkAdd>({ public_token: optString, products: nullable(strings), institution: nullable(isInstitution) });
 const linkExit = shape<LinkExit>({

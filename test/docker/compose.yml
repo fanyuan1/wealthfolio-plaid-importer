@@ -7,7 +7,7 @@
 
 services:
   wealthfolio:
-    image: wealthfolio/wealthfolio:3.13.1
+    image: wealthfolio/wealthfolio:${WF_VERSION:-3.13.1} # the browser tests set WF_VERSION from playwright.config.ts
     ports:
       - "127.0.0.1:${WF_PORT:-8090}:8088"
     volumes:

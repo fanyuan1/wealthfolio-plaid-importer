@@ -64,7 +64,7 @@ You need Node.js 22 and pnpm.
 
 1. Run `pnpm install`.
 2. Run `npx tsc --noEmit` and `pnpm test`. Both must pass.
-3. Run `pnpm bundle`. It writes `dist/plaid-importer-<version>.zip`. `dist/` is not tracked.
+3. Run `pnpm bundle:local`. It writes `dist/local/plaid-importer-<version>.zip` from your working copy. `dist/` is not tracked, and `dist/plaid-importer-<version>.zip` is kept for the published release.
 4. Install the zip in a Wealthfolio Sandbox profile, and run a dry run and a push with the test bank.
 
 ### Browser tests (Docker)
@@ -72,7 +72,7 @@ You need Node.js 22 and pnpm.
 The browser tests run the addon in a real Wealthfolio server in Docker, with Playwright. They need Docker running (on macOS: `brew install colima docker docker-compose`, then `colima start`).
 
 1. Run `pnpm exec playwright install chromium` once.
-2. Run `pnpm test:e2e`. It builds the zip, starts a new Wealthfolio for each test on port 18088, and removes it at the end. Set `E2E_KEEP=1` to keep the last one.
+2. Run `pnpm test:e2e`. It builds its own zip in `node_modules/.cache/plaid-importer-e2e`, starts a new Wealthfolio for each test on port 18088, and removes it at the end. Set `E2E_KEEP=1` to keep the last one.
 
 Without Docker the browser tests are skipped. They do not call Plaid: Wealthfolio's server only reaches public HTTPS hosts, so the tests answer the addon's network calls in the browser with a fake Plaid (`test/e2e/fake-plaid.ts`). It has one bank with checking, a card and a brokerage, and it fails on any endpoint it does not know.
 

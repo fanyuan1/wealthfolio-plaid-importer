@@ -2,6 +2,16 @@
 
 Versions follow [semantic versioning](https://semver.org).
 
+## 0.1.4 - 2026-11-27
+
+Tested with Wealthfolio 3.12.0 and 3.13.1.
+
+### Added
+
+- A connection that lacks a product its accounts need, such as `investments` for a 529 linked with only `transactions`, is added automatically when you link it. Before, its investment accounts were marked unsupported and nothing imported.
+- An older connection that lacks such a product shows an "Add investments" button on Connections. If Plaid needs your consent, or the bank login expired, the button opens one Plaid sign-in that renews the login and asks for the consent together.
+- A product the institution does not offer gets no button. For example, Plaid has no investment data for New York's 529 College Savings Program.
+
 ## 0.1.3 - 2026-11-24
 
 Tested with Wealthfolio 3.13.1.

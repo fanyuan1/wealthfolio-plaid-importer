@@ -62,7 +62,10 @@ export interface LinkRequest {
   optional?: string[];
   country?: string;
   accessToken?: string | undefined;
+  consent?: string[];
 }
+
+const PRODUCT_ENDPOINT: Record<string, string> = { investments: "/investments/holdings/get", transactions: "/transactions/sync" };
 
 export class Plaid {
   constructor(private keys: PlaidKeys, public env: PlaidEnv,
@@ -86,11 +89,12 @@ export class Plaid {
   }
 
   linkToken(clientUserId: string, link: LinkRequest, extra: PlaidRequest = {}): Promise<{ link_token: string; hosted_link_url?: string | null }> {
-    const { products = [], optional = [], country = "US", accessToken } = link;
+    const { products = [], optional = [], country = "US", accessToken, consent = [] } = link;
     const req: PlaidRequest = { client_name: "Plaid Importer", language: "en", country_codes: [country], user: { client_user_id: clientUserId }, ...extra };
     if (accessToken) {
       req.access_token = accessToken;
       req.update = { account_selection_enabled: true };
+      if (consent.length) req.additional_consented_products = consent;
     } else {
       req.products = products;
       if (optional.length) req.optional_products = optional;
@@ -113,6 +117,12 @@ export class Plaid {
 
   async item(accessToken: string): Promise<PlaidItem> {
     return (await this.get("/item/get", { access_token: accessToken }, isItemResponse)).item;
+  }
+
+  async addProduct(accessToken: string, product: string): Promise<void> {
+    const endpoint = PRODUCT_ENDPOINT[product];
+    if (!endpoint) throw new PlaidError("PRODUCTS_NOT_SUPPORTED", `The addon cannot add ${product}.`);
+    await this.call(endpoint, { access_token: accessToken });
   }
 
   async accounts(accessToken: string): Promise<PlaidAccount[]> {

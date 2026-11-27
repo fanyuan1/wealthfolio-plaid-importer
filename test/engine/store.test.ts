@@ -263,6 +263,92 @@ describe("reconnect flag", () => {
   });
 });
 
+describe("missing products", () => {
+  const sp = { account_id: "s", name: "529", type: "investment", subtype: "529", balances: {} };
+  const NEW_LINK = [{ on_success: { public_token: "pt", products: ["transactions"], institution: { institution_id: "ins_529", name: "ScholarShare" } } }];
+  async function setup(addProduct: (tok: string, product: string) => Promise<void>, institutionProducts = ["transactions", "investments"], sessions: unknown[] = [{ on_success: {} }]) {
+    const e = new Engine(fakeApi().api);
+    await e.store.saveToken("i", "access-sandbox-x");
+    await e.store.saveItems("sandbox", { i: { owner: "AB", institution_name: "ScholarShare", institution_id: "ins_529", products: ["transactions"] } });
+    let products = ["transactions"];
+    const added: string[] = [];
+    e.plaid = () => Promise.resolve(({
+      institution: () => Promise.resolve({ institution_id: "ins_529", name: "ScholarShare", products: institutionProducts }),
+      exchange: () => Promise.resolve({ item_id: "i", access_token: "access-sandbox-x" }),
+      item: () => Promise.resolve({ item_id: "i", institution_id: "ins_529", products }),
+      accounts: () => Promise.resolve([sp]),
+      holdings: () => Promise.resolve({ accounts: [], securities: [], holdings: [] }),
+      addProduct: async (tok: string, p: string) => { await addProduct(tok, p); products = [...products, p]; added.push(p); },
+      linkToken: (_u: string, link: { consent?: string[] }) => Promise.resolve({ link_token: `lt-${(link.consent ?? []).join()}`, hosted_link_url: "https://x" }),
+      linkTokenGet: () => Promise.resolve(sessions),
+    }) as never);
+    return { e, added };
+  }
+
+  it("lists a product the accounts need, then adds it and turns on the accounts", async () => {
+    const { e, added } = await setup(() => Promise.resolve());
+    await e.refreshAccounts("i");
+    expect(valueAt(await e.store.items("sandbox"), "i").missing).toEqual(["investments"]);
+    expect(valueAt(await e.store.accounts("sandbox"), "s").kind).toBe("unsupported");
+    expect(await e.addProducts("i")).toBeUndefined();
+    expect(added).toEqual(["investments"]);
+    const meta = valueAt(await e.store.items("sandbox"), "i");
+    expect([meta.products, meta.missing]).toEqual([["transactions", "investments"], undefined]);
+    expect(valueAt(await e.store.accounts("sandbox"), "s").kind).toBe("investment");
+  });
+
+  it("asks for consent through Link when Plaid needs it, and adds the product after", async () => {
+    const { PlaidError } = await import("../../src/importer");
+    let consented = false;
+    const { e, added } = await setup(() => consented ? Promise.resolve() : Promise.reject(new PlaidError("ADDITIONAL_CONSENT_REQUIRED", "")));
+    await e.refreshAccounts("i");
+    expect(await e.addProducts("i")).toEqual({ url: "https://x", linkToken: "lt-investments" });
+    consented = true;
+    expect((await e.checkReconnect("i", "lt-investments", true)).state).toBe("done");
+    expect(added).toEqual(["investments"]);
+    expect(valueAt(await e.store.accounts("sandbox"), "s").kind).toBe("investment");
+  });
+
+  it("offers no product the institution cannot provide", async () => {
+    const { e, added } = await setup(() => Promise.resolve(), ["transactions", "balance"]);
+    await e.refreshAccounts("i");
+    expect(valueAt(await e.store.items("sandbox"), "i").missing).toBeUndefined();
+    expect(added).toEqual([]);
+  });
+
+  it("adds a missing product by itself when a new connection finishes", async () => {
+    const { e, added } = await setup(() => Promise.resolve(), undefined, NEW_LINK);
+    await e.store.saveItems("sandbox", {});
+    expect((await e.checkHostedLink("AB", "lt")).state).toBe("done");
+    expect(added).toEqual(["investments"]);
+    expect(valueAt(await e.store.items("sandbox"), "i").missing).toBeUndefined();
+    expect(valueAt(await e.store.accounts("sandbox"), "s").kind).toBe("investment");
+  });
+
+  it("keeps the Add button when a new connection still needs consent", async () => {
+    const { PlaidError } = await import("../../src/importer");
+    const { e, added } = await setup(() => Promise.reject(new PlaidError("ADDITIONAL_CONSENT_REQUIRED", "")), undefined, NEW_LINK);
+    await e.store.saveItems("sandbox", {});
+    expect((await e.checkHostedLink("AB", "lt")).state).toBe("done");
+    expect(added).toEqual([]);
+    expect(valueAt(await e.store.items("sandbox"), "i").missing).toEqual(["investments"]);
+  });
+
+  it("renews an expired login and asks for consent in the same Link, then adds the product", async () => {
+    const { PlaidError } = await import("../../src/importer");
+    let loggedIn = false;
+    const { e, added } = await setup(() => loggedIn ? Promise.resolve() : Promise.reject(new PlaidError("ITEM_LOGIN_REQUIRED", "")));
+    await e.refreshAccounts("i");
+    expect(await e.addProducts("i")).toEqual({ url: "https://x", linkToken: "lt-investments" });
+    expect(valueAt(await e.store.items("sandbox"), "i").reconnect).toBe(true);
+    loggedIn = true;
+    expect((await e.checkReconnect("i", "lt-investments", true)).state).toBe("done");
+    expect(added).toEqual(["investments"]);
+    expect(valueAt(await e.store.items("sandbox"), "i").reconnect).toBe(false);
+    expect(valueAt(await e.store.accounts("sandbox"), "s").kind).toBe("investment");
+  });
+});
+
 describe("joint accounts", () => {
   it("Select all turns on one copy of a joint account linked under two owners", async () => {
     const e = new Engine(fakeApi().api);

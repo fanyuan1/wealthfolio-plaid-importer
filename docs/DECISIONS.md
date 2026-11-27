@@ -60,9 +60,13 @@ One ADR per decision. The goal, research facts and build record are in [BUILD.md
 | D54 | Reconnect flag | [0055-reconnect-flag](decisions/0055-reconnect-flag.md) |
 | D55 | After a push | [0056-after-a-push](decisions/0056-after-a-push.md) |
 | D56 | Joint accounts | [0057-joint-accounts](decisions/0057-joint-accounts.md) |
+| D58 | Promises in the UI | [0059-ui-promises](decisions/0059-ui-promises.md) |
+| D59 | Wealthfolio clips flex boxes on narrow screens | [0060-host-clips-flex-on-narrow-screens](decisions/0060-host-clips-flex-on-narrow-screens.md) |
+| D60 | Test against the minimum and the newest Wealthfolio | [0061-test-against-the-newest-wealthfolio](decisions/0061-test-against-the-newest-wealthfolio.md) |
 | D61 | Recalculated openings | [0062-recalculated-openings](decisions/0062-recalculated-openings.md) |
 | D62 | Ratios and prices for old rows | [0063-ratios-and-prices-for-old-rows](decisions/0063-ratios-and-prices-for-old-rows.md) |
 | D63 | Plan contributions are external | [0064-plan-contributions-are-external](decisions/0064-plan-contributions-are-external.md) |
+| D64 | Add missing products | [0065-add-missing-products](decisions/0065-add-missing-products.md) |
 | D57 | Feedback in place | [0058-feedback-in-place](decisions/0058-feedback-in-place.md) |
 
 ADR 0002 (no `contributes` in the manifest) is part of D34.

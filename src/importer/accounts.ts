@@ -10,6 +10,7 @@ interface ItemInfo {
 export const MAX_LEN = 50;
 const INST_MIN = 12;
 const KIND_BY_PLAID_TYPE: Record<string, string> = { investment: "investment", depository: "cash", credit: "credit" };
+const PRODUCT_BY_PLAID_TYPE: Record<string, string> = { investment: "investments", depository: "transactions", credit: "transactions" };
 export const WF_TYPE: Record<string, string> = { investment: "SECURITIES", cash: "CASH", credit: "CREDIT_CARD" };
 const NON_EUR: Record<string, string> = { US: "USD", CA: "CAD", GB: "GBP", DK: "DKK", NO: "NOK", SE: "SEK", PL: "PLN" };
 
@@ -98,6 +99,14 @@ export interface DiscoveredItem {
   accounts: PlaidAccount[];
 }
 
+function updateKnown(known: AccountCfg, seen: { plaidName: string; isJoint: boolean; kind: string | undefined }): boolean {
+  known.plaid_name = seen.plaidName;
+  if (seen.isJoint) known.joint = true;
+  if (known.kind !== "unsupported" || !seen.kind) return false;
+  known.kind = seen.kind;
+  return true;
+}
+
 export function discoverAccounts(cfg: Record<string, AccountCfg>, { itemId, tok, accounts }: DiscoveredItem,
   brokerage: Set<string> = new Set(), joint: Set<string> = new Set()): string[] {
   const added: string[] = [];
@@ -109,8 +118,7 @@ export function discoverAccounts(cfg: Record<string, AccountCfg>, { itemId, tok,
     if (kind === "investment" && !(tok.products ?? ["investments"]).includes("investments")) kind = undefined;
     const isJoint = joint.has(aid) || JOINT_NAME.test(`${a.name} ${a.official_name ?? ""}`);
     if (aid in cfg) {
-      valueAt(cfg, aid).plaid_name = a.name;
-      if (isJoint) valueAt(cfg, aid).joint = true;
+      if (updateKnown(valueAt(cfg, aid), { plaidName: a.name, isJoint, kind })) added.push(aid);
       continue;
     }
     const mask = a.mask || "";
@@ -124,6 +132,11 @@ export function discoverAccounts(cfg: Record<string, AccountCfg>, { itemId, tok,
     if (kind) added.push(aid);
   }
   return added;
+}
+
+export function missingProducts(accounts: PlaidAccount[], products: string[]): string[] {
+  const needed = accounts.map((a) => PRODUCT_BY_PLAID_TYPE[a.type]).filter((p): p is string => p !== undefined && !products.includes(p));
+  return [...new Set(needed)];
 }
 
 const words = (s: string) => new Set((s.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter((w) => w.length > 1 || /\d/.test(w)));

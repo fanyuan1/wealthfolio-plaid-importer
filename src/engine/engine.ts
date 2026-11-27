@@ -1,4 +1,4 @@
-import { errText, required, valueAt, accountLabel, accountNames, plural, cryptoSymbol, isCrypto, isCurrency, type AccountCfg, BLOCKING_ITEM_ERRORS, PlaidError, RECONNECT_DETAIL, accountName, type OnProgress, type Progress, assignCategories, Closes, D, discoverAccounts, entry, fetchItems, type FetchResult, type Adoption, type Existing, findAdoptions, forgetEmptied, matchById, holdsSecurities, jointCopies, planLinks, type HttpGet, jointOwners, addDays, HISTORY_DAYS, MemoryLedger, Plaid, type PlaidEnv, plan, type Plan, push, type PushStats, rebases, reportedPrice, resolve, type SecurityOverride, type HoldingsData, type InvestmentData, type LinkSession, type PlaidInstitution, type PlaidSecurity, type HoldingsItem, todoReport, type Token, type Track, trackedIds, type Transport, uncategorized, WF_TYPE, withPrices, yahooFetch, type Held, type HeldRow, holdingsReviews, describeChange, rememberRatio, type Activity, isOpening, isProtected, keepProtected, type LedgerRow } from '../importer';
+import { errText, required, valueAt, accountLabel, accountNames, plural, cryptoSymbol, isCrypto, isCurrency, type AccountCfg, BLOCKING_ITEM_ERRORS, PlaidError, RECONNECT_DETAIL, accountName, type OnProgress, type Progress, assignCategories, Closes, D, discoverAccounts, entry, fetchItems, type FetchResult, type Adoption, type Existing, findAdoptions, forgetEmptied, matchById, holdsSecurities, jointCopies, planLinks, type HttpGet, jointOwners, addDays, HISTORY_DAYS, MemoryLedger, Plaid, type PlaidEnv, plan, type Plan, push, type PushStats, rebases, reportedPrice, resolve, type SecurityOverride, type HoldingsData, type InvestmentData, type LinkSession, type PlaidInstitution, type PlaidSecurity, type HoldingsItem, todoReport, type Token, type Track, trackedIds, type Transport, uncategorized, WF_TYPE, withPrices, yahooFetch, type Held, type HeldRow, holdingsReviews, describeChange, rememberRatio, type Activity, isOpening, isProtected, keepProtected, type LedgerRow, missingProducts } from '../importer';
 import { type Api, type AutoRun, type Daily, type ItemMeta, type RunRecord, Store } from './store';
 import { type Backup, type BackupItem, type BackupKind, isBackup } from './backup';
 import { SdkWriter } from './writer';
@@ -22,6 +22,8 @@ const BACKUP_FORMAT = "plaid-importer-backup";
 const NOT_A_BACKUP = "This is not a Plaid Importer backup. Make one in Backup.";
 const NO_HOSTED_LINK = "Plaid returned no hosted link. Ask Plaid support to enable Hosted Link for your account.";
 const DAILY_RUNNING = "The daily sync is running. Wait for it to finish.";
+const NEEDS_CONSENT = "ADDITIONAL_CONSENT_REQUIRED";
+const NOT_READY = "PRODUCT_NOT_READY";
 const union = <T,>(...lists: Iterable<T>[]): T[] => [...new Set(lists.flatMap((l) => [...l]))];
 const clientUser = (owner: string) => `plaid-importer-${owner.toLowerCase()}`;
 const institutionName = (plaid: Plaid, id: string | null | undefined): Promise<string | undefined> =>
@@ -46,7 +48,7 @@ export class Engine {
   view: SyncView = EMPTY_VIEW;
   tasks: Record<string, Task | undefined> = {};
   private listeners = new Set<() => void>();
-  pendingLink?: { url: string; linkToken: string; owner: string; itemId?: string | undefined; started: number } | undefined;
+  pendingLink?: { url: string; linkToken: string; owner: string; itemId?: string | undefined; adding?: boolean; started: number } | undefined;
   lastLinked?: (LinkCheck & { state: "done"; reconnect: boolean }) | undefined;
   private pulled?: { key: string; fetched: FetchResult };
   lockSettleMs = LOCK_SETTLE_MS;
@@ -167,13 +169,17 @@ export class Engine {
     return exited(sessions);
   }
 
-  async checkReconnect(itemId: string, linkToken: string): Promise<LinkCheck> {
+  async checkReconnect(itemId: string, linkToken: string, adding = false): Promise<LinkCheck> {
     if (this.tasks.daily?.running) return { state: "waiting" };
     const plaid = await this.plaid();
     const sessions = await plaid.linkTokenGet(linkToken);
     if (sessions.some((s) => s.on_success || s.results)) {
       await this.write(async () => {
         await this.markReconnect([], [itemId]);
+        if (adding) {
+          const refused = await this.tryProducts(itemId);
+          if (refused.length) throw new Error(`Plaid still has no consent for ${refused.join(", ")}.`);
+        }
         await this.refreshAccounts(itemId, false);
       });
       return this.linked(itemId);
@@ -198,6 +204,43 @@ export class Engine {
     return { url: r.hosted_link_url, linkToken: r.link_token };
   }
 
+  async addProducts(itemId: string): Promise<{ url: string; linkToken: string } | undefined> {
+    const refused = await this.write(async () => {
+      const r = await this.tryProducts(itemId);
+      if (!r.length) await this.refreshAccounts(itemId, false);
+      return r;
+    });
+    if (!refused.length) return undefined;
+    const { env } = await this.store.settings();
+    const meta = valueAt(await this.store.items(env), itemId);
+    const tok = required(await this.store.token(itemId), `access token for ${itemId}`);
+    const r = await (await this.plaid()).linkToken(clientUser(meta.owner), { accessToken: tok, consent: refused }, { hosted_link: {} });
+    if (!r.hosted_link_url) throw new Error(NO_HOSTED_LINK);
+    return { url: r.hosted_link_url, linkToken: r.link_token };
+  }
+
+  private async tryProducts(itemId: string): Promise<string[]> {
+    const plaid = await this.plaid();
+    const { env } = await this.store.settings();
+    const meta = valueAt(await this.store.items(env), itemId);
+    const tok = required(await this.store.token(itemId), `access token for ${itemId}`);
+    const missing = meta.missing ?? [];
+    const refused: string[] = [];
+    for (const product of missing) {
+      try {
+        await plaid.addProduct(tok, product);
+      } catch (e) {
+        if (e instanceof PlaidError && BLOCKING_ITEM_ERRORS.has(e.code)) {
+          await this.markReconnect([itemId], []);
+          return missing;
+        }
+        if (!(e instanceof PlaidError) || (e.code !== NEEDS_CONSENT && e.code !== NOT_READY)) throw e;
+        if (e.code === NEEDS_CONSENT) refused.push(product);
+      }
+    }
+    return refused;
+  }
+
   private async finishLink(plaid: Plaid, publicToken: string, link: { owner: string; products: string[]; institution?: PlaidInstitution | null | undefined }): Promise<string> {
     const { owner, products, institution } = link;
     const { env } = await this.store.settings();
@@ -211,6 +254,7 @@ export class Engine {
       products: item.products ?? products, env };
     await this.store.saveItems(env, items);
     await this.refreshAccounts(ex.item_id);
+    await this.addMissingProducts(ex.item_id);
     return ex.item_id;
   }
 
@@ -266,6 +310,7 @@ export class Engine {
         institution_id: insId, products: item.products ?? [], env, created: today() };
       await this.store.saveItems(env, items);
       await this.refreshAccounts(item.item_id);
+      await this.addMissingProducts(item.item_id);
       return item.item_id;
     });
   }
@@ -378,20 +423,35 @@ export class Engine {
       const { env } = await this.store.settings();
       const meta = valueAt(await this.store.items(env), itemId);
       const tok = required(await this.store.token(itemId), `access token for ${itemId}`);
-      const products = meta.products ?? [];
+      const products = (await plaid.item(tok)).products ?? meta.products ?? [];
       const [accts, holdings, ident] = await Promise.all([
         plaid.accounts(tok),
         products.includes("investments") ? plaid.holdings(tok).catch(() => null) : null,
         identity && products.includes("identity") ? plaid.identity(tok).catch(() => null) : null,
       ]);
-      const added = await this.editAccounts((cfg) => discoverAccounts(cfg, { itemId, tok: meta, accounts: accts }, holdsSecurities(accts, holdings), jointOwners(ident)));
+      const tokInfo = { ...meta, products };
+      const added = await this.editAccounts((cfg) => discoverAccounts(cfg, { itemId, tok: tokInfo, accounts: accts }, holdsSecurities(accts, holdings), jointOwners(ident)));
+      const missing = await this.addableProducts(plaid, meta.institution_id, missingProducts(accts, products));
       const items = await this.store.items(env);
       if (items[itemId]) {
-        items[itemId] = { ...items[itemId], checked: new Date().toISOString() };
+        items[itemId] = { ...items[itemId], products, missing: missing.length ? missing : undefined, checked: new Date().toISOString() };
         await this.store.saveItems(env, items);
       }
       return added;
     });
+  }
+
+  private async addableProducts(plaid: Plaid, institutionId: string | null | undefined, missing: string[]): Promise<string[]> {
+    if (!missing.length || !institutionId) return missing;
+    const offered = (await plaid.institution(institutionId).catch(() => null))?.products ?? missing;
+    return missing.filter((p) => offered.includes(p));
+  }
+
+  private async addMissingProducts(itemId: string) {
+    const { env } = await this.store.settings();
+    if (!valueAt(await this.store.items(env), itemId).missing?.length) return;
+    const refused = await this.tryProducts(itemId);
+    if (!refused.length) await this.refreshAccounts(itemId, false);
   }
 
   private async markReconnect(blocked: string[], ok: string[]) {

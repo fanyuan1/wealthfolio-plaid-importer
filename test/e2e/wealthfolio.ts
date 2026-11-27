@@ -13,7 +13,8 @@ const PORT = Number(process.env.E2E_WF_PORT ?? 18088);
 export const BASE = `http://127.0.0.1:${PORT}`;
 const API = `${BASE}/api/v1`;
 const PROJECT = "plaid-importer-e2e";
-const ZIP = `dist/plaid-importer-${read("package.json", readJson("package.json"), shape<{ version: string }>({ version: isString })).version}.zip`;
+export const E2E_BUILD = "node_modules/.cache/plaid-importer-e2e";
+const ZIP = `${E2E_BUILD}/plaid-importer-${read("package.json", readJson("package.json"), shape<{ version: string }>({ version: isString })).version}.zip`;
 const HOSTS = read("manifest.json", readJson("manifest.json"),
   shape<{ network: { allowedHosts: string[] } }>({ network: shape<{ allowedHosts: string[] }>({ allowedHosts: arrayOf(isString) }) })).network.allowedHosts;
 
@@ -26,6 +27,8 @@ const isWfActivity = shape<WfActivity>({ id: isString, accountId: isString, acti
   unitPrice: optional((v): v is string | number | null => v === null || isString(v) || isNumber(v)), metadata: nullable(isRecord) });
 const isActivityPage = shape<{ data: WfActivity[] }>({ data: arrayOf(isWfActivity) });
 
+export type WealthfolioOptions = { wealthfolioVersion: string };
+
 export function dockerRunning(): boolean {
   try {
     execSync("docker info", { stdio: "ignore", timeout: 15_000 });
@@ -35,10 +38,10 @@ export function dockerRunning(): boolean {
   }
 }
 
-function compose(...args: string[]) {
+function compose(version: string | undefined, ...args: string[]) {
   execFileSync("docker", ["compose", "-p", PROJECT, "-f", "test/docker/compose.yml", ...args], {
     stdio: "pipe", timeout: 180_000,
-    env: { ...process.env, WF_PORT: String(PORT), WF_SECRET_KEY: randomBytes(32).toString("base64") },
+    env: { ...process.env, WF_PORT: String(PORT), WF_SECRET_KEY: randomBytes(32).toString("base64"), ...(version ? { WF_VERSION: version } : {}) },
   });
 }
 
@@ -50,16 +53,16 @@ async function call(method: string, path: string, body?: unknown): Promise<unkno
   return parsed;
 }
 
-export async function freshWealthfolio() {
-  compose("down", "-v", "--remove-orphans");
-  compose("up", "-d", "--wait");
+export async function freshWealthfolio(version: string) {
+  compose(version, "down", "-v", "--remove-orphans");
+  compose(version, "up", "-d", "--wait");
   await call("PUT", "/settings", { onboardingCompleted: true, autoUpdateCheckEnabled: false, baseCurrency: "USD", timezone: "America/Los_Angeles" });
   const zip = readFileSync(ZIP).toString("base64");
   await call("POST", "/addons/install-zip", { zipDataB64: zip, enableAfterInstall: true, approvedNetworkHosts: HOSTS });
 }
 
 export function stopWealthfolio() {
-  if (!process.env.E2E_KEEP) compose("down", "-v", "--remove-orphans");
+  if (!process.env.E2E_KEEP) compose(undefined, "down", "-v", "--remove-orphans");
 }
 
 export const wf = {

@@ -23,16 +23,18 @@ export function Connections({ engine, env, onChange, onStep }: { engine: Engine;
   useEffect(() => { load().catch((e: unknown) => fail('load', e)); }, [load, fail]);
   const setLink = (l?: Pending) => { engine.pendingLink = l; setLinkState(l); };
 
-  const done = async () => {
-    await load();
-    onChange();
-  };
+  const done = async () => { await load(); onChange(); };
   const reload = () => { done().catch((e: unknown) => fail('load', e)); };
   const start = (p: () => Promise<{ url: string; linkToken: string }>, o: string, itemId?: string) =>
     run(itemId ? 'reconnect' : 'connect', async () => {
       setLinked(undefined);
       setLink({ ...(await p()), owner: o, itemId, started: Date.now() });
     });
+  const addProducts = (itemId: string, o: string) => run('products', async () => {
+    setLinked(undefined);
+    const consent = await engine.addProducts(itemId);
+    if (consent) setLink({ ...consent, owner: o, itemId, adding: true, started: Date.now() }); else await done();
+  });
 
   return (
     <div className="flex flex-col gap-4">
@@ -82,7 +84,8 @@ export function Connections({ engine, env, onChange, onStep }: { engine: Engine;
 
       {Object.keys(items).length > 0 && (
         <ConnectionsTable engine={engine} items={items} busy={busy} linking={Boolean(link)} reload={reload}
-                          onReconnect={(id, o) => void start(() => engine.startReconnect(id), o, id)} onRemove={setRemoving} />
+                          onReconnect={(id, o) => void start(() => engine.startReconnect(id), o, id)}
+                          onAddProducts={(id, o) => void addProducts(id, o)} onRemove={setRemoving} />
       )}
       <AddExisting engine={engine} env={env} busy={busy} run={run} done={done} />
       <Problem error={error} />
@@ -94,8 +97,9 @@ export function Connections({ engine, env, onChange, onStep }: { engine: Engine;
 
 type Busy = ReturnType<typeof useBusy>;
 
-function ConnectionsTable({ engine, items, busy, linking, reload, onReconnect, onRemove }: { engine: Engine; items: Record<string, ItemMeta>;
-  busy: string | undefined; linking: boolean; reload: () => void; onReconnect: (id: string, owner: string) => void; onRemove: (id: string) => void }) {
+function ConnectionsTable({ engine, items, busy, linking, reload, onReconnect, onAddProducts, onRemove }: { engine: Engine; items: Record<string, ItemMeta>;
+  busy: string | undefined; linking: boolean; reload: () => void; onReconnect: (id: string, owner: string) => void;
+  onAddProducts: (id: string, owner: string) => void; onRemove: (id: string) => void }) {
   return (
     <Card>
       <CardHeader>
@@ -125,6 +129,11 @@ function ConnectionsTable({ engine, items, busy, linking, reload, onReconnect, o
                 <TableCell className="text-muted-foreground text-sm">{ago(m.checked)}</TableCell>
                 <TableCell className="pe-6 text-end">
                   <div className="flex justify-end gap-2">
+                    {m.missing?.length ? (
+                      <Button size="sm" disabled={Boolean(busy) || linking} onClick={() => onAddProducts(id, m.owner)}>
+                        <Spin on={busy === 'products'} />Add {m.missing.join(', ')}
+                      </Button>
+                    ) : null}
                     <Button variant={m.reconnect ? 'default' : 'outline'} size="sm" disabled={Boolean(busy) || linking} onClick={() => onReconnect(id, m.owner)}>
                       Reconnect
                     </Button>
@@ -209,7 +218,7 @@ function LinkWait({ engine, link, onDone, onCancel }: { engine: Engine; link: Pe
     if (Date.now() - link.started > LINK_MS) { setState({ kind: 'expired' }); return; }
     busy.current = true;
     try {
-      const r = link.itemId ? await engine.checkReconnect(link.itemId, link.linkToken) : await engine.checkHostedLink(link.owner, link.linkToken);
+      const r = link.itemId ? await engine.checkReconnect(link.itemId, link.linkToken, link.adding) : await engine.checkHostedLink(link.owner, link.linkToken);
       if (r.state === 'done') { finished.current = true; onDone(r); }
       else if (r.state === 'exited') setState({ kind: 'exited', message: r.message });
       else setState({ kind: 'waiting' });

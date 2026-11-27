@@ -33,6 +33,6 @@ A fix for one row in one account belongs in Wealthfolio, not in the mapping.
 1. Set the same `version` in `manifest.json` and `package.json` (semantic versioning). Wealthfolio keeps an installed addon of the same version.
 2. Add a `## X.Y.Z - YYYY-MM-DD` section to `CHANGELOG.md`.
 3. Commit both to `main`.
-4. Run `git tag vX.Y.Z && git push origin vX.Y.Z`.
+4. Run `pnpm release`. It pushes `main`, tags `vX.Y.Z`, waits for the Release workflow, and replaces `dist/` with the published zip.
 
 The Release workflow checks that the tag matches both versions, runs the type check and tests, builds the zip, and publishes a GitHub release. Its notes are the version's CHANGELOG section. A tag with a suffix, such as `v0.2.0-rc.1`, becomes a pre-release.
